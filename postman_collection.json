@@ -1,0 +1,282 @@
+{
+    "info": {
+        "_postman_id": "diavets-admin-auth-v2",
+        "name": "Diavets - Admin Auth API (HTTP-Only Cookie)",
+        "description": "Admin auth collection using HTTP-only cookies. Token is NEVER exposed to JavaScript — it's automatically sent by the browser/Postman via the cookie jar. Enable 'Automatically follow redirects' and 'Send cookies' in Postman settings.\n\nBase URL: http://localhost:5000",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "BASE_URL",
+            "value": "http://localhost:5000",
+            "type": "string"
+        },
+        {
+            "key": "RESET_TOKEN",
+            "value": "paste-token-from-email-here",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "🔍 Health Check",
+            "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                    "raw": "{{BASE_URL}}/health",
+                    "host": [
+                        "{{BASE_URL}}"
+                    ],
+                    "path": [
+                        "health"
+                    ]
+                }
+            },
+            "response": []
+        },
+        {
+            "name": "🔐 Auth",
+            "item": [
+                {
+                    "name": "1. Login  ← sets admin_token cookie",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "// The admin_token HTTP-only cookie is automatically stored in Postman's cookie jar.",
+                                    "// It will be sent automatically on all subsequent requests — no manual token copy needed.",
+                                    "pm.test('Login successful', () => {",
+                                    "  pm.response.to.have.status(200);",
+                                    "  const body = pm.response.json();",
+                                    "  pm.expect(body.success).to.be.true;",
+                                    "  console.log('✅ Cookie set. All subsequent requests will use it automatically.');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"superadmin@diavets.com\",\n  \"password\": \"Admin@1234\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/login",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "login"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "2. Register New Admin  (cookie auth)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"full_name\": \"John Editor\",\n  \"email\": \"editor@diavets.com\",\n  \"password\": \"Editor@1234\",\n  \"role\": \"editor\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/register",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "register"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "3. Forgot Password  (sends reset email)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"superadmin@diavets.com\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/forgot-password",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "forgot-password"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "4. Reset Password  (paste token from email)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"token\": \"{{RESET_TOKEN}}\",\n  \"new_password\": \"NewPass@5678\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/reset-password",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "reset-password"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "5. Change Password  (cookie auth)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"current_password\": \"Admin@1234\",\n  \"new_password\": \"Admin@9999\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/change-password",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "change-password"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "6. Get Profile  (cookie auth)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/profile",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "profile"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "7. Update Profile  (cookie auth)",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"full_name\": \"Super Administrator\",\n  \"profile_image\": \"https://example.com/avatar.png\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/profile",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "profile"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "8. Logout  ← clears admin_token cookie",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Logout successful', () => {",
+                                    "  pm.response.to.have.status(200);",
+                                    "  console.log('✅ Cookie cleared. Subsequent requests will return 401.');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/auth/logout",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "logout"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ]
+}
