@@ -1,0 +1,30 @@
+import express from 'express';
+import { verifyToken } from '../middlewares/auth.js';
+import {
+    getAllEvents,
+    getEventById,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+    saveEventContent,
+    addEventMedia,
+    deleteEventMedia,
+} from '../controllers/eventController.js';
+
+const router = express.Router();
+
+// ─── Public ───────────────────────────────────────────────────
+router.get('/', getAllEvents);
+router.get('/:id', getEventById);
+
+// ─── Protected (cookie JWT) ───────────────────────────────────
+router.use(verifyToken);
+
+router.post('/', createEvent);
+router.put('/:id', updateEvent);
+router.delete('/:id', deleteEvent);
+router.post('/:id/content', saveEventContent);
+router.post('/:id/media', addEventMedia);       
+router.delete('/media/:mediaId', deleteEventMedia);
+
+export default router;

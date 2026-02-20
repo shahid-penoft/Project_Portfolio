@@ -2,9 +2,18 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import authRoutes from './routes/authRoutes.js';
+import localBodyRoutes from './routes/localBodyRoutes.js';
+import sectorRoutes from './routes/sectorRoutes.js';
+import eventTypeRoutes from './routes/eventTypeRoutes.js';
+import eventRoutes from './routes/eventRoutes.js';
+import galleryRoutes from './routes/galleryRoutes.js';
+import mediaCentreRoutes from './routes/mediaCentreRoutes.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -17,6 +26,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// ─── Static: serve uploaded media files ──────────────────────
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // ─── Health Check ─────────────────────────────────────────────
 app.get('/health', (_, res) =>
     res.json({ success: true, message: 'Server is running', timestamp: new Date() })
@@ -24,6 +36,12 @@ app.get('/health', (_, res) =>
 
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/api/local-bodies', localBodyRoutes);
+app.use('/api/sectors', sectorRoutes);
+app.use('/api/event-types', eventTypeRoutes);
+app.use('/api/events', eventRoutes);
+app.use('/api/gallery', galleryRoutes);
+app.use('/api/media-centre', mediaCentreRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
