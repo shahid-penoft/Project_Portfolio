@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS password_resets (
 INSERT INTO admin_users (full_name, email, password, role)
 VALUES (
     'Super Admin',
-    'superadmin@diavets.com',
+    'shahidomer06@gmail.com',
     '$2a$12$o5C9mHXzW1R3K4lQpE7XaO6kD.JVcBJjWEZ5R87.TnF7Yq3RCfRGy',
     'superadmin'
 );
