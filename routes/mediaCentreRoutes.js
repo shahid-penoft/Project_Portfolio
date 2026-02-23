@@ -13,6 +13,7 @@ import {
     createPost,
     updatePost,
     deletePost,
+    uploadMediaFile,
 } from '../controllers/mediaCentreController.js';
 
 const router = express.Router();
@@ -20,13 +21,14 @@ const router = express.Router();
 // ─── Public ───────────────────────────────────────────────────
 router.get('/latest', getLatestUpdates);
 router.get('/sections', getPublicSections);
+router.get('/sections/all', getAllSections);       // ← must be before /:id wildcard
 router.get('/sections/:id/posts', getPostsBySection);
 router.get('/posts/:id', getPostById);
 
 // ─── Protected (cookie JWT) ───────────────────────────────────
 router.use(verifyToken);
 
-router.get('/sections/all', getAllSections);
+router.post('/upload', uploadMediaFile);          // ← file upload
 router.post('/sections', createSection);
 router.put('/sections/:id', updateSection);
 router.delete('/sections/:id', deleteSection);

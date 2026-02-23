@@ -1,5 +1,22 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
+import { uploadMedia, runMulter } from '../configs/multer.js';
+
+// POST /api/media-centre/upload  (admin — multipart)
+export const uploadMediaFile = async (req, res) => {
+    try {
+        await runMulter(uploadMedia, req, res);
+        if (!req.file) return errorResponse(res, 'No file provided.', 400);
+
+        const fileUrl = `/uploads/${req.file.filename}`;
+        const isVideo = req.file.mimetype.startsWith('video/');
+        return successResponse(res, { url: fileUrl, type: isVideo ? 'video' : 'image' }, 'File uploaded successfully.');
+    } catch (err) {
+        console.error('[uploadMediaFile]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'File too large. Max 200 MB for videos, 10 MB for images.', 413);
+        return errorResponse(res, err.message || 'Server error uploading file.');
+    }
+};
 
 // ╔══════════════════════════════════════════════════════════════╗
 //  SECTIONS
@@ -34,12 +51,12 @@ export const getAllSections = async (req, res) => {
 // POST /api/media-centre/sections  (admin)
 export const createSection = async (req, res) => {
     try {
-        const { section_name, description, display_order = 0, is_active = 1 } = req.body;
+        const { section_name, description, display_order = 0, is_active = 1, media_type = 'article' } = req.body;
         if (!section_name) return errorResponse(res, 'section_name is required.', 400);
 
         const [result] = await db.query(
-            'INSERT INTO media_sections (section_name, description, display_order, is_active) VALUES (?, ?, ?, ?)',
-            [section_name.trim(), description || null, display_order, is_active ? 1 : 0]
+            'INSERT INTO media_sections (section_name, description, display_order, is_active, media_type) VALUES (?, ?, ?, ?, ?)',
+            [section_name.trim(), description || null, display_order, is_active ? 1 : 0, media_type]
         );
         const [rows] = await db.query('SELECT * FROM media_sections WHERE id = ?', [result.insertId]);
         return successResponse(res, { data: rows[0] }, 'Section created successfully.', 201);
@@ -54,14 +71,14 @@ export const createSection = async (req, res) => {
 export const updateSection = async (req, res) => {
     try {
         const { id } = req.params;
-        const { section_name, description, display_order, is_active } = req.body;
+        const { section_name, description, display_order, is_active, media_type = 'article' } = req.body;
         if (!section_name) return errorResponse(res, 'section_name is required.', 400);
 
         const [result] = await db.query(
             `UPDATE media_sections
-       SET section_name = ?, description = ?, display_order = ?, is_active = ?
+       SET section_name = ?, description = ?, display_order = ?, is_active = ?, media_type = ?
        WHERE id = ?`,
-            [section_name.trim(), description || null, display_order ?? 0, is_active ? 1 : 0, id]
+            [section_name.trim(), description || null, display_order ?? 0, is_active ? 1 : 0, media_type, id]
         );
         if (!result.affectedRows) return errorResponse(res, 'Section not found.', 404);
         const [rows] = await db.query('SELECT * FROM media_sections WHERE id = ?', [id]);
@@ -200,17 +217,17 @@ export const getPostById = async (req, res) => {
 // POST /api/media-centre/posts  (admin)
 export const createPost = async (req, res) => {
     try {
-        const { section_id, title, content, thumbnail_url, is_featured = 0, published_at } = req.body;
+        const { section_id, title, content, thumbnail_url, video_url, is_featured = 0, published_at } = req.body;
         if (!section_id || !title) return errorResponse(res, 'section_id and title are required.', 400);
 
         const [secRows] = await db.query('SELECT id FROM media_sections WHERE id = ?', [section_id]);
         if (!secRows.length) return errorResponse(res, 'Section not found.', 404);
 
         const [result] = await db.query(
-            `INSERT INTO media_posts (section_id, title, content, thumbnail_url, is_featured, published_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO media_posts (section_id, title, content, thumbnail_url, video_url, is_featured, published_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
             [
-                section_id, title, content || null, thumbnail_url || null,
+                section_id, title, content || null, thumbnail_url || null, video_url || null,
                 is_featured ? 1 : 0,
                 published_at || new Date().toISOString().slice(0, 19).replace('T', ' '),
             ]
@@ -232,16 +249,16 @@ export const createPost = async (req, res) => {
 export const updatePost = async (req, res) => {
     try {
         const { id } = req.params;
-        const { section_id, title, content, thumbnail_url, is_featured, published_at } = req.body;
+        const { section_id, title, content, thumbnail_url, video_url, is_featured, published_at } = req.body;
         if (!section_id || !title) return errorResponse(res, 'section_id and title are required.', 400);
 
         const [result] = await db.query(
             `UPDATE media_posts SET
          section_id = ?, title = ?, content = ?,
-         thumbnail_url = ?, is_featured = ?, published_at = ?
+         thumbnail_url = ?, video_url = ?, is_featured = ?, published_at = ?
        WHERE id = ?`,
             [
-                section_id, title, content || null, thumbnail_url || null,
+                section_id, title, content || null, thumbnail_url || null, video_url || null,
                 is_featured ? 1 : 0,
                 published_at || new Date().toISOString().slice(0, 19).replace('T', ' '),
                 id,

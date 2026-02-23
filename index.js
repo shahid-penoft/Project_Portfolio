@@ -12,6 +12,10 @@ import eventTypeRoutes from './routes/eventTypeRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import galleryRoutes from './routes/galleryRoutes.js';
 import mediaCentreRoutes from './routes/mediaCentreRoutes.js';
+import projectRoutes from './routes/projectRoutes.js';
+import heroRoutes from './routes/heroRoutes.js';
+import enteNaduRoutes from './routes/enteNaduRoutes.js';
+import coreVisionRoutes from './routes/coreVisionRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -42,6 +46,10 @@ app.use('/api/event-types', eventTypeRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/media-centre', mediaCentreRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/hero', heroRoutes);
+app.use('/api/ente-nadu', enteNaduRoutes);
+app.use('/api/core-vision', coreVisionRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
