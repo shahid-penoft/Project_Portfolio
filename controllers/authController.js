@@ -122,10 +122,10 @@ export const forgotPassword = async (req, res) => {
         // Invalidate previous tokens for this email
         await db.query('UPDATE password_resets SET used = 1 WHERE email = ? AND used = 0', [email]);
 
-        // Insert new token
+        // Insert new token (expires_at stored in UTC to match UTC_TIMESTAMP() comparisons)
         await db.query(
-            'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, ?)',
-            [email, token, expiresAt]
+            'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 30 MINUTE)',
+            [email, token]
         );
 
         await sendPasswordResetEmail({ to: email, name: admin.full_name, token });
@@ -150,7 +150,7 @@ export const resetPassword = async (req, res) => {
             return errorResponse(res, 'Password must be at least 8 characters.', 400);
 
         const [rows] = await db.query(
-            'SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > NOW()',
+            'SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > UTC_TIMESTAMP()',
             [token]
         );
 
