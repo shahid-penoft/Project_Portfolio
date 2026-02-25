@@ -278,3 +278,28 @@ CREATE TABLE IF NOT EXISTS manifesto_development_goals (
     updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_order (order_index)
 );
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: contact_enquiries
+--  Stores all public contact form submissions
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS contact_enquiries (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    full_name       VARCHAR(150)    NOT NULL,
+    mobile          VARCHAR(20)     NOT NULL,
+    email           VARCHAR(200)    NOT NULL,
+    panchayat_id    INT UNSIGNED    DEFAULT NULL,
+    category        ENUM('membership','local issues','submit ideas','submit opinions','general')
+                                    NOT NULL DEFAULT 'general',
+    subject         VARCHAR(255)    DEFAULT NULL,
+    message         TEXT            NOT NULL,
+    status          ENUM('new','read','resolved')
+                                    NOT NULL DEFAULT 'new',
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_enq_local_body FOREIGN KEY (panchayat_id)
+        REFERENCES local_bodies(id) ON DELETE SET NULL,
+    INDEX idx_status    (status),
+    INDEX idx_category  (category),
+    INDEX idx_created   (created_at)
+);
