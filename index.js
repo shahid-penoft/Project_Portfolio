@@ -16,6 +16,9 @@ import projectRoutes from './routes/projectRoutes.js';
 import heroRoutes from './routes/heroRoutes.js';
 import enteNaduRoutes from './routes/enteNaduRoutes.js';
 import coreVisionRoutes from './routes/coreVisionRoutes.js';
+import timelineRoutes from './routes/timelineRoutes.js';
+import recognitionRoutes from './routes/recognitionRoutes.js';
+import visualStoryRoutes from './routes/visualStoryRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -50,6 +53,9 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/hero', heroRoutes);
 app.use('/api/ente-nadu', enteNaduRoutes);
 app.use('/api/core-vision', coreVisionRoutes);
+app.use('/api/timeline', timelineRoutes);
+app.use('/api/recognitions', recognitionRoutes);
+app.use('/api/visual-stories', visualStoryRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>

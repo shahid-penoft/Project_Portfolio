@@ -178,3 +178,31 @@ CREATE TABLE IF NOT EXISTS media_posts (
 INSERT IGNORE INTO media_sections (section_name, description, display_order) VALUES
     ('Press Release', 'Official press releases and statements', 1),
     ('Interviews',    'Media interviews and features',          2);
+
+-- ============================================================
+--  MODULE: About Page
+-- ============================================================
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: timelines
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS timelines (
+    id            INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    year          VARCHAR(20)     NOT NULL,
+    title         TEXT            NOT NULL,
+    image_url     VARCHAR(500)    DEFAULT NULL,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: recognitions
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS recognitions (
+    id            INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    description   TEXT            NOT NULL,
+    icon_name     VARCHAR(50)     NOT NULL DEFAULT 'Activity',
+    order_index   INT             NOT NULL DEFAULT 0,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

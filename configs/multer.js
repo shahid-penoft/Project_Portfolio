@@ -57,6 +57,15 @@ export const uploadThumbnail = multer({
     limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
 }).single('thumbnail');
 
+export const uploadVisualStoryFiles = multer({
+    storage,
+    fileFilter,
+    limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB
+}).fields([
+    { name: 'video', maxCount: 1 },
+    { name: 'thumbnail', maxCount: 1 }
+]);
+
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>
