@@ -19,6 +19,10 @@ import coreVisionRoutes from './routes/coreVisionRoutes.js';
 import timelineRoutes from './routes/timelineRoutes.js';
 import recognitionRoutes from './routes/recognitionRoutes.js';
 import visualStoryRoutes from './routes/visualStoryRoutes.js';
+import achievementsRoutes from './routes/achievementsRoutes.js';
+import enteNaduTestimonialsRoutes from './routes/enteNaduTestimonialsRoutes.js';
+import manifestoRoutes from './routes/manifestoRoutes.js';
+import manifestoDevGoalsRoutes from './routes/manifestoDevGoalsRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -56,6 +60,10 @@ app.use('/api/core-vision', coreVisionRoutes);
 app.use('/api/timeline', timelineRoutes);
 app.use('/api/recognitions', recognitionRoutes);
 app.use('/api/visual-stories', visualStoryRoutes);
+app.use('/api/achievements', achievementsRoutes);
+app.use('/api/ente-nadu-testimonials', enteNaduTestimonialsRoutes);
+app.use('/api/manifesto/long-term-commitments', manifestoRoutes);
+app.use('/api/manifesto/development-goals', manifestoDevGoalsRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>

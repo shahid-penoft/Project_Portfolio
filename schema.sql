@@ -206,3 +206,75 @@ CREATE TABLE IF NOT EXISTS recognitions (
     created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+--  MODULE: Ente Nadu Page
+-- ============================================================
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: achievements
+--  Achievements & Awards shown on the Ente Nadu page
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS achievements (
+    id            INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    title         VARCHAR(255)    NOT NULL,
+    description   TEXT            DEFAULT NULL,
+    order_index   INT             NOT NULL DEFAULT 0,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_order (order_index)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: ente_nadu_testimonials
+--  Text & Video testimonials for the Ente Nadu section
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS ente_nadu_testimonials (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    type            ENUM('text','video')  NOT NULL DEFAULT 'text',
+    -- Text testimonial fields
+    author_name     VARCHAR(150)    DEFAULT NULL,
+    house_name      VARCHAR(150)    DEFAULT NULL,
+    quote           TEXT            DEFAULT NULL,
+    avatar_url      VARCHAR(500)    DEFAULT NULL,
+    -- Video testimonial fields
+    video_url       VARCHAR(1000)   DEFAULT NULL,
+    thumbnail_url   VARCHAR(500)    DEFAULT NULL,
+    caption         VARCHAR(300)    DEFAULT NULL,
+    -- Common
+    order_index     INT             NOT NULL DEFAULT 0,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_type  (type),
+    INDEX idx_order (order_index)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: manifesto_long_term_commitments
+--  Manifesto section — cards shown under "Our Long-Term Commitments"
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS manifesto_long_term_commitments (
+    id          INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    title       VARCHAR(255)    NOT NULL,
+    description TEXT            DEFAULT NULL,
+    icon_url    VARCHAR(500)    DEFAULT NULL,
+    order_index INT             NOT NULL DEFAULT 0,
+    created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_order (order_index)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: manifesto_development_goals
+--  Manifesto section — cards shown under "Development Goals"
+--  Each card has a title (blue heading) + description only
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS manifesto_development_goals (
+    id          INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    title       VARCHAR(255)    NOT NULL,
+    description TEXT            DEFAULT NULL,
+    order_index INT             NOT NULL DEFAULT 0,
+    created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_order (order_index)
+);

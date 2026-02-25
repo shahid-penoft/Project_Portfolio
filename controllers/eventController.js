@@ -8,6 +8,34 @@ import { successResponse, errorResponse } from '../utils/helpers.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ─────────────────────────────────────────────────────────────
+//  HELPER — Compute status automatically from event_date + event_time
+//  Logic:
+//    • If event datetime has not started yet             → 'upcoming'
+//    • If event is within the ongoing window (2 hours)   → 'ongoing'
+//    • If event datetime + ongoing window has passed     → 'past'
+// ─────────────────────────────────────────────────────────────
+const ONGOING_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
+function computeStatus(event_date, event_time) {
+    // Build a JS Date from the stored date + time values
+    // event_date can be a Date object (from MySQL) or a string 'YYYY-MM-DD'
+    // event_time can be a string 'HH:MM:SS' or 'HH:MM'
+    const dateStr = event_date instanceof Date
+        ? event_date.toISOString().slice(0, 10)
+        : String(event_date).slice(0, 10);          // 'YYYY-MM-DD'
+
+    const timeStr = String(event_time || '00:00:00').slice(0, 8); // 'HH:MM:SS'
+
+    const eventStart = new Date(`${dateStr}T${timeStr}`);
+    const eventEnd = new Date(eventStart.getTime() + ONGOING_WINDOW_MS);
+    const now = new Date();
+
+    if (now < eventStart) return 'upcoming';
+    if (now <= eventEnd) return 'ongoing';
+    return 'past';
+}
+
+// ─────────────────────────────────────────────────────────────
 //  GET /api/events
 //  Public — paginated list with optional filters
 // ─────────────────────────────────────────────────────────────
@@ -55,6 +83,58 @@ export const getAllEvents = async (req, res) => {
     } catch (err) {
         console.error('[getAllEvents]', err);
         return errorResponse(res, 'Server error fetching events.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  GET /api/events/by-status?status=upcoming|ongoing|past
+//  Public — fetch events filtered by auto-computed status
+//  Supports optional pagination: ?page=1&limit=10
+// ─────────────────────────────────────────────────────────────
+export const getEventsByStatus = async (req, res) => {
+    try {
+        const { status } = req.query;
+        const VALID = ['upcoming', 'ongoing', 'past'];
+
+        if (!status || !VALID.includes(status)) {
+            return errorResponse(
+                res,
+                `status query param is required and must be one of: ${VALID.join(', ')}.`,
+                400
+            );
+        }
+
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, parseInt(req.query.limit) || 10);
+        const offset = (page - 1) * limit;
+
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total FROM events e WHERE e.status = ?`, [status]
+        );
+
+        const [rows] = await db.query(
+            `SELECT e.*,
+              et.type_name,
+              lb.name AS local_body_name,
+              s.name  AS sector_name,
+              (SELECT file_url FROM event_media em WHERE em.event_id = e.id AND em.media_type = 'photo' LIMIT 1) AS cover_image
+       FROM events e
+       LEFT JOIN event_types  et ON et.id = e.event_type_id
+       LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
+       LEFT JOIN sectors       s ON  s.id = e.sector_id
+       WHERE e.status = ?
+       ORDER BY e.event_date DESC
+       LIMIT ? OFFSET ?`,
+            [status, limit, offset]
+        );
+
+        return successResponse(res, {
+            data: rows,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        }, `${status.charAt(0).toUpperCase() + status.slice(1)} events fetched successfully.`);
+    } catch (err) {
+        console.error('[getEventsByStatus]', err);
+        return errorResponse(res, 'Server error fetching events by status.');
     }
 };
 
@@ -112,17 +192,21 @@ export const getEventById = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 //  POST /api/events  (Auth)
+//  Status is auto-computed; any status in body is ignored.
 // ─────────────────────────────────────────────────────────────
 export const createEvent = async (req, res) => {
     try {
         const {
             event_name, event_date, event_time, venue,
-            short_description, status = 'upcoming',
+            short_description,
             event_type_id, local_body_id, sector_id,
         } = req.body;
 
         if (!event_name || !event_date || !event_time || !venue)
             return errorResponse(res, 'event_name, event_date, event_time, and venue are required.', 400);
+
+        // Auto-compute status — body value is intentionally ignored
+        const status = computeStatus(event_date, event_time);
 
         const [result] = await db.query(
             `INSERT INTO events
@@ -145,18 +229,22 @@ export const createEvent = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 //  PUT /api/events/:id  (Auth)
+//  Status is auto-computed; any status in body is ignored.
 // ─────────────────────────────────────────────────────────────
 export const updateEvent = async (req, res) => {
     try {
         const { id } = req.params;
         const {
             event_name, event_date, event_time, venue,
-            short_description, status,
+            short_description,
             event_type_id, local_body_id, sector_id,
         } = req.body;
 
         if (!event_name || !event_date || !event_time || !venue)
             return errorResponse(res, 'event_name, event_date, event_time, and venue are required.', 400);
+
+        // Auto-compute status — body value is intentionally ignored
+        const status = computeStatus(event_date, event_time);
 
         const [result] = await db.query(
             `UPDATE events SET
@@ -166,7 +254,7 @@ export const updateEvent = async (req, res) => {
        WHERE id = ?`,
             [
                 event_name, event_date, event_time, venue,
-                short_description || null, status || 'upcoming',
+                short_description || null, status,
                 event_type_id || null, local_body_id || null, sector_id || null,
                 id,
             ]
