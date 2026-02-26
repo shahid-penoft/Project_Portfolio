@@ -125,3 +125,49 @@ export const deleteWard = async (req, res) => {
         return errorResponse(res, 'Server error deleting ward.');
     }
 };
+// GET /api/wards/by-name/:name
+export const getWardsByLocalBodyName = async (req, res) => {
+    try {
+        const { name } = req.params;
+        const { page, limit, search } = req.query;
+
+        // 1. Find local body ID by name
+        const [lbRows] = await db.query('SELECT id FROM local_bodies WHERE name = ?', [name]);
+        if (!lbRows.length) {
+            return errorResponse(res, 'Local body not found by name.', 404);
+        }
+        const localBodyId = lbRows[0].id;
+
+        // 2. Reuse pagination logic (or copy for simplicity here)
+        const pageNum = parseInt(page, 10) || 1;
+        const limitNum = parseInt(limit, 10) || 6;
+        const offset = (pageNum - 1) * limitNum;
+
+        let query = 'SELECT * FROM local_body_wards WHERE local_body_id = ?';
+        let countQuery = 'SELECT COUNT(*) as total FROM local_body_wards WHERE local_body_id = ?';
+        const queryParams = [localBodyId];
+
+        if (search) {
+            query += ' AND (ward_no LIKE ? OR place_name LIKE ?)';
+            countQuery += ' AND (ward_no LIKE ? OR place_name LIKE ?)';
+            queryParams.push(`%${search}%`, `%${search}%`);
+        }
+
+        query += ' ORDER BY CAST(ward_no AS UNSIGNED) ASC, ward_no ASC LIMIT ? OFFSET ?';
+
+        const [rows] = await db.query(query, [...queryParams, limitNum, offset]);
+        const [countResult] = await db.query(countQuery, queryParams);
+
+        const total = countResult[0].total;
+        const totalPages = Math.ceil(total / limitNum);
+
+        return successResponse(res, {
+            data: rows,
+            pagination: { total, page: pageNum, limit: limitNum, totalPages },
+            local_body: { id: localBodyId, name }
+        }, 'Wards fetched successfully by local body name.');
+    } catch (err) {
+        console.error('[getWardsByLocalBodyName]', err);
+        return errorResponse(res, 'Server error fetching wards by local body name.');
+    }
+};

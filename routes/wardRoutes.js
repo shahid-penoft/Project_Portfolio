@@ -5,7 +5,7 @@ import { getWardsByLocalBody, createWard, updateWard, deleteWard } from '../cont
 // Router is mounted at /api/local-bodies/:localBodyId/wards
 const router = express.Router({ mergeParams: true });
 
-router.get('/', getWardsByLocalBody); // public (or verifyToken depending on requirement, let's keep GET public like localBodies)
+router.get('/', getWardsByLocalBody);
 
 router.use(verifyToken);
 router.post('/', createWard);

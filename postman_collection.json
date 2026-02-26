@@ -413,7 +413,41 @@
                     "response": []
                 },
                 {
-                    "name": "2. Create Ward (cookie auth)",
+                    "name": "2. Get Wards by Local Body Name (Public)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{BASE_URL}}/api/wards/by-name/Thrissur Municipal Corporation?page=1&limit=6&search=",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "api",
+                                "wards",
+                                "by-name",
+                                "Thrissur Municipal Corporation"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "limit",
+                                    "value": "6"
+                                },
+                                {
+                                    "key": "search",
+                                    "value": ""
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "3. Create Ward (cookie auth)",
                     "request": {
                         "method": "POST",
                         "header": [
