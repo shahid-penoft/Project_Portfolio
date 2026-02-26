@@ -34,6 +34,38 @@ export const uploadProjectImage = async (req, res) => {
     }
 };
 
+// ── POST /api/projects/:id/upload-inline-image (admin) ─────────
+export const uploadProjectInlineImage = async (req, res) => {
+    try {
+        console.log('[uploadProjectInlineImage] Starting upload for ID:', req.params.id);
+        await runMulter(uploadImage, req, res);
+
+        if (!req.file) {
+            console.error('[uploadProjectInlineImage] No file in request');
+            return errorResponse(res, 'No image file uploaded.', 400);
+        }
+
+        const { id } = req.params;
+        // Check project exists
+        const [rows] = await db.query('SELECT id FROM projects WHERE id = ?', [id]);
+        if (!rows.length) {
+            console.error('[uploadProjectInlineImage] Project not found for ID:', id);
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return errorResponse(res, 'Project not found.', 404);
+        }
+
+        const imageUrl = `/uploads/${req.file.filename}`;
+        const fullUrl = `${req.protocol}://${req.get('host')}${imageUrl}`;
+        console.log('[uploadProjectInlineImage] Success, URL:', fullUrl);
+        return successResponse(res, { url: fullUrl }, 'Image uploaded for editor.');
+    } catch (err) {
+        console.error('[uploadProjectInlineImage] Error trapped:', err);
+        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'Image too large (max 10 MB).', 413);
+        return errorResponse(res, err.message || 'Server error uploading image.');
+    }
+};
+
 // ── GET /api/projects/all  (admin, paginated) ──────────────────
 export const getAllProjects = async (req, res) => {
     try {
@@ -99,7 +131,7 @@ export const getProjectById = async (req, res) => {
 export const createProject = async (req, res) => {
     try {
         const {
-            title, description, images = [], tags,
+            title, description, project_content, images = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
         } = req.body;
@@ -108,9 +140,9 @@ export const createProject = async (req, res) => {
 
         const imagesJson = JSON.stringify(Array.isArray(images) ? images : []);
         const [result] = await db.query(
-            `INSERT INTO projects (title, description, images, tags, year, sector_id, local_body_id, display_order, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [title.trim(), description || null, imagesJson, tags || null, year || null,
+            `INSERT INTO projects (title, description, project_content, images, tags, year, sector_id, local_body_id, display_order, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [title.trim(), description || null, project_content || null, imagesJson, tags || null, year || null,
             sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0]
         );
         const [rows] = await db.query(
@@ -132,7 +164,7 @@ export const updateProject = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, description, images = [], tags,
+            title, description, project_content, images = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
         } = req.body;
@@ -141,10 +173,10 @@ export const updateProject = async (req, res) => {
 
         const imagesJson = JSON.stringify(Array.isArray(images) ? images : []);
         const [result] = await db.query(
-            `UPDATE projects SET title=?, description=?, images=?, tags=?, year=?,
+            `UPDATE projects SET title=?, description=?, project_content=?, images=?, tags=?, year=?,
              sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW()
              WHERE id=?`,
-            [title.trim(), description || null, imagesJson, tags || null, year || null,
+            [title.trim(), description || null, project_content || null, imagesJson, tags || null, year || null,
             sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0, id]
         );
         if (!result.affectedRows) return errorResponse(res, 'Project not found.', 404);

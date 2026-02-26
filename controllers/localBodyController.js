@@ -1,5 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
+import { uploadImage, runMulter } from '../configs/multer.js';
 
 // GET /api/local-bodies
 export const getAllLocalBodies = async (req, res) => {
@@ -21,9 +22,9 @@ export const getAllLocalBodies = async (req, res) => {
         const queryParams = [];
 
         if (search) {
-            query += ' WHERE name LIKE ? OR description LIKE ?';
-            countQuery += ' WHERE name LIKE ? OR description LIKE ?';
-            queryParams.push(`%${search}%`, `%${search}%`);
+            query += ' WHERE name LIKE ? OR description LIKE ? OR short_description LIKE ?';
+            countQuery += ' WHERE name LIKE ? OR description LIKE ? OR short_description LIKE ?';
+            queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
         }
 
         query += ' ORDER BY name ASC LIMIT ? OFFSET ?';
@@ -47,12 +48,12 @@ export const getAllLocalBodies = async (req, res) => {
 // POST /api/local-bodies
 export const createLocalBody = async (req, res) => {
     try {
-        const { name, description } = req.body;
+        const { name, description, short_description, cover_image, population, area } = req.body;
         if (!name) return errorResponse(res, 'name is required.', 400);
 
         const [result] = await db.query(
-            'INSERT INTO local_bodies (name, description) VALUES (?, ?)',
-            [name.trim(), description || null]
+            'INSERT INTO local_bodies (name, description, short_description, cover_image, population, area) VALUES (?, ?, ?, ?, ?, ?)',
+            [name.trim(), description || null, short_description || null, cover_image || null, population || null, area || null]
         );
         const [rows] = await db.query('SELECT * FROM local_bodies WHERE id = ?', [result.insertId]);
         return successResponse(res, { data: rows[0] }, 'Local body created successfully.', 201);
@@ -67,12 +68,12 @@ export const createLocalBody = async (req, res) => {
 export const updateLocalBody = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description } = req.body;
+        const { name, description, short_description, cover_image, population, area } = req.body;
         if (!name) return errorResponse(res, 'name is required.', 400);
 
         const [result] = await db.query(
-            'UPDATE local_bodies SET name = ?, description = ? WHERE id = ?',
-            [name.trim(), description || null, id]
+            'UPDATE local_bodies SET name = ?, description = ?, short_description = ?, cover_image = ?, population = ?, area = ? WHERE id = ?',
+            [name.trim(), description || null, short_description || null, cover_image || null, population || null, area || null, id]
         );
         if (!result.affectedRows) return errorResponse(res, 'Local body not found.', 404);
         const [rows] = await db.query('SELECT * FROM local_bodies WHERE id = ?', [id]);
@@ -81,6 +82,19 @@ export const updateLocalBody = async (req, res) => {
         if (err.code === 'ER_DUP_ENTRY') return errorResponse(res, 'A local body with this name already exists.', 409);
         console.error('[updateLocalBody]', err);
         return errorResponse(res, 'Server error updating local body.');
+    }
+};
+
+// POST /api/local-bodies/upload
+export const uploadLocalBodyImage = async (req, res) => {
+    try {
+        await runMulter(uploadImage, req, res);
+        if (!req.file) return errorResponse(res, 'No file provided.', 400);
+        return successResponse(res, { url: `/uploads/${req.file.filename}` }, 'Image uploaded.');
+    } catch (err) {
+        console.error('[uploadLocalBodyImage]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'Image too large (max 10 MB).', 413);
+        return errorResponse(res, err.message || 'Upload failed.');
     }
 };
 

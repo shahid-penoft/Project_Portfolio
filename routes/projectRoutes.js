@@ -7,6 +7,7 @@ import {
     updateProject,
     deleteProject,
     uploadProjectImage,
+    uploadProjectInlineImage,
 } from '../controllers/projectController.js';
 
 const router = express.Router();
@@ -14,7 +15,8 @@ const router = express.Router();
 // All project routes are protected (admin only)
 router.use(verifyToken);
 
-router.post('/upload', uploadProjectImage);  // ← before /:id
+router.post('/upload', uploadProjectImage);
+router.post('/:id/upload-inline-image', uploadProjectInlineImage);
 router.get('/all', getAllProjects);
 router.get('/:id', getProjectById);
 router.post('/', createProject);
