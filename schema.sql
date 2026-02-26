@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS events (
     event_name      VARCHAR(255)    NOT NULL,
     event_date      DATE            NOT NULL,
     event_time      TIME            NOT NULL,
+    event_time_to   TIME            DEFAULT NULL,
     venue           VARCHAR(255)    NOT NULL,
     short_description TEXT          DEFAULT NULL,
     status          ENUM('upcoming','ongoing','past') NOT NULL DEFAULT 'upcoming',

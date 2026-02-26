@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import db from '../configs/db.js';
-import { uploadMedia, runMulter } from '../configs/multer.js';
+import { uploadMedia, uploadImage, runMulter } from '../configs/multer.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -197,7 +197,7 @@ export const getEventById = async (req, res) => {
 export const createEvent = async (req, res) => {
     try {
         const {
-            event_name, event_date, event_time, venue,
+            event_name, event_date, event_time, event_time_to, venue,
             short_description,
             event_type_id, local_body_id, sector_id,
         } = req.body;
@@ -210,10 +210,10 @@ export const createEvent = async (req, res) => {
 
         const [result] = await db.query(
             `INSERT INTO events
-         (event_name, event_date, event_time, venue, short_description, status, event_type_id, local_body_id, sector_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (event_name, event_date, event_time, event_time_to, venue, short_description, status, event_type_id, local_body_id, sector_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                event_name, event_date, event_time, venue,
+                event_name, event_date, event_time, event_time_to || null, venue,
                 short_description || null, status,
                 event_type_id || null, local_body_id || null, sector_id || null,
             ]
@@ -235,7 +235,7 @@ export const updateEvent = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            event_name, event_date, event_time, venue,
+            event_name, event_date, event_time, event_time_to, venue,
             short_description,
             event_type_id, local_body_id, sector_id,
         } = req.body;
@@ -248,12 +248,12 @@ export const updateEvent = async (req, res) => {
 
         const [result] = await db.query(
             `UPDATE events SET
-         event_name = ?, event_date = ?, event_time = ?, venue = ?,
+         event_name = ?, event_date = ?, event_time = ?, event_time_to = ?, venue = ?,
          short_description = ?, status = ?,
          event_type_id = ?, local_body_id = ?, sector_id = ?
        WHERE id = ?`,
             [
-                event_name, event_date, event_time, venue,
+                event_name, event_date, event_time, event_time_to || null, venue,
                 short_description || null, status,
                 event_type_id || null, local_body_id || null, sector_id || null,
                 id,
@@ -384,5 +384,41 @@ export const deleteEventMedia = async (req, res) => {
     } catch (err) {
         console.error('[deleteEventMedia]', err);
         return errorResponse(res, 'Server error deleting media.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/events/:id/upload-inline-image  (Auth + Multer)
+//  Upload image inline for rich text editor
+//  Returns { url: '/uploads/...' } for Quill to insert
+// ─────────────────────────────────────────────────────────────
+export const uploadInlineImage = async (req, res) => {
+    try {
+        await runMulter(uploadImage, req, res);
+
+        const { id } = req.params;
+
+        if (!req.file)
+            return errorResponse(res, 'No image file uploaded.', 400);
+
+        // Check event exists
+        const [evtRows] = await db.query('SELECT id FROM events WHERE id = ?', [id]);
+        if (!evtRows.length) {
+            // Clean up orphaned upload
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return errorResponse(res, 'Event not found.', 404);
+        }
+
+        const imageUrl = `/uploads/${req.file.filename}`;
+        // Return full URL for image embed in rich text editor
+        const fullUrl = `${req.protocol}://${req.get('host')}${imageUrl}`;
+        return successResponse(res, { url: fullUrl }, 'Image uploaded for editor.');
+    } catch (err) {
+        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        console.error('[uploadInlineImage]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return errorResponse(res, 'Image too large (max 10 MB).', 413);
+        }
+        return errorResponse(res, err.message || 'Server error uploading image.');
     }
 };

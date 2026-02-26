@@ -10,6 +10,7 @@ import {
     saveEventContent,
     addEventMedia,
     deleteEventMedia,
+    uploadInlineImage,
 } from '../controllers/eventController.js';
 
 const router = express.Router();
@@ -27,6 +28,7 @@ router.put('/:id', updateEvent);
 router.delete('/:id', deleteEvent);
 router.post('/:id/content', saveEventContent);
 router.post('/:id/media', addEventMedia);
+router.post('/:id/upload-inline-image', uploadInlineImage);
 router.delete('/media/:mediaId', deleteEventMedia);
 
 export default router;
