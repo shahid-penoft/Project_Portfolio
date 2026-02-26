@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 
 import authRoutes from './routes/authRoutes.js';
 import localBodyRoutes from './routes/localBodyRoutes.js';
+import wardRoutes from './routes/wardRoutes.js';
 import sectorRoutes from './routes/sectorRoutes.js';
 import eventTypeRoutes from './routes/eventTypeRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
@@ -49,6 +50,7 @@ app.get('/health', (_, res) =>
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/local-bodies', localBodyRoutes);
+app.use('/api/local-bodies/:localBodyId/wards', wardRoutes);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/event-types', eventTypeRoutes);
 app.use('/api/events', eventRoutes);
