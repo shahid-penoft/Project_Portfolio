@@ -109,6 +109,144 @@ export const getAllProjects = async (req, res) => {
     }
 };
 
+// ── GET /api/projects/public/year/:year ────────────────────────
+export const getProjectsByYear = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, parseInt(req.query.limit) || 12);
+        const offset = (page - 1) * limit;
+        const { year } = req.params;
+
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.year = ?`, [year]
+        );
+        const [rows] = await db.query(
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+             FROM projects p
+             LEFT JOIN sectors s     ON s.id  = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             WHERE p.is_active = 1 AND p.year = ?
+             ORDER BY p.display_order ASC, p.created_at DESC
+             LIMIT ? OFFSET ?`,
+            [year, limit, offset]
+        );
+
+        return successResponse(res, {
+            data: rows,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        }, 'Projects fetched.');
+    } catch (err) {
+        console.error('[getProjectsByYear]', err);
+        return errorResponse(res, 'Server error fetching projects.');
+    }
+};
+
+// ── GET /api/projects/public/local-body/:id ────────────────────
+export const getProjectsByLocalBody = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, parseInt(req.query.limit) || 12);
+        const offset = (page - 1) * limit;
+        const { id } = req.params;
+
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.local_body_id = ?`, [id]
+        );
+        const [rows] = await db.query(
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+             FROM projects p
+             LEFT JOIN sectors s     ON s.id  = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             WHERE p.is_active = 1 AND p.local_body_id = ?
+             ORDER BY p.display_order ASC, p.created_at DESC
+             LIMIT ? OFFSET ?`,
+            [id, limit, offset]
+        );
+
+        return successResponse(res, {
+            data: rows,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        }, 'Projects fetched.');
+    } catch (err) {
+        console.error('[getProjectsByLocalBody]', err);
+        return errorResponse(res, 'Server error fetching projects.');
+    }
+};
+
+// ── GET /api/projects/public/sector/:id ────────────────────────
+export const getProjectsBySector = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, parseInt(req.query.limit) || 12);
+        const offset = (page - 1) * limit;
+        const { id } = req.params;
+
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.sector_id = ?`, [id]
+        );
+        const [rows] = await db.query(
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+             FROM projects p
+             LEFT JOIN sectors s     ON s.id  = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             WHERE p.is_active = 1 AND p.sector_id = ?
+             ORDER BY p.display_order ASC, p.created_at DESC
+             LIMIT ? OFFSET ?`,
+            [id, limit, offset]
+        );
+
+        return successResponse(res, {
+            data: rows,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        }, 'Projects fetched.');
+    } catch (err) {
+        console.error('[getProjectsBySector]', err);
+        return errorResponse(res, 'Server error fetching projects.');
+    }
+};
+
+// ── GET /api/projects/public/search ────────────────────────────
+export const searchPublicProjects = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, parseInt(req.query.limit) || 12);
+        const offset = (page - 1) * limit;
+        const search = req.query.q || req.query.search || '';
+
+        const conditions = ['p.is_active = 1'];
+        const vals = [];
+
+        if (search) {
+            conditions.push('(p.title LIKE ? OR p.tags LIKE ?)');
+            vals.push(`%${search}%`, `%${search}%`);
+        }
+
+        const where = `WHERE ${conditions.join(' AND ')}`;
+
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total FROM projects p ${where}`, vals
+        );
+        const [rows] = await db.query(
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+             FROM projects p
+             LEFT JOIN sectors s     ON s.id  = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             ${where}
+             ORDER BY p.display_order ASC, p.created_at DESC
+             LIMIT ? OFFSET ?`,
+            [...vals, limit, offset]
+        );
+
+        return successResponse(res, {
+            data: rows,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        }, 'Projects fetched.');
+    } catch (err) {
+        console.error('[searchPublicProjects]', err);
+        return errorResponse(res, 'Server error fetching projects.');
+    }
+};
+
 // ── GET /api/projects/:id  ─────────────────────────────────────
 export const getProjectById = async (req, res) => {
     try {
