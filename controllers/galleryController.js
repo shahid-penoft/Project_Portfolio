@@ -281,3 +281,164 @@ export const deleteEventMedia = async (req, res) => {
         return errorResponse(res, 'Failed to delete media.');
     }
 };
+
+// ─── Shared helper ─────────────────────────────────────────────────────────
+const buildGalleryQuery = (mediaType, extraConditions = [], extraParams = []) => {
+    const type = mediaType === 'photo' ? 'photo' : 'video';
+    const conditions = [`em.media_type = '${type}'`, ...extraConditions];
+    const where = `WHERE ${conditions.join(' AND ')}`;
+    const sql = `
+        SELECT
+            em.id, em.file_url, em.caption, em.media_type, em.created_at,
+            e.id         AS event_id,
+            e.event_name,
+            e.event_date,
+            e.year,
+            et.type_name AS event_type,
+            lb.name      AS local_body_name,
+            s.name       AS sector_name
+        FROM event_media em
+        JOIN   events      e  ON  e.id = em.event_id
+        LEFT JOIN event_types et ON et.id = e.event_type_id
+        LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
+        LEFT JOIN sectors      s  ON  s.id = e.sector_id
+        ${where}
+        ORDER BY e.event_date DESC, em.id DESC`;
+    return { sql, params: extraParams };
+};
+
+const paginatedGalleryResponse = async (res, mediaType, conditions, params, req, label) => {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 24);
+    const offset = (page - 1) * limit;
+    const search = req.query.search || req.query.q;
+
+    if (search) {
+        conditions.push('e.event_name LIKE ?');
+        params.push(`%${search}%`);
+    }
+
+    const { sql, params: allParams } = buildGalleryQuery(mediaType, conditions, params);
+
+    // Count total
+    const countSql = sql.replace(/SELECT[\s\S]+?FROM/, 'SELECT COUNT(*) AS total FROM');
+    const [[{ total }]] = await db.query(countSql, allParams);
+
+    const [rows] = await db.query(`${sql} LIMIT ? OFFSET ?`, [...allParams, limit, offset]);
+
+    return successResponse(res, {
+        data: rows,
+        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    }, `${label} fetched successfully.`);
+};
+
+// ─── Images: by local body ──────────────────────────────────────────────────
+// GET /api/gallery/images/local-body/:id
+export const getImagesByLocalBody = async (req, res) => {
+    try {
+        await paginatedGalleryResponse(res, 'photo',
+            ['e.local_body_id = ?'], [req.params.id], req,
+            'Images by local body');
+    } catch (err) {
+        console.error('[getImagesByLocalBody]', err);
+        return errorResponse(res, 'Server error fetching images.');
+    }
+};
+
+// ─── Images: by sector ─────────────────────────────────────────────────────
+// GET /api/gallery/images/sector/:id
+export const getImagesBySector = async (req, res) => {
+    try {
+        await paginatedGalleryResponse(res, 'photo',
+            ['e.sector_id = ?'], [req.params.id], req,
+            'Images by sector');
+    } catch (err) {
+        console.error('[getImagesBySector]', err);
+        return errorResponse(res, 'Server error fetching images.');
+    }
+};
+
+// ─── Images: by year ───────────────────────────────────────────────────────
+// GET /api/gallery/images/year/:year
+export const getImagesByYear = async (req, res) => {
+    try {
+        await paginatedGalleryResponse(res, 'photo',
+            ['e.year = ?'], [req.params.year], req,
+            'Images by year');
+    } catch (err) {
+        console.error('[getImagesByYear]', err);
+        return errorResponse(res, 'Server error fetching images.');
+    }
+};
+
+// ─── Images: search by event name ──────────────────────────────────────────
+// GET /api/gallery/images/search?q=...
+export const searchImages = async (req, res) => {
+    try {
+        const q = req.query.q || req.query.search || '';
+        await paginatedGalleryResponse(res, 'photo',
+            q ? ['e.event_name LIKE ?'] : [],
+            q ? [`%${q}%`] : [],
+            { query: {} }, // skip double-search
+            'Images search');
+    } catch (err) {
+        console.error('[searchImages]', err);
+        return errorResponse(res, 'Server error searching images.');
+    }
+};
+
+// ─── Videos: by local body ─────────────────────────────────────────────────
+// GET /api/gallery/videos/local-body/:id
+export const getVideosByLocalBody = async (req, res) => {
+    try {
+        await paginatedGalleryResponse(res, 'video',
+            ['e.local_body_id = ?'], [req.params.id], req,
+            'Videos by local body');
+    } catch (err) {
+        console.error('[getVideosByLocalBody]', err);
+        return errorResponse(res, 'Server error fetching videos.');
+    }
+};
+
+// ─── Videos: by sector ─────────────────────────────────────────────────────
+// GET /api/gallery/videos/sector/:id
+export const getVideosBySector = async (req, res) => {
+    try {
+        await paginatedGalleryResponse(res, 'video',
+            ['e.sector_id = ?'], [req.params.id], req,
+            'Videos by sector');
+    } catch (err) {
+        console.error('[getVideosBySector]', err);
+        return errorResponse(res, 'Server error fetching videos.');
+    }
+};
+
+// ─── Videos: by year ───────────────────────────────────────────────────────
+// GET /api/gallery/videos/year/:year
+export const getVideosByYear = async (req, res) => {
+    try {
+        await paginatedGalleryResponse(res, 'video',
+            ['e.year = ?'], [req.params.year], req,
+            'Videos by year');
+    } catch (err) {
+        console.error('[getVideosByYear]', err);
+        return errorResponse(res, 'Server error fetching videos.');
+    }
+};
+
+// ─── Videos: search by event name ──────────────────────────────────────────
+// GET /api/gallery/videos/search?q=...
+export const searchVideos = async (req, res) => {
+    try {
+        const q = req.query.q || req.query.search || '';
+        await paginatedGalleryResponse(res, 'video',
+            q ? ['e.event_name LIKE ?'] : [],
+            q ? [`%${q}%`] : [],
+            { query: {} },
+            'Videos search');
+    } catch (err) {
+        console.error('[searchVideos]', err);
+        return errorResponse(res, 'Server error searching videos.');
+    }
+};
+
