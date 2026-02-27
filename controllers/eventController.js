@@ -328,16 +328,26 @@ export const saveEventContent = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 //  POST /api/events/:id/media  (Auth + Multer)
-//  Upload a single photo or video with a caption
+//  Upload a single photo or video with optional caption + thumbnail
 // ─────────────────────────────────────────────────────────────
 export const addEventMedia = async (req, res) => {
     try {
-        await runMulter(uploadMedia, req, res);
+        // Accept two fields: 'file' (the media) and 'thumbnail' (optional)
+        const multiUpload = uploadMedia.fields([
+            { name: 'file', maxCount: 1 },
+            { name: 'thumbnail', maxCount: 1 },
+        ]);
+        await new Promise((resolve, reject) =>
+            multiUpload(req, res, (err) => (err ? reject(err) : resolve()))
+        );
 
         const { id } = req.params;
         const { caption, media_type } = req.body;
 
-        if (!req.file)
+        const mainFile = req.files?.file?.[0];
+        const thumbFile = req.files?.thumbnail?.[0];
+
+        if (!mainFile)
             return errorResponse(res, 'No file uploaded.', 400);
 
         if (!['photo', 'video'].includes(media_type))
@@ -346,25 +356,89 @@ export const addEventMedia = async (req, res) => {
         // Check event exists
         const [evtRows] = await db.query('SELECT id FROM events WHERE id = ?', [id]);
         if (!evtRows.length) {
-            // Clean up orphaned upload
-            fs.unlinkSync(req.file.path);
+            fs.unlinkSync(mainFile.path);
+            if (thumbFile) fs.unlinkSync(thumbFile.path);
             return errorResponse(res, 'Event not found.', 404);
         }
 
-        const fileUrl = `uploads/${req.file.filename}`;
+        const fileUrl = `uploads/${mainFile.filename}`;
+        const thumbnailUrl = thumbFile ? `uploads/${thumbFile.filename}` : null;
+
         const [result] = await db.query(
-            'INSERT INTO event_media (event_id, media_type, file_url, caption) VALUES (?, ?, ?, ?)',
-            [id, media_type, fileUrl, caption || null]
+            'INSERT INTO event_media (event_id, media_type, file_url, thumbnail_url, caption) VALUES (?, ?, ?, ?, ?)',
+            [id, media_type, fileUrl, thumbnailUrl, caption || null]
         );
 
         const [rows] = await db.query('SELECT * FROM event_media WHERE id = ?', [result.insertId]);
         return successResponse(res, { data: rows[0] }, 'Media uploaded successfully.', 201);
     } catch (err) {
-        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        if (req.files?.file?.[0]?.path && fs.existsSync(req.files.file[0].path)) fs.unlinkSync(req.files.file[0].path);
+        if (req.files?.thumbnail?.[0]?.path && fs.existsSync(req.files.thumbnail[0].path)) fs.unlinkSync(req.files.thumbnail[0].path);
         console.error('[addEventMedia]', err);
         return errorResponse(res, err.message || 'Server error uploading media.');
     }
 };
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/events/:id/youtube  (Auth + optional thumbnail upload)
+//  Add a YouTube embedded video link with optional thumbnail
+// ─────────────────────────────────────────────────────────────
+export const addYouTubeMedia = async (req, res) => {
+    try {
+        // Accept optional thumbnail image
+        const thumbUpload = uploadImage.single('thumbnail');
+        await new Promise((resolve, reject) =>
+            thumbUpload(req, res, (err) => (err ? reject(err) : resolve()))
+        );
+
+        const { id } = req.params;
+        const { youtube_url, caption } = req.body;
+
+        if (!youtube_url || !youtube_url.trim())
+            return errorResponse(res, 'youtube_url is required.', 400);
+
+        // Normalise: accept full URL or just video ID, always store embed URL
+        const embedUrl = normaliseYouTubeUrl(youtube_url.trim());
+        if (!embedUrl)
+            return errorResponse(res, 'Invalid YouTube URL or video ID.', 400);
+
+        const [evtRows] = await db.query('SELECT id FROM events WHERE id = ?', [id]);
+        if (!evtRows.length) {
+            if (req.file) fs.unlinkSync(req.file.path);
+            return errorResponse(res, 'Event not found.', 404);
+        }
+
+        const thumbnailUrl = req.file ? `uploads/${req.file.filename}` : null;
+
+        const [result] = await db.query(
+            'INSERT INTO event_media (event_id, media_type, file_url, thumbnail_url, youtube_url, caption) VALUES (?, ?, ?, ?, ?, ?)',
+            [id, 'video', embedUrl, thumbnailUrl, embedUrl, caption || null]
+        );
+
+        const [rows] = await db.query('SELECT * FROM event_media WHERE id = ?', [result.insertId]);
+        return successResponse(res, { data: rows[0] }, 'YouTube video added successfully.', 201);
+    } catch (err) {
+        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        console.error('[addYouTubeMedia]', err);
+        return errorResponse(res, err.message || 'Server error adding YouTube video.');
+    }
+};
+
+/** Convert any YouTube URL form to embed URL, or return null if invalid */
+function normaliseYouTubeUrl(input) {
+    // Already an embed URL
+    if (input.includes('youtube.com/embed/')) return input;
+    // youtu.be short link
+    const shortMatch = input.match(/youtu\.be\/([\w-]{11})/);
+    if (shortMatch) return `https://www.youtube.com/embed/${shortMatch[1]}`;
+    // Standard watch URL
+    const watchMatch = input.match(/[?&]v=([\w-]{11})/);
+    if (watchMatch) return `https://www.youtube.com/embed/${watchMatch[1]}`;
+    // 11-char raw video ID
+    if (/^[\w-]{11}$/.test(input)) return `https://www.youtube.com/embed/${input}`;
+    return null;
+}
+
 
 // ─────────────────────────────────────────────────────────────
 //  DELETE /api/events/media/:mediaId  (Auth)
@@ -375,9 +449,14 @@ export const deleteEventMedia = async (req, res) => {
         const [rows] = await db.query('SELECT * FROM event_media WHERE id = ?', [mediaId]);
         if (!rows.length) return errorResponse(res, 'Media item not found.', 404);
 
-        // Delete physical file
-        const filePath = path.join(__dirname, '..', rows[0].file_url);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        // Delete physical file (main + thumbnail)
+        const deleteFile = (relPath) => {
+            if (!relPath || relPath.startsWith('http')) return;
+            const fp = path.join(__dirname, '..', relPath);
+            if (fs.existsSync(fp)) fs.unlinkSync(fp);
+        };
+        deleteFile(rows[0].file_url);
+        deleteFile(rows[0].thumbnail_url);
 
         await db.query('DELETE FROM event_media WHERE id = ?', [mediaId]);
         return successResponse(res, {}, 'Media deleted successfully.');

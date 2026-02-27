@@ -9,6 +9,7 @@ import {
     deleteEvent,
     saveEventContent,
     addEventMedia,
+    addYouTubeMedia,
     deleteEventMedia,
     uploadInlineImage,
 } from '../controllers/eventController.js';
@@ -28,6 +29,7 @@ router.put('/:id', updateEvent);
 router.delete('/:id', deleteEvent);
 router.post('/:id/content', saveEventContent);
 router.post('/:id/media', addEventMedia);
+router.post('/:id/youtube', addYouTubeMedia);
 router.post('/:id/upload-inline-image', uploadInlineImage);
 router.delete('/media/:mediaId', deleteEventMedia);
 
