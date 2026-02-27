@@ -293,7 +293,7 @@ const buildGalleryQuery = (mediaType, extraConditions = [], extraParams = []) =>
             e.id         AS event_id,
             e.event_name,
             e.event_date,
-            e.year,
+            YEAR(e.event_date) AS year,
             et.type_name AS event_type,
             lb.name      AS local_body_name,
             s.name       AS sector_name
@@ -363,7 +363,7 @@ export const getImagesBySector = async (req, res) => {
 export const getImagesByYear = async (req, res) => {
     try {
         await paginatedGalleryResponse(res, 'photo',
-            ['e.year = ?'], [req.params.year], req,
+            ['YEAR(e.event_date) = ?'], [req.params.year], req,
             'Images by year');
     } catch (err) {
         console.error('[getImagesByYear]', err);
@@ -418,7 +418,7 @@ export const getVideosBySector = async (req, res) => {
 export const getVideosByYear = async (req, res) => {
     try {
         await paginatedGalleryResponse(res, 'video',
-            ['e.year = ?'], [req.params.year], req,
+            ['YEAR(e.event_date) = ?'], [req.params.year], req,
             'Videos by year');
     } catch (err) {
         console.error('[getVideosByYear]', err);
