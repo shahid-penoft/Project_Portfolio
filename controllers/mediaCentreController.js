@@ -1,6 +1,10 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { uploadMedia, runMulter } from '../configs/multer.js';
+import { uploadMedia, uploadImage, runMulter } from '../configs/multer.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // POST /api/media-centre/upload  (admin — multipart)
 export const uploadMediaFile = async (req, res) => {
@@ -17,6 +21,30 @@ export const uploadMediaFile = async (req, res) => {
         return errorResponse(res, err.message || 'Server error uploading file.');
     }
 };
+
+// POST /api/media-centre/posts/:id/upload-inline-image  (admin)
+export const uploadPostInlineImage = async (req, res) => {
+    try {
+        await runMulter(uploadImage, req, res);
+        if (!req.file) return errorResponse(res, 'No image file uploaded.', 400);
+
+        const { id } = req.params;
+        const [rows] = await db.query('SELECT id FROM media_posts WHERE id = ?', [id]);
+        if (!rows.length) {
+            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            return errorResponse(res, 'Post not found.', 404);
+        }
+
+        const imageUrl = `/uploads/${req.file.filename}`;
+        const fullUrl = `${req.protocol}://${req.get('host')}${imageUrl}`;
+        return successResponse(res, { url: fullUrl }, 'Image uploaded.');
+    } catch (err) {
+        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        console.error('[uploadPostInlineImage]', err);
+        return errorResponse(res, err.message || 'Server error uploading image.');
+    }
+};
+
 
 // ╔══════════════════════════════════════════════════════════════╗
 //  SECTIONS
@@ -217,17 +245,18 @@ export const getPostById = async (req, res) => {
 // POST /api/media-centre/posts  (admin)
 export const createPost = async (req, res) => {
     try {
-        const { section_id, title, content, thumbnail_url, video_url, is_featured = 0, published_at } = req.body;
+        const { section_id, title, content, rich_content, thumbnail_url, video_url, is_featured = 0, published_at } = req.body;
         if (!section_id || !title) return errorResponse(res, 'section_id and title are required.', 400);
 
         const [secRows] = await db.query('SELECT id FROM media_sections WHERE id = ?', [section_id]);
         if (!secRows.length) return errorResponse(res, 'Section not found.', 404);
 
         const [result] = await db.query(
-            `INSERT INTO media_posts (section_id, title, content, thumbnail_url, video_url, is_featured, published_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO media_posts (section_id, title, content, rich_content, thumbnail_url, video_url, is_featured, published_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                section_id, title, content || null, thumbnail_url || null, video_url || null,
+                section_id, title, content || null, rich_content || null,
+                thumbnail_url || null, video_url || null,
                 is_featured ? 1 : 0,
                 published_at || new Date().toISOString().slice(0, 19).replace('T', ' '),
             ]
@@ -245,20 +274,22 @@ export const createPost = async (req, res) => {
     }
 };
 
+
 // PUT /api/media-centre/posts/:id  (admin)
 export const updatePost = async (req, res) => {
     try {
         const { id } = req.params;
-        const { section_id, title, content, thumbnail_url, video_url, is_featured, published_at } = req.body;
+        const { section_id, title, content, rich_content, thumbnail_url, video_url, is_featured, published_at } = req.body;
         if (!section_id || !title) return errorResponse(res, 'section_id and title are required.', 400);
 
         const [result] = await db.query(
             `UPDATE media_posts SET
-         section_id = ?, title = ?, content = ?,
+         section_id = ?, title = ?, content = ?, rich_content = ?,
          thumbnail_url = ?, video_url = ?, is_featured = ?, published_at = ?
        WHERE id = ?`,
             [
-                section_id, title, content || null, thumbnail_url || null, video_url || null,
+                section_id, title, content || null, rich_content || null,
+                thumbnail_url || null, video_url || null,
                 is_featured ? 1 : 0,
                 published_at || new Date().toISOString().slice(0, 19).replace('T', ' '),
                 id,
