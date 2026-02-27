@@ -7,6 +7,7 @@ import {
     promoteAchievement,
 } from '../controllers/achievementsController.js';
 import { verifyToken } from '../middlewares/auth.js';
+import { safeUploadIcon } from '../configs/multer.js';
 
 const router = express.Router();
 
@@ -15,8 +16,8 @@ router.get('/', getAchievements);
 
 // Protected
 router.use(verifyToken);
-router.post('/', createAchievement);
-router.put('/:id', updateAchievement);
+router.post('/', safeUploadIcon, createAchievement);
+router.put('/:id', safeUploadIcon, updateAchievement);
 router.delete('/:id', deleteAchievement);
 router.put('/:id/promote', promoteAchievement);
 

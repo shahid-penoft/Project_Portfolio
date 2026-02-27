@@ -1,5 +1,6 @@
 import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
+import path from 'path';
 
 export const getCards = async (req, res) => {
     const { search, page = 1, limit = 10 } = req.query;
@@ -53,10 +54,18 @@ export const promoteCard = async (req, res) => {
 
 export const createCard = async (req, res) => {
     const { title, description, icon_name, order_index } = req.body;
+    
     try {
+        // Determine icon URL
+        let iconUrl = null;
+        if (req.file) {
+            // Use uploaded file
+            iconUrl = `/uploads/ente-nadu-icons/${req.file.filename}`;
+        }
+
         const [result] = await pool.query(
-            'INSERT INTO ente_nadu_cards (title, description, icon_name, order_index) VALUES (?, ?, ?, ?)',
-            [title, description, icon_name || 'Info', order_index || 0]
+            'INSERT INTO ente_nadu_cards (title, description, icon_name, icon_url, order_index) VALUES (?, ?, ?, ?, ?)',
+            [title, description, icon_name || 'Info', iconUrl, order_index || 0]
         );
         return successResponse(res, { id: result.insertId }, 'Card created successfully', 201);
     } catch (err) {
@@ -68,10 +77,19 @@ export const createCard = async (req, res) => {
 export const updateCard = async (req, res) => {
     const { id } = req.params;
     const { title, description, icon_name, order_index } = req.body;
+    
     try {
+        // Get current card to preserve icon_url if no new file
+        let iconUrl = req.body.icon_url || null;
+        
+        if (req.file) {
+            // Use new uploaded file
+            iconUrl = `/uploads/ente-nadu-icons/${req.file.filename}`;
+        }
+
         await pool.query(
-            'UPDATE ente_nadu_cards SET title = ?, description = ?, icon_name = ?, order_index = ? WHERE id = ?',
-            [title, description, icon_name, order_index, id]
+            'UPDATE ente_nadu_cards SET title = ?, description = ?, icon_name = ?, icon_url = ?, order_index = ? WHERE id = ?',
+            [title, description, icon_name, iconUrl, order_index, id]
         );
         return successResponse(res, {}, 'Card updated successfully');
     } catch (err) {

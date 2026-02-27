@@ -49,7 +49,7 @@ export const getAchievements = async (req, res) => {
 //  POST /api/achievements  (Auth)
 // ─────────────────────────────────────────────────────────────
 export const createAchievement = async (req, res) => {
-    const { title, description, order_index } = req.body;
+    const { title, description, order_index } = req.body || {};
 
     if (!title?.trim())
         return errorResponse(res, 'title is required.', 400);
@@ -64,9 +64,11 @@ export const createAchievement = async (req, res) => {
             idx = maxIdx + 1;
         }
 
+        const iconUrl = req.file ? `/uploads/ente-nadu-icons/${req.file.filename}` : null;
+
         const [result] = await pool.query(
-            'INSERT INTO achievements (title, description, order_index) VALUES (?, ?, ?)',
-            [title.trim(), description?.trim() || null, idx]
+            'INSERT INTO achievements (title, description, icon_url, order_index) VALUES (?, ?, ?, ?)',
+            [title.trim(), description?.trim() || null, iconUrl, idx]
         );
 
         const [[row]] = await pool.query('SELECT * FROM achievements WHERE id = ?', [result.insertId]);
@@ -82,15 +84,20 @@ export const createAchievement = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const updateAchievement = async (req, res) => {
     const { id } = req.params;
-    const { title, description, order_index } = req.body;
+    const { title, description, order_index } = req.body || {};
 
     if (!title?.trim())
         return errorResponse(res, 'title is required.', 400);
 
     try {
+        const [[existing]] = await pool.query('SELECT * FROM achievements WHERE id = ?', [id]);
+        if (!existing) return errorResponse(res, 'Achievement not found.', 404);
+
+        const iconUrl = req.file ? `/uploads/ente-nadu-icons/${req.file.filename}` : existing.icon_url;
+
         const [result] = await pool.query(
-            'UPDATE achievements SET title = ?, description = ?, order_index = ? WHERE id = ?',
-            [title.trim(), description?.trim() || null, order_index ?? 0, id]
+            'UPDATE achievements SET title = ?, description = ?, icon_url = ?, order_index = ? WHERE id = ?',
+            [title.trim(), description?.trim() || null, iconUrl, order_index ?? 0, id]
         );
         if (!result.affectedRows) return errorResponse(res, 'Achievement not found.', 404);
 

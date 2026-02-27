@@ -32,6 +32,18 @@ const fileFilter = (req, file, cb) => {
     }
 };
 
+// ─── File type filter for icons (SVG, PNG, etc) ──────────────
+const iconFileFilter = (req, file, cb) => {
+    const allowed = [
+        'image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'
+    ];
+    if (allowed.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error(`Icon file type not allowed: ${file.mimetype}`), false);
+    }
+};
+
 // ─── Exports for different size limits ───────────────────────
 export const uploadImage = multer({
     storage,
@@ -66,8 +78,43 @@ export const uploadVisualStoryFiles = multer({
     { name: 'thumbnail', maxCount: 1 }
 ]);
 
+// ─── Icon uploads (for Ente Nadu, etc) ──────────────────────
+const iconStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const iconDir = path.join(uploadDir, 'ente-nadu-icons');
+        if (!fs.existsSync(iconDir)) fs.mkdirSync(iconDir, { recursive: true });
+        cb(null, iconDir);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const name = `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+        cb(null, name);
+    },
+});
+
+export const uploadIcon = multer({
+    storage: iconStorage,
+    fileFilter: iconFileFilter,
+    limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB for icons
+}).single('icon');
+
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>
         multerFn(req, res, (err) => (err ? reject(err) : resolve()))
     );
+
+// Safe wrapper for uploadIcon that ensures req.body exists
+export const safeUploadIcon = (req, res, next) => {
+    uploadIcon(req, res, (err) => {
+        // Ensure req.body is an object
+        if (!req.body) req.body = {};
+        
+        // Log any multer errors but don't fail the request
+        if (err) {
+            console.warn('Multer error (non-fatal):', err.message);
+        }
+        
+        next();
+    });
+};

@@ -18,7 +18,7 @@ export const getAllRecognitions = async (req, res) => {
 // @access  Private (Admin)
 export const createRecognition = async (req, res) => {
     try {
-        const { description, icon_name, order_index } = req.body;
+        const { description, icon_name, order_index } = req.body || {};
 
         if (!description) {
             return res.status(400).json({ success: false, message: 'Description is required' });
@@ -26,16 +26,17 @@ export const createRecognition = async (req, res) => {
 
         const safeIcon = icon_name || 'Activity';
         const safeOrder = order_index || 0;
+        const iconUrl = req.file ? `/uploads/ente-nadu-icons/${req.file.filename}` : null;
 
         const [result] = await db.query(
-            'INSERT INTO recognitions (description, icon_name, order_index) VALUES (?, ?, ?)',
-            [description, safeIcon, safeOrder]
+            'INSERT INTO recognitions (description, icon_name, icon_url, order_index) VALUES (?, ?, ?, ?)',
+            [description, safeIcon, iconUrl, safeOrder]
         );
 
         res.status(201).json({
             success: true,
             message: 'Recognition created successfully',
-            data: { id: result.insertId, description, icon_name: safeIcon, order_index: safeOrder }
+            data: { id: result.insertId, description, icon_name: safeIcon, icon_url: iconUrl, order_index: safeOrder }
         });
     } catch (error) {
         console.error('Error creating recognition:', error);
@@ -49,7 +50,7 @@ export const createRecognition = async (req, res) => {
 export const updateRecognition = async (req, res) => {
     try {
         const { id } = req.params;
-        const { description, icon_name, order_index } = req.body;
+        const { description, icon_name, order_index } = req.body || {};
 
         const [existing] = await db.query('SELECT * FROM recognitions WHERE id = ?', [id]);
         if (existing.length === 0) {
@@ -57,11 +58,14 @@ export const updateRecognition = async (req, res) => {
         }
         const rec = existing[0];
 
+        const iconUrl = req.file ? `/uploads/ente-nadu-icons/${req.file.filename}` : rec.icon_url;
+
         await db.query(
-            'UPDATE recognitions SET description = ?, icon_name = ?, order_index = ? WHERE id = ?',
+            'UPDATE recognitions SET description = ?, icon_name = ?, icon_url = ?, order_index = ? WHERE id = ?',
             [
                 description !== undefined ? description : rec.description,
                 icon_name !== undefined ? icon_name : rec.icon_name,
+                iconUrl,
                 order_index !== undefined ? order_index : rec.order_index,
                 id
             ]
