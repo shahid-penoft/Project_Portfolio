@@ -1,8 +1,14 @@
 import db from '../configs/db.js';
-const [r] = await db.query(
-    `SELECT e.event_name, COUNT(ec.id) as cnt
-     FROM events e LEFT JOIN event_content ec ON ec.event_id=e.id
-     GROUP BY e.id ORDER BY e.id`
-);
-console.log(r.map(x => `${x.cnt >= 4 ? '✅' : '❌'} ${x.event_name.slice(0, 50).padEnd(52)} [${x.cnt} paras]`).join('\n'));
-process.exit(0);
+async function run() {
+    console.log('Adding rich_content to media_posts...');
+    try {
+        await db.query(`ALTER TABLE media_posts ADD COLUMN rich_content LONGTEXT NULL AFTER content`);
+        console.log('✅ rich_content added');
+    } catch (e) {
+        if (e.code === 'ER_DUP_FIELDNAME') console.log('⏭️  rich_content already exists');
+        else throw e;
+    }
+    console.log('🎉 Done!');
+    process.exit(0);
+}
+run().catch(err => { console.error('❌', err.message); process.exit(1); });
