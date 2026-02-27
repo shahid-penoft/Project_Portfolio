@@ -1,6 +1,9 @@
 import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 import { sendEnquiryReceivedEmail, sendAdminEnquiryAlert } from '../utils/email.js';
+import { sendBrevoSMS } from '../configs/sms.js';
+import { sendWhatsAppMessage, sendWhatsAppTemplate } from '../configs/whatsapp.js';
+import { sendVoiceMessage } from '../configs/voice.js';
 
 const CATEGORIES = ['membership', 'local issues', 'submit ideas', 'submit opinions', 'general'];
 
@@ -68,7 +71,7 @@ export const submitContact = async (req, res) => {
 //  GET /api/contact  — Admin: paginated list with filters
 // ─────────────────────────────────────────────────────────────
 export const getEnquiries = async (req, res) => {
-    const { search, category, status } = req.query;
+    const { search, category, status, panchayat_id } = req.query;
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(50, parseInt(req.query.limit, 10) || 15);
     const offset = (page - 1) * limit;
@@ -89,6 +92,10 @@ export const getEnquiries = async (req, res) => {
         if (status) {
             where += ' AND c.status = ?';
             params.push(status);
+        }
+        if (panchayat_id) {
+            where += ' AND c.panchayat_id = ?';
+            params.push(panchayat_id);
         }
 
         const [[{ total }]] = await pool.query(
@@ -170,3 +177,147 @@ export const deleteEnquiry = async (req, res) => {
         return errorResponse(res, 'Failed to delete enquiry.');
     }
 };
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/contact/:id/send-sms  — Admin: Send SMS via Brevo
+// ─────────────────────────────────────────────────────────────
+export const sendSMS = async (req, res) => {
+    const { message } = req.body;
+    const enquiryId = req.params.id;
+
+    if (!message?.trim()) {
+        return errorResponse(res, 'Message content is required.', 400);
+    }
+
+    try {
+        // Fetch enquiry and phone number
+        const [[enquiry]] = await pool.query('SELECT mobile FROM contact_enquiries WHERE id = ?', [enquiryId]);
+        if (!enquiry) return errorResponse(res, 'Enquiry not found.', 404);
+
+        // Ensure phone number has country code (default to India +91)
+        let phone = enquiry.mobile.trim();
+        if (!phone.startsWith('+')) {
+            phone = phone.startsWith('0') ? '+91' + phone.substring(1) : '+91' + phone;
+        }
+
+        // Send SMS via Brevo
+        const result = await sendBrevoSMS(phone, message.trim());
+
+        // Log communication
+        await pool.query(
+            `INSERT INTO enquiry_communications (enquiry_id, type, recipient, message, status) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [enquiryId, 'sms', phone, message.trim(), 'sent']
+        ).catch(e => console.error('[Log SMS]', e));
+
+        return successResponse(res, result.data, 'SMS sent successfully.');
+    } catch (err) {
+        console.error('[sendSMS]', err);
+        return errorResponse(res, err.message || 'Failed to send SMS.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/contact/:id/send-whatsapp  — Admin: Send WhatsApp msg
+// ─────────────────────────────────────────────────────────────
+export const sendWhatsApp = async (req, res) => {
+    const { message } = req.body;
+    const enquiryId = req.params.id;
+
+    if (!message?.trim()) {
+        return errorResponse(res, 'Message content is required.', 400);
+    }
+
+    try {
+        // Fetch enquiry and phone number
+        const [[enquiry]] = await pool.query('SELECT mobile FROM contact_enquiries WHERE id = ?', [enquiryId]);
+        if (!enquiry) return errorResponse(res, 'Enquiry not found.', 404);
+
+        // Format phone number for WhatsApp (no + prefix for API)
+        let phone = enquiry.mobile.trim();
+        if (phone.startsWith('+')) phone = phone.substring(1);
+        if (phone.startsWith('0')) phone = '91' + phone.substring(1);
+        if (!phone.startsWith('91') && phone.length === 10) phone = '91' + phone;
+
+        // Send WhatsApp message
+        const result = await sendWhatsAppMessage(phone, message.trim());
+
+        // Log communication
+        await pool.query(
+            `INSERT INTO enquiry_communications (enquiry_id, type, recipient, message, status) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [enquiryId, 'whatsapp', phone, message.trim(), 'sent']
+        ).catch(e => console.error('[Log WhatsApp]', e));
+
+        return successResponse(res, result.data, 'WhatsApp message sent successfully.');
+    } catch (err) {
+        console.error('[sendWhatsApp]', err);
+        return errorResponse(res, err.message || 'Failed to send WhatsApp message.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/contact/:id/send-voice  — Admin: Send Voice Message
+// ─────────────────────────────────────────────────────────────
+export const sendVoice = async (req, res) => {
+    const { message } = req.body;
+    const enquiryId = req.params.id;
+
+    if (!message?.trim()) {
+        return errorResponse(res, 'Message content is required.', 400);
+    }
+
+    try {
+        // Fetch enquiry and phone number
+        const [[enquiry]] = await pool.query('SELECT mobile FROM contact_enquiries WHERE id = ?', [enquiryId]);
+        if (!enquiry) return errorResponse(res, 'Enquiry not found.', 404);
+
+        // Format phone number
+        let phone = enquiry.mobile.trim();
+        if (!phone.startsWith('+')) {
+            phone = phone.startsWith('0') ? '+91' + phone.substring(1) : '+91' + phone;
+        }
+
+        // Send voice message
+        const result = await sendVoiceMessage(phone, message.trim());
+
+        if (result.success) {
+            // Log communication
+            await pool.query(
+                `INSERT INTO enquiry_communications (enquiry_id, type, recipient, message, status) 
+                 VALUES (?, ?, ?, ?, ?)`,
+                [enquiryId, 'voice', phone, message.trim(), 'sent']
+            ).catch(e => console.error('[Log Voice]', e));
+
+            return successResponse(res, result.data, 'Voice message sent successfully.');
+        } else {
+            return errorResponse(res, result.error || 'Voice service not available.', 503);
+        }
+    } catch (err) {
+        console.error('[sendVoice]', err);
+        return errorResponse(res, err.message || 'Failed to send voice message.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  GET /api/contact/:id/communications  — Admin: Get message logs
+// ─────────────────────────────────────────────────────────────
+export const getCommunications = async (req, res) => {
+    const enquiryId = req.params.id;
+
+    try {
+        const [communications] = await pool.query(
+            `SELECT * FROM enquiry_communications 
+             WHERE enquiry_id = ? 
+             ORDER BY created_at DESC`,
+            [enquiryId]
+        );
+
+        return successResponse(res, communications, 'Communications fetched.');
+    } catch (err) {
+        console.error('[getCommunications]', err);
+        // If table doesn't exist, return empty array
+        return successResponse(res, [], 'Communications fetched.');
+    }
+};
+

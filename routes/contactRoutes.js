@@ -6,6 +6,10 @@ import {
     getEnquiryById,
     updateEnquiryStatus,
     deleteEnquiry,
+    sendSMS,
+    sendWhatsApp,
+    sendVoice,
+    getCommunications,
 } from '../controllers/contactController.js';
 
 const router = Router();
@@ -19,5 +23,11 @@ router.get('/', getEnquiries);
 router.get('/:id', getEnquiryById);
 router.patch('/:id/status', updateEnquiryStatus);
 router.delete('/:id', deleteEnquiry);
+
+// ─── Communication Routes ──────────────────────────────────────
+router.post('/:id/send-sms', sendSMS);
+router.post('/:id/send-whatsapp', sendWhatsApp);
+router.post('/:id/send-voice', sendVoice);
+router.get('/:id/communications', getCommunications);
 
 export default router;
