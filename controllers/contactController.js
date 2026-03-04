@@ -612,55 +612,109 @@ export const deleteAutomation = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const getEnquiryStats = async (req, res) => {
     try {
+        const { panchayat_id, ward_id } = req.query;
+
+        const conditions = [];
+        const params = [];
+
+        if (panchayat_id) {
+            conditions.push("c.panchayat_id = ?");
+            params.push(panchayat_id);
+        }
+        if (ward_id) {
+            conditions.push("c.ward_id = ?");
+            params.push(ward_id);
+        }
+
+        const buildWhere = (base, extra = []) => {
+            const all = [...conditions, ...extra];
+            return all.length ? `${base} WHERE ${all.join(' AND ')}` : base;
+        };
+
+        const buildAnd = (base, extra = []) => {
+            const all = [...conditions, ...extra];
+            return all.length ? `${base} AND ${all.join(' AND ')}` : base;
+        };
+
         // Core status counts
         const [[totals]] = await pool.query(
-            `SELECT
-                COUNT(*) AS total,
-                SUM(status = 'new')      AS new_count,
-                SUM(status = 'read')     AS read_count,
-                SUM(status = 'resolved') AS resolved_count,
-                SUM(status != 'resolved' AND created_at < NOW() - INTERVAL 72 HOUR) AS overdue_count
-             FROM contact_enquiries`
+            buildWhere(
+                `SELECT
+                    COUNT(*) AS total,
+                    SUM(c.status = 'new')      AS new_count,
+                    SUM(c.status = 'read')     AS read_count,
+                    SUM(c.status = 'resolved') AS resolved_count,
+                    SUM(c.status != 'resolved' AND c.created_at < NOW() - INTERVAL 72 HOUR) AS overdue_count
+                 FROM contact_enquiries c`
+            ),
+            params
         );
 
         // Average resolution time (hours) for resolved enquiries
         const [[resolution]] = await pool.query(
-            `SELECT ROUND(AVG(TIMESTAMPDIFF(HOUR, created_at, updated_at)), 1) AS avg_hours
-             FROM contact_enquiries
-             WHERE status = 'resolved'`
+            buildWhere(
+                `SELECT ROUND(AVG(TIMESTAMPDIFF(HOUR, c.created_at, c.updated_at)), 1) AS avg_hours
+                 FROM contact_enquiries c`,
+                ["c.status = 'resolved'"]
+            ),
+            params
         );
 
         // By category breakdown
         const [byCategory] = await pool.query(
-            `SELECT category, COUNT(*) AS count
-             FROM contact_enquiries
-             GROUP BY category
-             ORDER BY count DESC`
+            buildWhere(
+                `SELECT c.category, COUNT(*) AS count
+                 FROM contact_enquiries c`
+            ) + ' GROUP BY c.category ORDER BY count DESC',
+            params
         );
 
         // Last 7 days daily trend
         const [weeklyTrend] = await pool.query(
-            `SELECT
-                DATE(created_at) AS day,
-                COUNT(*) AS count
-             FROM contact_enquiries
-             WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
-             GROUP BY DATE(created_at)
-             ORDER BY day ASC`
+            buildAnd(
+                `SELECT
+                    DATE(c.created_at) AS day,
+                    COUNT(*) AS count
+                 FROM contact_enquiries c
+                 WHERE c.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)`
+            ) + ' GROUP BY DATE(c.created_at) ORDER BY day ASC',
+            params
         );
 
-        // Top panchayats by volume
-        const [byPanchayat] = await pool.query(
-            `SELECT lb.name AS panchayat, COUNT(*) AS total,
-                    SUM(c.status = 'resolved') AS resolved,
-                    SUM(c.status != 'resolved' AND c.created_at < NOW() - INTERVAL 72 HOUR) AS overdue
-             FROM contact_enquiries c
-             LEFT JOIN local_bodies lb ON lb.id = c.panchayat_id
-             WHERE c.panchayat_id IS NOT NULL
-             GROUP BY c.panchayat_id, lb.name
-             ORDER BY total DESC
-             LIMIT 10`
-        );
+        let byPanchayat = [];
+        let byWard = [];
+
+        if (panchayat_id) {
+            // Geographic breakdown by Ward if Local Body is selected
+            const [rows] = await pool.query(
+                `SELECT w.place_name AS ward, COUNT(*) AS total,
+                        SUM(c.status = 'resolved') AS resolved,
+                        SUM(c.status != 'resolved' AND c.created_at < NOW() - INTERVAL 72 HOUR) AS overdue
+                 FROM contact_enquiries c
+                 LEFT JOIN local_body_wards w ON w.id = c.ward_id
+                 WHERE c.panchayat_id = ?
+                 ${ward_id ? 'AND c.ward_id = ?' : ''}
+                 GROUP BY c.ward_id, w.place_name
+                 ORDER BY total DESC
+                 LIMIT 15`,
+                ward_id ? [panchayat_id, ward_id] : [panchayat_id]
+            );
+            byWard = rows;
+        } else {
+            // Geographic breakdown by Local Body otherwise
+            const [rows] = await pool.query(
+                `SELECT lb.name AS panchayat, COUNT(*) AS total,
+                        SUM(c.status = 'resolved') AS resolved,
+                        SUM(c.status != 'resolved' AND c.created_at < NOW() - INTERVAL 72 HOUR) AS overdue
+                 FROM contact_enquiries c
+                 LEFT JOIN local_bodies lb ON lb.id = c.panchayat_id
+                 WHERE c.panchayat_id IS NOT NULL
+                 GROUP BY c.panchayat_id, lb.name
+                 ORDER BY total DESC
+                 LIMIT 10`
+            );
+            byPanchayat = rows;
+        }
 
         return successResponse(res, {
             data: {
@@ -676,6 +730,8 @@ export const getEnquiryStats = async (req, res) => {
                 byCategory,
                 weeklyTrend,
                 byPanchayat,
+                byWard,
+                activeFilters: { panchayat_id, ward_id }
             }
         }, 'Stats fetched.');
     } catch (err) {
