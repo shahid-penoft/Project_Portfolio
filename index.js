@@ -28,6 +28,7 @@ import manifestoDevGoalsRoutes from './routes/manifestoDevGoalsRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
 import campaignRoutes from './routes/campaignRoutes.js';
+import peopleRoutes from './routes/peopleRoutes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -92,6 +93,7 @@ app.use('/api/manifesto/development-goals', manifestoDevGoalsRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/people', peopleRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>

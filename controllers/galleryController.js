@@ -25,27 +25,45 @@ export const getGalleryImages = async (req, res) => {
     try {
         const { search, event_type_id } = req.query;
 
-        let where = `WHERE em.media_type = 'photo'`;
         const params = [];
+        const mpParams = [];
 
-        if (event_type_id) { where += ' AND e.event_type_id = ?'; params.push(event_type_id); }
-        if (search) { where += ' AND (e.event_name LIKE ? OR em.caption LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+        let emWhere = `WHERE em.media_type = 'photo'`;
+        if (event_type_id) { emWhere += ' AND e.event_type_id = ?'; params.push(event_type_id); }
+        if (search) { emWhere += ' AND (e.event_name LIKE ? OR em.caption LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
 
-        const [rows] = await db.query(
-            `SELECT
-         em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at,
-         e.id         AS event_id,
-         e.event_name,
-         e.event_date,
-         et.id        AS event_type_id,
-         et.type_name AS event_type
-       FROM event_media em
-       JOIN events      e  ON  e.id = em.event_id
-       LEFT JOIN event_types et ON et.id  = e.event_type_id
-       ${where}
-       ORDER BY et.type_name ASC, e.event_date DESC`,
-            params
-        );
+        let mpWhere = 'WHERE mp.video_url IS NULL AND mp.thumbnail_url IS NOT NULL';
+        // Note: event_type_id doesn't apply directly to media_posts in the same way, 
+        // but we can treat 'Media Centre' as a type.
+        if (search) { mpWhere += ' AND mp.title LIKE ?'; mpParams.push(`%${search}%`); }
+
+        const query = `
+            SELECT * FROM (
+                SELECT
+                    em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at,
+                    e.id         AS event_id,
+                    e.event_name,
+                    e.event_date,
+                    et.id        AS event_type_id,
+                    et.type_name AS event_type
+                FROM event_media em
+                JOIN events      e  ON  e.id = em.event_id
+                LEFT JOIN event_types et ON et.id  = e.event_type_id
+                ${emWhere}
+                
+                UNION ALL
+                
+                SELECT
+                    mp.id, mp.thumbnail_url AS file_url, mp.thumbnail_url, mp.title AS caption, mp.published_at AS created_at,
+                    NULL AS event_id, mp.title AS event_name, mp.published_at AS event_date,
+                    999 AS event_type_id, 'Media Centre' AS event_type
+                FROM media_posts mp
+                ${mpWhere}
+            ) AS combined
+            ORDER BY event_type ASC, event_date DESC
+        `;
+
+        const [rows] = await db.query(query, [...params, ...mpParams]);
 
         // Group by event type
         const grouped = {};
@@ -77,27 +95,43 @@ export const getGalleryVideos = async (req, res) => {
     try {
         const { search, event_type_id } = req.query;
 
-        let where = `WHERE em.media_type = 'video'`;
         const params = [];
+        const mpParams = [];
 
-        if (event_type_id) { where += ' AND e.event_type_id = ?'; params.push(event_type_id); }
-        if (search) { where += ' AND (e.event_name LIKE ? OR em.caption LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+        let emWhere = `WHERE em.media_type = 'video'`;
+        if (event_type_id) { emWhere += ' AND e.event_type_id = ?'; params.push(event_type_id); }
+        if (search) { emWhere += ' AND (e.event_name LIKE ? OR em.caption LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
 
-        const [rows] = await db.query(
-            `SELECT
-         em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at,
-         e.id         AS event_id,
-         e.event_name,
-         e.event_date,
-         et.id        AS event_type_id,
-         et.type_name AS event_type
-       FROM event_media em
-       JOIN events      e  ON  e.id = em.event_id
-       LEFT JOIN event_types et ON et.id  = e.event_type_id
-       ${where}
-       ORDER BY et.type_name ASC, e.event_date DESC`,
-            params
-        );
+        let mpWhere = 'WHERE mp.video_url IS NOT NULL';
+        if (search) { mpWhere += ' AND mp.title LIKE ?'; mpParams.push(`%${search}%`); }
+
+        const query = `
+            SELECT * FROM (
+                SELECT
+                    em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at,
+                    e.id         AS event_id,
+                    e.event_name,
+                    e.event_date,
+                    et.id        AS event_type_id,
+                    et.type_name AS event_type
+                FROM event_media em
+                JOIN events      e  ON  e.id = em.event_id
+                LEFT JOIN event_types et ON et.id  = e.event_type_id
+                ${emWhere}
+
+                UNION ALL
+
+                SELECT
+                    mp.id, mp.video_url AS file_url, mp.thumbnail_url, mp.title AS caption, mp.published_at AS created_at,
+                    NULL AS event_id, mp.title AS event_name, mp.published_at AS event_date,
+                    999 AS event_type_id, 'Media Centre' AS event_type
+                FROM media_posts mp
+                ${mpWhere}
+            ) AS combined
+            ORDER BY event_type ASC, event_date DESC
+        `;
+
+        const [rows] = await db.query(query, [...params, ...mpParams]);
 
         // Group by event type
         const grouped = {};
@@ -209,7 +243,7 @@ export const deleteUploadedFile = (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 //  GET /api/gallery/admin/media
-//  Auth — flat paginated list from event_media, optional ?type=photo|video & ?search
+//  Auth — flat paginated list from event_media & media_posts
 // ─────────────────────────────────────────────────────────────
 export const listAdminMedia = async (req, res) => {
     try {
@@ -218,35 +252,63 @@ export const listAdminMedia = async (req, res) => {
         const limit = Math.min(100, parseInt(req.query.limit, 10) || 24);
         const offset = (page - 1) * limit;
 
-        let where = 'WHERE 1=1';
         const params = [];
+        const mpParams = [];
 
+        let emWhere = 'WHERE 1=1';
         if (type === 'photo' || type === 'video') {
-            where += ' AND em.media_type = ?';
+            emWhere += ' AND em.media_type = ?';
             params.push(type);
         }
         if (search) {
             const like = `%${search}%`;
-            where += ' AND (e.event_name LIKE ? OR em.caption LIKE ?)';
+            emWhere += ' AND (e.event_name LIKE ? OR em.caption LIKE ?)';
             params.push(like, like);
         }
 
-        const [[{ total }]] = await db.query(
-            `SELECT COUNT(*) AS total FROM event_media em JOIN events e ON e.id = em.event_id ${where}`,
-            params
-        );
+        let mpWhere = 'WHERE (mp.thumbnail_url IS NOT NULL OR mp.video_url IS NOT NULL)';
+        if (type === 'photo') {
+            mpWhere += ' AND mp.video_url IS NULL AND mp.thumbnail_url IS NOT NULL';
+        } else if (type === 'video') {
+            mpWhere += ' AND mp.video_url IS NOT NULL';
+        }
+        if (search) {
+            const like = `%${search}%`;
+            mpWhere += ' AND mp.title LIKE ?';
+            mpParams.push(like);
+        }
 
-        const [rows] = await db.query(
-            `SELECT
-                em.id, em.media_type AS type, em.file_url, em.thumbnail_url, em.caption, em.created_at,
-                e.id AS event_id, e.event_name, e.event_date
-             FROM event_media em
-             JOIN events e ON e.id = em.event_id
-             ${where}
-             ORDER BY em.created_at DESC
-             LIMIT ? OFFSET ?`,
-            [...params, limit, offset]
-        );
+        const countQuery = `
+            SELECT (
+                SELECT COUNT(*) FROM event_media em JOIN events e ON e.id = em.event_id ${emWhere}
+            ) + (
+                SELECT COUNT(*) FROM media_posts mp ${mpWhere}
+            ) AS total
+        `;
+        const [[{ total }]] = await db.query(countQuery, [...params, ...mpParams]);
+
+        const query = `
+            SELECT * FROM (
+                SELECT
+                    em.id, em.media_type AS type, em.file_url, em.thumbnail_url, em.caption, em.created_at,
+                    e.id AS event_id, e.event_name, e.event_date, 'event' AS source
+                FROM event_media em
+                JOIN events e ON e.id = em.event_id
+                ${emWhere}
+                UNION ALL
+                SELECT
+                    mp.id, IF(mp.video_url IS NOT NULL, 'video', 'photo') AS type,
+                    COALESCE(mp.video_url, mp.thumbnail_url) AS file_url,
+                    mp.thumbnail_url, mp.title AS caption, mp.published_at AS created_at,
+                    NULL AS event_id, mp.title AS event_name, mp.published_at AS event_date, 'media_centre' AS source
+                FROM media_posts mp
+                ${mpWhere}
+            ) AS combined
+            ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
+        `;
+
+        const [rows] = await db.query(query, [...params, ...mpParams, limit, offset]);
 
         return successResponse(res, {
             data: rows,
@@ -260,18 +322,41 @@ export const listAdminMedia = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 //  DELETE /api/gallery/admin/media/:id
-//  Auth — removes a row from event_media and deletes the file from disk
+//  Auth — removes a row from event_media or media_posts (if source provided)
 // ─────────────────────────────────────────────────────────────
 export const deleteEventMedia = async (req, res) => {
     try {
         const { id } = req.params;
+        const { source } = req.query;
+
+        if (source === 'media_centre') {
+            const [[row]] = await db.query('SELECT thumbnail_url, video_url FROM media_posts WHERE id = ?', [id]);
+            if (!row) return errorResponse(res, 'Media post not found.', 404);
+
+            // For media posts, we usually don't delete the post itself when "deleting media"
+            // unless the context is purely gallery management.
+            // Requirement says "removes a row from event_media and deletes the file from disk".
+            // For media_posts, it's a bit different because the "media" IS the post or its primary attachment.
+            // If we are in the gallery, "deleting" it probably means removing the thumbnail/video or the post.
+            // Let's assume we delete the URLs from the post to "remove it from gallery".
+            await db.query('UPDATE media_posts SET thumbnail_url = NULL, video_url = NULL WHERE id = ?', [id]);
+            return successResponse(res, { id }, 'Media post removed from gallery.');
+        }
+
+        // Default: event_media
         const [[row]] = await db.query('SELECT * FROM event_media WHERE id = ?', [id]);
         if (!row) return errorResponse(res, 'Media not found.', 404);
 
         // Delete physical file
-        if (row.file_url?.startsWith('/uploads/')) {
-            const filePath = path.join(UPLOADS_DIR, path.basename(row.file_url));
+        if (row.file_url?.startsWith('/uploads/') || row.file_url?.startsWith('uploads/')) {
+            const filename = path.basename(row.file_url);
+            const filePath = path.join(UPLOADS_DIR, filename);
             try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_) { }
+        }
+        if (row.thumbnail_url?.startsWith('/uploads/') || row.thumbnail_url?.startsWith('uploads/')) {
+            const thumbName = path.basename(row.thumbnail_url);
+            const thumbPath = path.join(UPLOADS_DIR, thumbName);
+            try { if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath); } catch (_) { }
         }
 
         await db.query('DELETE FROM event_media WHERE id = ?', [id]);
@@ -282,30 +367,7 @@ export const deleteEventMedia = async (req, res) => {
     }
 };
 
-// ─── Shared helper ─────────────────────────────────────────────────────────
-const buildGalleryQuery = (mediaType, extraConditions = [], extraParams = []) => {
-    const type = mediaType === 'photo' ? 'photo' : 'video';
-    const conditions = [`em.media_type = '${type}'`, ...extraConditions];
-    const where = `WHERE ${conditions.join(' AND ')}`;
-    const sql = `
-        SELECT
-            em.id, em.file_url, em.thumbnail_url, em.caption, em.media_type, em.created_at,
-            e.id         AS event_id,
-            e.event_name,
-            e.event_date,
-            YEAR(e.event_date) AS year,
-            et.type_name AS event_type,
-            lb.name      AS local_body_name,
-            s.name       AS sector_name
-        FROM event_media em
-        JOIN   events      e  ON  e.id = em.event_id
-        LEFT JOIN event_types et ON et.id = e.event_type_id
-        LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
-        LEFT JOIN sectors      s  ON  s.id = e.sector_id
-        ${where}
-        ORDER BY e.event_date DESC, em.id DESC`;
-    return { sql, params: extraParams };
-};
+
 
 const paginatedGalleryResponse = async (res, mediaType, conditions, params, req, label) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -313,15 +375,74 @@ const paginatedGalleryResponse = async (res, mediaType, conditions, params, req,
     const offset = (page - 1) * limit;
     const search = req.query.search || req.query.q;
 
-    if (search) {
-        conditions.push('e.event_name LIKE ?');
-        params.push(`%${search}%`);
-    }
+    const type = mediaType === 'photo' ? 'photo' : 'video';
 
-    const { sql, params: allParams } = buildGalleryQuery(mediaType, conditions, params);
+    // Event Conditions
+    const emConditions = [`em.media_type = '${type}'`, ...conditions];
+    const emParams = [...params];
+    if (search) {
+        emConditions.push('e.event_name LIKE ?');
+        emParams.push(`%${search}%`);
+    }
+    const emWhere = `WHERE ${emConditions.join(' AND ')}`;
+
+    // Media Centre Conditions
+    const mpConditions = [];
+    if (type === 'photo') {
+        mpConditions.push('mp.video_url IS NULL AND mp.thumbnail_url IS NOT NULL');
+    } else {
+        mpConditions.push('mp.video_url IS NOT NULL');
+    }
+    const mpParams = [];
+    if (search) {
+        mpConditions.push('mp.title LIKE ?');
+        mpParams.push(`%${search}%`);
+    }
+    // If filtering by LB or Sector, and Media Centre doesn't have them, 
+    // we should probably empty the MP results or exclude them.
+    // For now, if 'conditions' (like local_body_id) are present, we skip MP.
+    const isFiltered = conditions.some(c => c.includes('local_body_id') || c.includes('sector_id') || c.includes('YEAR(e.event_date)'));
+    const mpWhere = (!isFiltered && mpConditions.length) ? `WHERE ${mpConditions.join(' AND ')}` : 'WHERE 1=0';
+
+    const sql = `
+        SELECT * FROM (
+            SELECT
+                em.id, em.file_url, em.thumbnail_url, em.caption, em.media_type AS type, em.created_at,
+                e.id         AS event_id,
+                e.event_name,
+                e.event_date,
+                YEAR(e.event_date) AS year,
+                et.type_name AS event_type,
+                lb.name      AS local_body_name,
+                s.name       AS sector_name,
+                'event'      AS source
+            FROM event_media em
+            JOIN   events      e  ON  e.id = em.event_id
+            LEFT JOIN event_types et ON et.id = e.event_type_id
+            LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
+            LEFT JOIN sectors      s  ON  s.id = e.sector_id
+            ${emWhere}
+
+            UNION ALL
+
+            SELECT
+                mp.id, COALESCE(mp.video_url, mp.thumbnail_url) AS file_url, mp.thumbnail_url, mp.title AS caption,
+                IF(mp.video_url IS NOT NULL, 'video', 'photo') AS type, mp.published_at AS created_at,
+                NULL AS event_id, mp.title AS event_name, mp.published_at AS event_date,
+                YEAR(mp.published_at) AS year,
+                'Media Centre' AS event_type,
+                NULL AS local_body_name,
+                NULL AS sector_name,
+                'media_centre' AS source
+            FROM media_posts mp
+            ${mpWhere}
+        ) AS combined
+        ORDER BY event_date DESC, id DESC`;
+
+    const allParams = [...emParams, ...mpParams];
 
     // Count total
-    const countSql = sql.replace(/SELECT[\s\S]+?FROM/, 'SELECT COUNT(*) AS total FROM');
+    const countSql = `SELECT COUNT(*) AS total FROM (${sql}) AS c`;
     const [[{ total }]] = await db.query(countSql, allParams);
 
     const [rows] = await db.query(`${sql} LIMIT ? OFFSET ?`, [...allParams, limit, offset]);

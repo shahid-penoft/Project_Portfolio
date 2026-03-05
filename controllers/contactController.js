@@ -171,6 +171,21 @@ export const getEnquiries = async (req, res) => {
             params.push(panchayat_id);
         }
 
+        // Dynamic Custom Field Filters: cf_{fieldId}={value}
+        Object.keys(req.query).forEach(key => {
+            if (key.startsWith('cf_')) {
+                const fieldId = key.split('_')[1];
+                const value = req.query[key];
+                if (value && value !== 'all') {
+                    where += ` AND EXISTS (
+                        SELECT 1 FROM enquiry_custom_values cv 
+                        WHERE cv.enquiry_id = c.id AND cv.field_id = ? AND cv.field_value LIKE ?
+                    )`;
+                    params.push(fieldId, `%${value}%`);
+                }
+            }
+        });
+
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) AS total FROM contact_enquiries c ${where}`, params
         );

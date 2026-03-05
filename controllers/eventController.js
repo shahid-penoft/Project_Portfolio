@@ -2,7 +2,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import db from '../configs/db.js';
-import { uploadMedia, uploadMediaFields, uploadImage, runMulter } from '../configs/multer.js';
+import { uploadMedia, uploadMediaFields, uploadImage, uploadThumbnail, runMulter } from '../configs/multer.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -381,11 +381,8 @@ export const addEventMedia = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const addYouTubeMedia = async (req, res) => {
     try {
-        // Accept optional thumbnail image
-        const thumbUpload = uploadImage.single('thumbnail');
-        await new Promise((resolve, reject) =>
-            thumbUpload(req, res, (err) => (err ? reject(err) : resolve()))
-        );
+        // Accept optional thumbnail image (max 5MB, single file named 'thumbnail')
+        await runMulter(uploadThumbnail, req, res);
 
         const { id } = req.params;
         const { youtube_url, caption } = req.body;
