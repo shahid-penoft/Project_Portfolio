@@ -71,8 +71,8 @@ app.get('/health', (_, res) =>
 
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
-app.use('/api/local-bodies', localBodyRoutes);
 app.use('/api/local-bodies/:localBodyId/wards', wardRoutes);
+app.use('/api/local-bodies', localBodyRoutes);
 app.get('/api/wards/by-name/:name', getWardsByLocalBodyName);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/event-types', eventTypeRoutes);
