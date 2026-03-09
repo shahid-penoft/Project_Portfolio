@@ -110,7 +110,10 @@ export const uploadIcon = multer({
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>
-        multerFn(req, res, (err) => (err ? reject(err) : resolve()))
+        multerFn(req, res, (err) => {
+            if (!req.body) req.body = {};
+            return err ? reject(err) : resolve();
+        })
     );
 
 // Safe wrapper for uploadIcon that ensures req.body exists
