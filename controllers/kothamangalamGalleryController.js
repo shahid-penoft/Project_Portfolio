@@ -5,6 +5,34 @@ import fs from 'fs';
 import path from 'path';
 
 // ─────────────────────────────────────────────────────────────
+//  Public: GET /api/kothamangalam-gallery  (All)
+// ─────────────────────────────────────────────────────────────
+export const getKothamangalamAll = async (req, res) => {
+    try {
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const limit = Math.min(100, parseInt(req.query.limit, 10) || 24);
+        const offset = (page - 1) * limit;
+
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total FROM kothamangalam_gallery`
+        );
+
+        const [rows] = await db.query(
+            `SELECT * FROM kothamangalam_gallery ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+            [limit, offset]
+        );
+
+        return successResponse(res, {
+            data: rows,
+            pagination: { total, page, limit, totalPages: Math.ceil(total / limit) }
+        }, 'All gallery items fetched successfully.');
+    } catch (err) {
+        console.error('[getKothamangalamAll]', err);
+        return errorResponse(res, 'Server error fetching gallery items.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
 //  Public: GET /api/kothamangalam-gallery/images
 // ─────────────────────────────────────────────────────────────
 export const getKothamangalamImages = async (req, res) => {

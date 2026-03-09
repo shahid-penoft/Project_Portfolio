@@ -1,6 +1,7 @@
 import express from 'express';
 import { verifyToken } from '../middlewares/auth.js';
 import {
+    getKothamangalamAll,
     getKothamangalamImages,
     getKothamangalamVideos,
     getAllAdminGallery,
@@ -12,6 +13,7 @@ import {
 const router = express.Router();
 
 // ── Public Routes ───────────────────────────────────────────
+router.get('/', getKothamangalamAll);
 router.get('/images', getKothamangalamImages);
 router.get('/videos', getKothamangalamVideos);
 
