@@ -8,7 +8,7 @@ import path from 'path';
 // @access  Public
 export const getAllTimelines = async (req, res) => {
     try {
-        const [timelines] = await db.query('SELECT * FROM timelines ORDER BY year DESC, created_at DESC');
+        const [timelines] = await db.query('SELECT * FROM timelines ORDER BY year ASC, created_at ASC');
         res.status(200).json({ success: true, count: timelines.length, data: timelines });
     } catch (error) {
         console.error('Error fetching timelines:', error);
