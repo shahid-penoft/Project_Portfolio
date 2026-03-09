@@ -443,6 +443,7 @@ CREATE TABLE IF NOT EXISTS impact_metrics (
 CREATE TABLE IF NOT EXISTS kothamangalam_gallery (
     id            INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
     media_type    ENUM('photo', 'video') NOT NULL,
+    video_type    ENUM('upload', 'url') NOT NULL DEFAULT 'upload',
     title         VARCHAR(255)    NOT NULL,
     description   TEXT            DEFAULT NULL,
     file_url      VARCHAR(500)    NOT NULL,
