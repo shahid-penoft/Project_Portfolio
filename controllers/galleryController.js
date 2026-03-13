@@ -577,16 +577,16 @@ export const getImagesBySource = async (req, res) => {
 
             const query = `
                 SELECT 
-                    em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at,
+                    em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at, em.media_type,
                     e.id AS event_id, e.event_name, e.slug
                 FROM event_media em
                 JOIN events e ON e.id = em.event_id
-                WHERE em.media_type = 'photo' AND ${whereClause}
+                WHERE em.media_type IN ('photo', 'video') AND ${whereClause}
                 ORDER BY em.created_at DESC
             `;
 
             const [rows] = await db.query(query, params);
-            return successResponse(res, { data: rows }, 'Images fetched successfully by event.');
+            return successResponse(res, { data: rows }, 'Media fetched successfully by event.');
 
         } else if (type === 'project') {
             const params = [];
@@ -624,13 +624,14 @@ export const getImagesBySource = async (req, res) => {
                 id: `proj_${project.id}_${index}`,
                 file_url: img,
                 thumbnail_url: img,
+                media_type: 'photo',
                 caption: project.title,
                 project_id: project.id,
                 project_name: project.title,
                 slug: project.slug
             }));
 
-            return successResponse(res, { data: formattedImages }, 'Images fetched successfully by project.');
+            return successResponse(res, { data: formattedImages }, 'Media fetched successfully by project.');
 
         } else if (type === 'post') {
             const params = [];
@@ -644,18 +645,19 @@ export const getImagesBySource = async (req, res) => {
                 params.push(name);
             }
 
-            const query = `SELECT id, title, slug, thumbnail_url, published_at FROM media_posts WHERE ${whereClause} LIMIT 1`;
+            const query = `SELECT id, title, slug, thumbnail_url, video_url, published_at FROM media_posts WHERE ${whereClause} LIMIT 1`;
             const [rows] = await db.query(query, params);
 
-            if (!rows.length || !rows[0].thumbnail_url) {
-                return successResponse(res, { data: [] }, 'No post found or post has no thumbnail.');
+            if (!rows.length || (!rows[0].thumbnail_url && !rows[0].video_url)) {
+                return successResponse(res, { data: [] }, 'No post found or post has no media.');
             }
 
             const post = rows[0];
             const formattedImages = [{
                 id: `post_${post.id}`,
-                file_url: post.thumbnail_url,
+                file_url: post.video_url || post.thumbnail_url,
                 thumbnail_url: post.thumbnail_url,
+                media_type: post.video_url ? 'video' : 'photo',
                 caption: post.title,
                 post_id: post.id,
                 post_name: post.title,
@@ -663,7 +665,7 @@ export const getImagesBySource = async (req, res) => {
                 created_at: post.published_at
             }];
 
-            return successResponse(res, { data: formattedImages }, 'Images fetched successfully by post.');
+            return successResponse(res, { data: formattedImages }, 'Media fetched successfully by post.');
 
         } else {
             return errorResponse(res, 'Invalid type parameter. Use event, project, or post.', 400);

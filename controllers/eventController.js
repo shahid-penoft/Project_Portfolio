@@ -67,8 +67,7 @@ export const getAllEvents = async (req, res) => {
               et.id as eventtype_id,
               et.type_name,
               lb.name AS local_body_name,
-              s.name  AS sector_name,
-              (SELECT file_url FROM event_media em WHERE em.event_id = e.id AND em.media_type = 'photo' LIMIT 1) AS cover_image
+              s.name  AS sector_name
        FROM events e
        LEFT JOIN event_types  et ON et.id = e.event_type_id
        LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
@@ -79,8 +78,45 @@ export const getAllEvents = async (req, res) => {
             [...params, limit, offset]
         );
 
+        // Fetch media for these events
+        let eventsWithMedia = rows;
+        if (rows.length > 0) {
+            const eventIds = rows.map(r => r.id);
+            const [media] = await db.query(
+                `SELECT id, event_id, media_type, file_url, thumbnail_url, caption 
+                 FROM event_media 
+                 WHERE event_id IN (?)
+                 ORDER BY created_at ASC`,
+                [eventIds]
+            );
+
+            // Group media by event_id
+            const photosByEvent = {};
+            const videosByEvent = {};
+            media.forEach(m => {
+                if (m.media_type === 'photo') {
+                    if (!photosByEvent[m.event_id]) photosByEvent[m.event_id] = [];
+                    photosByEvent[m.event_id].push(m);
+                } else if (m.media_type === 'video') {
+                    if (!videosByEvent[m.event_id]) videosByEvent[m.event_id] = [];
+                    videosByEvent[m.event_id].push(m);
+                }
+            });
+
+            eventsWithMedia = rows.map(event => {
+                const eventPhotos = photosByEvent[event.id] || [];
+                const eventVideos = videosByEvent[event.id] || [];
+                return {
+                    ...event,
+                    cover_image: eventPhotos.length > 0 ? eventPhotos[0].file_url : null,
+                    photos: eventPhotos,
+                    videos: eventVideos
+                };
+            });
+        }
+
         return successResponse(res, {
-            data: rows,
+            data: eventsWithMedia,
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
         }, 'Events fetched successfully.');
     } catch (err) {
@@ -119,8 +155,7 @@ export const getEventsByStatus = async (req, res) => {
             `SELECT e.*,
               et.type_name,
               lb.name AS local_body_name,
-              s.name  AS sector_name,
-              (SELECT file_url FROM event_media em WHERE em.event_id = e.id AND em.media_type = 'photo' LIMIT 1) AS cover_image
+              s.name  AS sector_name
        FROM events e
        LEFT JOIN event_types  et ON et.id = e.event_type_id
        LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
@@ -131,8 +166,45 @@ export const getEventsByStatus = async (req, res) => {
             [status, limit, offset]
         );
 
+        // Fetch media for these events
+        let eventsWithMedia = rows;
+        if (rows.length > 0) {
+            const eventIds = rows.map(r => r.id);
+            const [media] = await db.query(
+                `SELECT id, event_id, media_type, file_url, thumbnail_url, caption 
+                 FROM event_media 
+                 WHERE event_id IN (?)
+                 ORDER BY created_at ASC`,
+                [eventIds]
+            );
+
+            // Group media by event_id
+            const photosByEvent = {};
+            const videosByEvent = {};
+            media.forEach(m => {
+                if (m.media_type === 'photo') {
+                    if (!photosByEvent[m.event_id]) photosByEvent[m.event_id] = [];
+                    photosByEvent[m.event_id].push(m);
+                } else if (m.media_type === 'video') {
+                    if (!videosByEvent[m.event_id]) videosByEvent[m.event_id] = [];
+                    videosByEvent[m.event_id].push(m);
+                }
+            });
+
+            eventsWithMedia = rows.map(event => {
+                const eventPhotos = photosByEvent[event.id] || [];
+                const eventVideos = videosByEvent[event.id] || [];
+                return {
+                    ...event,
+                    cover_image: eventPhotos.length > 0 ? eventPhotos[0].file_url : null,
+                    photos: eventPhotos,
+                    videos: eventVideos
+                };
+            });
+        }
+
         return successResponse(res, {
-            data: rows,
+            data: eventsWithMedia,
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
         }, `${status.charAt(0).toUpperCase() + status.slice(1)} events fetched successfully.`);
     } catch (err) {
@@ -268,8 +340,7 @@ export const getEventsBySectorName = async (req, res) => {
             `SELECT e.*,
               et.type_name,
               lb.name AS local_body_name,
-              s.name  AS sector_name,
-              (SELECT file_url FROM event_media em WHERE em.event_id = e.id AND em.media_type = 'photo' LIMIT 1) AS cover_image
+              s.name  AS sector_name
        FROM events e
        LEFT JOIN event_types  et ON et.id = e.event_type_id
        LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
@@ -280,8 +351,45 @@ export const getEventsBySectorName = async (req, res) => {
             [sectorName, limit, offset]
         );
 
+        // Fetch media for these events
+        let eventsWithMedia = rows;
+        if (rows.length > 0) {
+            const eventIds = rows.map(r => r.id);
+            const [media] = await db.query(
+                `SELECT id, event_id, media_type, file_url, thumbnail_url, caption 
+                 FROM event_media 
+                 WHERE event_id IN (?)
+                 ORDER BY created_at ASC`,
+                [eventIds]
+            );
+
+            // Group media by event_id
+            const photosByEvent = {};
+            const videosByEvent = {};
+            media.forEach(m => {
+                if (m.media_type === 'photo') {
+                    if (!photosByEvent[m.event_id]) photosByEvent[m.event_id] = [];
+                    photosByEvent[m.event_id].push(m);
+                } else if (m.media_type === 'video') {
+                    if (!videosByEvent[m.event_id]) videosByEvent[m.event_id] = [];
+                    videosByEvent[m.event_id].push(m);
+                }
+            });
+
+            eventsWithMedia = rows.map(event => {
+                const eventPhotos = photosByEvent[event.id] || [];
+                const eventVideos = videosByEvent[event.id] || [];
+                return {
+                    ...event,
+                    cover_image: eventPhotos.length > 0 ? eventPhotos[0].file_url : null,
+                    photos: eventPhotos,
+                    videos: eventVideos
+                };
+            });
+        }
+
         return successResponse(res, {
-            data: rows,
+            data: eventsWithMedia,
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
         }, `Events for sector "${sectorName}" fetched successfully.`);
     } catch (err) {
