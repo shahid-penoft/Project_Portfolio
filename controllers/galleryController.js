@@ -568,25 +568,31 @@ export const getImagesBySource = async (req, res) => {
             let whereClause = '';
 
             if (slug) {
-                whereClause = 'e.slug = ?';
+                whereClause = 'slug = ?';
                 params.push(slug);
             } else if (name) {
-                whereClause = 'e.event_name = ?';
+                whereClause = 'event_name = ?';
                 params.push(name);
             }
 
-            const query = `
-                SELECT 
-                    em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at, em.media_type,
-                    e.id AS event_id, e.event_name, e.slug
-                FROM event_media em
-                JOIN events e ON e.id = em.event_id
-                WHERE em.media_type IN ('photo', 'video') AND ${whereClause}
-                ORDER BY em.created_at DESC
-            `;
+            // 1. Get Event first
+            const [evtRows] = await db.query(`SELECT id, event_name, slug FROM events WHERE ${whereClause} LIMIT 1`, params);
+            if (!evtRows.length) {
+                return successResponse(res, { data: { media: [], display_name: 'Event' } }, 'Event not found.');
+            }
 
-            const [rows] = await db.query(query, params);
-            return successResponse(res, { data: rows }, 'Media fetched successfully by event.');
+            const event = evtRows[0];
+            
+            // 2. Get Media for that event
+            const [mediaRows] = await db.query(
+                `SELECT id, file_url, thumbnail_url, caption, created_at, media_type
+                 FROM event_media 
+                 WHERE event_id = ? AND media_type IN ('photo', 'video')
+                 ORDER BY created_at DESC`,
+                [event.id]
+            );
+
+            return successResponse(res, { data: { media: mediaRows, display_name: event.event_name } }, 'Media fetched successfully by event.');
 
         } else if (type === 'project') {
             const params = [];
@@ -604,7 +610,7 @@ export const getImagesBySource = async (req, res) => {
             const [rows] = await db.query(query, params);
 
             if (!rows.length) {
-                return successResponse(res, { data: [] }, 'No project found or no images.');
+                return successResponse(res, { data: { media: [], display_name: 'Project' } }, 'No project found.');
             }
 
             const project = rows[0];
@@ -619,7 +625,6 @@ export const getImagesBySource = async (req, res) => {
                 parsedImages = [];
             }
 
-            // Map project images to look like gallery objects
             const formattedImages = parsedImages.map((img, index) => ({
                 id: `proj_${project.id}_${index}`,
                 file_url: img,
@@ -631,7 +636,7 @@ export const getImagesBySource = async (req, res) => {
                 slug: project.slug
             }));
 
-            return successResponse(res, { data: formattedImages }, 'Media fetched successfully by project.');
+            return successResponse(res, { data: { media: formattedImages, display_name: project.title } }, 'Media fetched successfully by project.');
 
         } else if (type === 'post') {
             const params = [];
@@ -648,31 +653,34 @@ export const getImagesBySource = async (req, res) => {
             const query = `SELECT id, title, slug, thumbnail_url, video_url, published_at FROM media_posts WHERE ${whereClause} LIMIT 1`;
             const [rows] = await db.query(query, params);
 
-            if (!rows.length || (!rows[0].thumbnail_url && !rows[0].video_url)) {
-                return successResponse(res, { data: [] }, 'No post found or post has no media.');
+            if (!rows.length) {
+                return successResponse(res, { data: { media: [], display_name: 'Post' } }, 'No post found.');
             }
 
             const post = rows[0];
-            const formattedImages = [{
-                id: `post_${post.id}`,
-                file_url: post.video_url || post.thumbnail_url,
-                thumbnail_url: post.thumbnail_url,
-                media_type: post.video_url ? 'video' : 'photo',
-                caption: post.title,
-                post_id: post.id,
-                post_name: post.title,
-                slug: post.slug,
-                created_at: post.published_at
-            }];
+            const formattedImages = [];
+            if (post.video_url || post.thumbnail_url) {
+                formattedImages.push({
+                    id: `post_${post.id}`,
+                    file_url: post.video_url || post.thumbnail_url,
+                    thumbnail_url: post.thumbnail_url,
+                    media_type: post.video_url ? 'video' : 'photo',
+                    caption: post.title,
+                    post_id: post.id,
+                    post_name: post.title,
+                    slug: post.slug,
+                    created_at: post.published_at
+                });
+            }
 
-            return successResponse(res, { data: formattedImages }, 'Media fetched successfully by post.');
+            return successResponse(res, { data: { media: formattedImages, display_name: post.title } }, 'Media fetched successfully by post.');
 
         } else {
             return errorResponse(res, 'Invalid type parameter. Use event, project, or post.', 400);
         }
 
     } catch (err) {
-        console.error('[getImagesBySource]', err);
+        console.error('[getImagesBySource] Error:', err);
         return errorResponse(res, 'Server error fetching images by source.');
     }
 };
