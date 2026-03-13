@@ -3,7 +3,7 @@ import {
     getGalleryImages, getGalleryVideos,
     listUploadedFiles, deleteUploadedFile,
     listAdminMedia, deleteEventMedia,
-    getImagesByLocalBody, getImagesBySector, getImagesByYear, searchImages,
+    getImagesByLocalBody, getImagesBySector, getImagesByYear, searchImages, getImagesBySource,
     getVideosByLocalBody, getVideosBySector, getVideosByYear, searchVideos,
 } from '../controllers/galleryController.js';
 import { verifyToken } from '../middlewares/auth.js';
@@ -15,6 +15,7 @@ router.get('/images', getGalleryImages);
 router.get('/videos', getGalleryVideos);
 
 // ── Public: images filter & search ────────────────────────────
+router.get('/images/source', getImagesBySource);
 router.get('/images/local-body/:id', getImagesByLocalBody);
 router.get('/images/sector/:id', getImagesBySector);
 router.get('/images/year/:year', getImagesByYear);

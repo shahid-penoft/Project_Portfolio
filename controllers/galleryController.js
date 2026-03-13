@@ -553,3 +553,125 @@ export const searchVideos = async (req, res) => {
     }
 };
 
+// ─── Images: by source (event, project, post) ─────────────────────────────
+// GET /api/gallery/images/source?type=event&slug=...&name=...
+export const getImagesBySource = async (req, res) => {
+    try {
+        const { type, slug, name } = req.query;
+
+        if (!type || (!slug && !name)) {
+            return errorResponse(res, 'Please provide type and either slug or name.', 400);
+        }
+
+        if (type === 'event') {
+            const params = [];
+            let whereClause = '';
+
+            if (slug) {
+                whereClause = 'e.slug = ?';
+                params.push(slug);
+            } else if (name) {
+                whereClause = 'e.event_name = ?';
+                params.push(name);
+            }
+
+            const query = `
+                SELECT 
+                    em.id, em.file_url, em.thumbnail_url, em.caption, em.created_at,
+                    e.id AS event_id, e.event_name, e.slug
+                FROM event_media em
+                JOIN events e ON e.id = em.event_id
+                WHERE em.media_type = 'photo' AND ${whereClause}
+                ORDER BY em.created_at DESC
+            `;
+
+            const [rows] = await db.query(query, params);
+            return successResponse(res, { data: rows }, 'Images fetched successfully by event.');
+
+        } else if (type === 'project') {
+            const params = [];
+            let whereClause = '';
+
+            if (slug) {
+                whereClause = 'slug = ?';
+                params.push(slug);
+            } else if (name) {
+                whereClause = 'title = ?';
+                params.push(name);
+            }
+
+            const query = `SELECT id, title, slug, images FROM projects WHERE ${whereClause} AND is_active = 1 LIMIT 1`;
+            const [rows] = await db.query(query, params);
+
+            if (!rows.length) {
+                return successResponse(res, { data: [] }, 'No project found or no images.');
+            }
+
+            const project = rows[0];
+            let parsedImages = [];
+            try {
+                if (typeof project.images === 'string') {
+                    parsedImages = JSON.parse(project.images);
+                } else if (Array.isArray(project.images)) {
+                    parsedImages = project.images;
+                }
+            } catch (e) {
+                parsedImages = [];
+            }
+
+            // Map project images to look like gallery objects
+            const formattedImages = parsedImages.map((img, index) => ({
+                id: `proj_${project.id}_${index}`,
+                file_url: img,
+                thumbnail_url: img,
+                caption: project.title,
+                project_id: project.id,
+                project_name: project.title,
+                slug: project.slug
+            }));
+
+            return successResponse(res, { data: formattedImages }, 'Images fetched successfully by project.');
+
+        } else if (type === 'post') {
+            const params = [];
+            let whereClause = '';
+
+            if (slug) {
+                whereClause = 'slug = ?';
+                params.push(slug);
+            } else if (name) {
+                whereClause = 'title = ?';
+                params.push(name);
+            }
+
+            const query = `SELECT id, title, slug, thumbnail_url, published_at FROM media_posts WHERE ${whereClause} LIMIT 1`;
+            const [rows] = await db.query(query, params);
+
+            if (!rows.length || !rows[0].thumbnail_url) {
+                return successResponse(res, { data: [] }, 'No post found or post has no thumbnail.');
+            }
+
+            const post = rows[0];
+            const formattedImages = [{
+                id: `post_${post.id}`,
+                file_url: post.thumbnail_url,
+                thumbnail_url: post.thumbnail_url,
+                caption: post.title,
+                post_id: post.id,
+                post_name: post.title,
+                slug: post.slug,
+                created_at: post.published_at
+            }];
+
+            return successResponse(res, { data: formattedImages }, 'Images fetched successfully by post.');
+
+        } else {
+            return errorResponse(res, 'Invalid type parameter. Use event, project, or post.', 400);
+        }
+
+    } catch (err) {
+        console.error('[getImagesBySource]', err);
+        return errorResponse(res, 'Server error fetching images by source.');
+    }
+};
+
