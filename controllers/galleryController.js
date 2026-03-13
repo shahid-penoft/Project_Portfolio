@@ -606,7 +606,7 @@ export const getImagesBySource = async (req, res) => {
                 params.push(name);
             }
 
-            const query = `SELECT id, title, slug, images FROM projects WHERE ${whereClause} AND is_active = 1 LIMIT 1`;
+            const query = `SELECT id, title, slug, images, videos FROM projects WHERE ${whereClause} AND is_active = 1 LIMIT 1`;
             const [rows] = await db.query(query, params);
 
             if (!rows.length) {
@@ -615,28 +615,32 @@ export const getImagesBySource = async (req, res) => {
 
             const project = rows[0];
             let parsedImages = [];
+            let parsedVideos = [];
             try {
-                if (typeof project.images === 'string') {
-                    parsedImages = JSON.parse(project.images);
-                } else if (Array.isArray(project.images)) {
-                    parsedImages = project.images;
-                }
+                parsedImages = typeof project.images === 'string' ? JSON.parse(project.images) : (project.images || []);
+                parsedVideos = typeof project.videos === 'string' ? JSON.parse(project.videos) : (project.videos || []);
             } catch (e) {
-                parsedImages = [];
+                console.error('[getImagesBySource] Project JSON parse error:', e);
             }
 
-            const formattedImages = parsedImages.map((img, index) => ({
-                id: `proj_${project.id}_${index}`,
-                file_url: img,
-                thumbnail_url: img,
-                media_type: 'photo',
-                caption: project.title,
-                project_id: project.id,
-                project_name: project.title,
-                slug: project.slug
-            }));
+            const formattedMedia = [
+                ...parsedImages.map((img, index) => ({
+                    id: `proj_img_${project.id}_${index}`,
+                    file_url: img,
+                    thumbnail_url: img,
+                    media_type: 'photo',
+                    caption: project.title,
+                })),
+                ...parsedVideos.map((vid, index) => ({
+                    id: `proj_vid_${project.id}_${index}`,
+                    file_url: typeof vid === 'string' ? vid : vid.url,
+                    thumbnail_url: typeof vid === 'string' ? null : (vid.thumbnail_url || vid.thumbnail),
+                    media_type: 'video',
+                    caption: (typeof vid === 'object' && vid.caption) ? vid.caption : project.title,
+                }))
+            ];
 
-            return successResponse(res, { data: { media: formattedImages, display_name: project.title } }, 'Media fetched successfully by project.');
+            return successResponse(res, { data: { media: formattedMedia, display_name: project.title } }, 'Media fetched successfully by project.');
 
         } else if (type === 'post') {
             const params = [];

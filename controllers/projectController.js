@@ -16,6 +16,12 @@ const parseImages = (raw) => {
     try { return JSON.parse(raw); } catch { return []; }
 };
 
+const parseVideos = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch { return []; }
+};
+
 const deleteFile = (url) => {
     if (!url || !url.startsWith('/uploads/')) return;
     const filePath = path.join(uploadDir, path.basename(url));
@@ -31,6 +37,28 @@ export const uploadProjectImage = async (req, res) => {
     } catch (err) {
         console.error('[uploadProjectImage]', err);
         if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'Image too large (max 10 MB).', 413);
+        return errorResponse(res, err.message || 'Upload failed.');
+    }
+};
+
+// ── POST /api/projects/upload-video (admin) ────────────────────
+export const uploadProjectVideo = async (req, res) => {
+    try {
+        const { uploadMediaFields: multerFields, runMulter: runMulterWrapper } = await import('../configs/multer.js');
+        await runMulterWrapper(multerFields, req, res);
+
+        const mainFile = req.files?.file?.[0];
+        const thumbFile = req.files?.thumbnail?.[0];
+
+        if (!mainFile) return errorResponse(res, 'No video file provided.', 400);
+
+        return successResponse(res, {
+            url: `/uploads/${mainFile.filename}`,
+            thumbnail_url: thumbFile ? `/uploads/${thumbFile.filename}` : null
+        }, 'Video uploaded.');
+    } catch (err) {
+        console.error('[uploadProjectVideo]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'File too large.', 413);
         return errorResponse(res, err.message || 'Upload failed.');
     }
 };
@@ -306,15 +334,22 @@ export const getProjectBySlug = async (req, res) => {
 // ── GET /api/projects/:id  ─────────────────────────────────────
 export const getProjectById = async (req, res) => {
     try {
+        const { id } = req.params;
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, p.images, p.videos
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
-             WHERE p.id = ?`, [req.params.id]
+             WHERE p.id = ?`,
+            [id]
         );
         if (!rows.length) return errorResponse(res, 'Project not found.', 404);
-        return successResponse(res, { data: rows[0] }, 'Project fetched.');
+
+        const p = rows[0];
+        p.images = parseImages(p.images);
+        p.videos = parseVideos(p.videos);
+
+        return successResponse(res, { data: p }, 'Project fetched.');
     } catch (err) {
         console.error('[getProjectById]', err);
         return errorResponse(res, 'Server error.');
@@ -325,7 +360,7 @@ export const getProjectById = async (req, res) => {
 export const createProject = async (req, res) => {
     try {
         const {
-            title, description, project_content, images = [], tags,
+            title, description, project_content, images = [], videos = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
         } = req.body;
@@ -343,21 +378,25 @@ export const createProject = async (req, res) => {
         }
 
         const imagesJson = JSON.stringify(Array.isArray(images) ? images : []);
+        const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
         const [result] = await db.query(
-            `INSERT INTO projects (title, slug, description, project_content, images, tags, year, sector_id, local_body_id, display_order, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [title.trim(), slug, description || null, project_content || null, imagesJson, tags || null, year || null,
+            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
             sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0]
         );
 
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, p.images, p.videos
              FROM projects p
              LEFT JOIN sectors s ON s.id = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              WHERE p.id = ?`, [result.insertId]
         );
-        return successResponse(res, { data: rows[0] }, 'Project created.', 201);
+        const p = rows[0];
+        p.images = parseImages(p.images);
+        p.videos = parseVideos(p.videos);
+        return successResponse(res, { data: p }, 'Project created.', 201);
     } catch (err) {
         console.error('[createProject]', err);
         return errorResponse(res, 'Server error creating project.');
@@ -369,7 +408,7 @@ export const updateProject = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, description, project_content, images = [], tags,
+            title, description, project_content, images = [], videos = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
         } = req.body;
@@ -377,7 +416,7 @@ export const updateProject = async (req, res) => {
         if (!title?.trim()) return errorResponse(res, 'Title is required.', 400);
 
         // Generate unique slug if title changed
-        const [[oldProj]] = await db.query('SELECT title, slug FROM projects WHERE id = ?', [id]);
+        const [[oldProj]] = await db.query('SELECT title, slug, images, videos FROM projects WHERE id = ?', [id]);
         if (!oldProj) return errorResponse(res, 'Project not found.', 404);
 
         let slug = oldProj.slug;
@@ -393,23 +432,28 @@ export const updateProject = async (req, res) => {
         }
 
         const imagesJson = JSON.stringify(Array.isArray(images) ? images : []);
+        const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
         const [result] = await db.query(
-            `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, tags=?, year=?,
+            `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, videos=?, tags=?, year=?,
              sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW()
              WHERE id=?`,
-            [title.trim(), slug, description || null, project_content || null, imagesJson, tags || null, year || null,
+            [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
             sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0, id]
         );
 
         if (!result.affectedRows) return errorResponse(res, 'Project not found.', 404);
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, p.images, p.videos
              FROM projects p
              LEFT JOIN sectors s ON s.id = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              WHERE p.id = ?`, [id]
         );
-        return successResponse(res, { data: rows[0] }, 'Project updated.');
+        const p = rows[0];
+        p.images = parseImages(p.images);
+        p.videos = parseVideos(p.videos);
+
+        return successResponse(res, { data: p }, 'Project fetched.');
     } catch (err) {
         console.error('[updateProject]', err);
         return errorResponse(res, 'Server error updating project.');

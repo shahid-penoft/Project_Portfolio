@@ -7,6 +7,7 @@ import {
     updateProject,
     deleteProject,
     uploadProjectImage,
+    uploadProjectVideo,
     uploadProjectInlineImage,
     getProjectsByYear,
     getProjectsByLocalBody,
@@ -35,6 +36,7 @@ router.get('/public/search', searchPublicProjects);
 router.use(verifyToken);
 
 router.post('/upload', uploadProjectImage);
+router.post('/upload-video', uploadProjectVideo);
 router.post('/:id/upload-inline-image', uploadProjectInlineImage);
 router.get('/all', getAllProjects);
 router.get('/:id', getProjectById);
