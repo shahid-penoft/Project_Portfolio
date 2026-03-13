@@ -6,6 +6,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const parseJson = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch { return []; }
+};
+
 // POST /api/media-centre/upload  (admin — multipart)
 export const uploadMediaFile = async (req, res) => {
     try {
@@ -19,6 +25,28 @@ export const uploadMediaFile = async (req, res) => {
         console.error('[uploadMediaFile]', err);
         if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'File too large. Max 200 MB for videos, 10 MB for images.', 413);
         return errorResponse(res, err.message || 'Server error uploading file.');
+    }
+};
+
+// POST /api/media-centre/posts/upload-video (admin)
+export const uploadPostVideo = async (req, res) => {
+    try {
+        const { uploadMediaFields, runMulter: runMulterWrapper } = await import('../configs/multer.js');
+        await runMulterWrapper(uploadMediaFields, req, res);
+
+        const mainFile = req.files?.file?.[0];
+        const thumbFile = req.files?.thumbnail?.[0];
+
+        if (!mainFile) return errorResponse(res, 'No video file provided.', 400);
+
+        return successResponse(res, {
+            url: `/uploads/${mainFile.filename}`,
+            thumbnail_url: thumbFile ? `/uploads/${thumbFile.filename}` : null
+        }, 'Video uploaded.');
+    } catch (err) {
+        console.error('[uploadPostVideo]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'File too large.', 413);
+        return errorResponse(res, err.message || 'Upload failed.');
     }
 };
 
@@ -293,7 +321,12 @@ export const getPostById = async (req, res) => {
             [req.params.id]
         );
         if (!rows.length) return errorResponse(res, 'Post not found.', 404);
-        return successResponse(res, { data: rows[0] }, 'Post fetched successfully.');
+        
+        const p = rows[0];
+        p.images = parseJson(p.images);
+        p.videos = parseJson(p.videos);
+
+        return successResponse(res, { data: p }, 'Post fetched successfully.');
     } catch (err) {
         console.error('[getPostById]', err);
         return errorResponse(res, 'Server error fetching post.');
@@ -303,7 +336,7 @@ export const getPostById = async (req, res) => {
 // POST /api/media-centre/posts  (admin)
 export const createPost = async (req, res) => {
     try {
-        const { section_id, title, author, content, rich_content, thumbnail_url, video_url, is_featured = 0, published_at } = req.body;
+        const { section_id, title, author, content, rich_content, thumbnail_url, video_url, images = [], videos = [], is_featured = 0, published_at } = req.body;
         if (!section_id || !title) return errorResponse(res, 'section_id and title are required.', 400);
 
         const [secRows] = await db.query('SELECT id FROM media_sections WHERE id = ?', [section_id]);
@@ -312,11 +345,13 @@ export const createPost = async (req, res) => {
         const slug = slugify(title);
 
         const [result] = await db.query(
-            `INSERT INTO media_posts (section_id, title, slug, author, content, rich_content, thumbnail_url, video_url, is_featured, published_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO media_posts (section_id, title, slug, author, content, rich_content, thumbnail_url, video_url, images, videos, is_featured, published_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 section_id, title, slug, author || 'Office of Shibu Theckumpuram', content || null, rich_content || null,
                 thumbnail_url || null, video_url || null,
+                JSON.stringify(images),
+                JSON.stringify(videos),
                 is_featured ? 1 : 0,
                 published_at || new Date().toISOString().slice(0, 19).replace('T', ' '),
             ]
@@ -340,7 +375,7 @@ export const createPost = async (req, res) => {
 export const updatePost = async (req, res) => {
     try {
         const { id } = req.params;
-        const { section_id, title, author, content, rich_content, thumbnail_url, video_url, is_featured, published_at } = req.body;
+        const { section_id, title, author, content, rich_content, thumbnail_url, video_url, images = [], videos = [], is_featured, published_at } = req.body;
         if (!section_id || !title) return errorResponse(res, 'section_id and title are required.', 400);
 
         const slug = slugify(title);
@@ -348,11 +383,13 @@ export const updatePost = async (req, res) => {
         const [result] = await db.query(
             `UPDATE media_posts SET
          section_id = ?, title = ?, slug = ?, author = ?, content = ?, rich_content = ?,
-         thumbnail_url = ?, video_url = ?, is_featured = ?, published_at = ?
+         thumbnail_url = ?, video_url = ?, images = ?, videos = ?, is_featured = ?, published_at = ?
        WHERE id = ?`,
             [
                 section_id, title, slug, author || 'Office of Shibu Theckumpuram', content || null, rich_content || null,
                 thumbnail_url || null, video_url || null,
+                JSON.stringify(images),
+                JSON.stringify(videos),
                 is_featured ? 1 : 0,
                 published_at || new Date().toISOString().slice(0, 19).replace('T', ' '),
                 id,
@@ -384,7 +421,12 @@ export const getPostBySlug = async (req, res) => {
             [slug]
         );
         if (!rows.length) return errorResponse(res, 'Post not found.', 404);
-        return successResponse(res, { data: rows[0] }, 'Post fetched successfully.');
+
+        const p = rows[0];
+        p.images = parseJson(p.images);
+        p.videos = parseJson(p.videos);
+
+        return successResponse(res, { data: p }, 'Post fetched successfully.');
     } catch (err) {
         console.error('[getPostBySlug]', err);
         return errorResponse(res, 'Server error fetching post.');

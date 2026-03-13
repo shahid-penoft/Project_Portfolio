@@ -654,7 +654,7 @@ export const getImagesBySource = async (req, res) => {
                 params.push(name);
             }
 
-            const query = `SELECT id, title, slug, thumbnail_url, video_url, published_at FROM media_posts WHERE ${whereClause} LIMIT 1`;
+            const query = `SELECT id, title, slug, thumbnail_url, video_url, images, videos, published_at FROM media_posts WHERE ${whereClause} LIMIT 1`;
             const [rows] = await db.query(query, params);
 
             if (!rows.length) {
@@ -662,22 +662,54 @@ export const getImagesBySource = async (req, res) => {
             }
 
             const post = rows[0];
-            const formattedImages = [];
-            if (post.video_url || post.thumbnail_url) {
-                formattedImages.push({
-                    id: `post_${post.id}`,
+            let parsedImages = [];
+            let parsedVideos = [];
+            try {
+                parsedImages = typeof post.images === 'string' ? JSON.parse(post.images) : (post.images || []);
+                parsedVideos = typeof post.videos === 'string' ? JSON.parse(post.videos) : (post.videos || []);
+            } catch (e) {
+                console.error('[getImagesBySource] Post JSON parse error:', e);
+            }
+
+            // Legacy support for single thumbnail/video if multiple are empty
+            const formattedMedia = [];
+            
+            // Add multiple images
+            parsedImages.forEach((img, index) => {
+                formattedMedia.push({
+                    id: `post_img_${post.id}_${index}`,
+                    file_url: img,
+                    thumbnail_url: img,
+                    media_type: 'photo',
+                    caption: post.title,
+                });
+            });
+
+            // Add multiple videos
+            parsedVideos.forEach((vid, index) => {
+                const url = typeof vid === 'string' ? vid : vid.url;
+                const thumb = typeof vid === 'string' ? null : (vid.thumbnail_url || vid.thumbnail);
+                formattedMedia.push({
+                    id: `post_vid_${post.id}_${index}`,
+                    file_url: url,
+                    thumbnail_url: thumb,
+                    media_type: 'video',
+                    caption: (typeof vid === 'object' && vid.caption) ? vid.caption : post.title,
+                });
+            });
+
+            // Fallback to legacy fields if nothing in multiple collections
+            if (formattedMedia.length === 0 && (post.video_url || post.thumbnail_url)) {
+                formattedMedia.push({
+                    id: `post_legacy_${post.id}`,
                     file_url: post.video_url || post.thumbnail_url,
                     thumbnail_url: post.thumbnail_url,
                     media_type: post.video_url ? 'video' : 'photo',
                     caption: post.title,
-                    post_id: post.id,
-                    post_name: post.title,
-                    slug: post.slug,
-                    created_at: post.published_at
                 });
             }
 
-            return successResponse(res, { data: { media: formattedImages, display_name: post.title } }, 'Media fetched successfully by post.');
+            return successResponse(res, { data: { media: formattedMedia, display_name: post.title } }, 'Media fetched successfully by post.');
 
         } else {
             return errorResponse(res, 'Invalid type parameter. Use event, project, or post.', 400);

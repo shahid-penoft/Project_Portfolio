@@ -16,6 +16,7 @@ import {
     updatePost,
     deletePost,
     uploadMediaFile,
+    uploadPostVideo,
     uploadPostInlineImage,
 } from '../controllers/mediaCentreController.js';
 
@@ -34,6 +35,7 @@ router.get('/posts/:id', getPostById);
 router.use(verifyToken);
 
 router.post('/upload', uploadMediaFile);          // ← file upload
+router.post('/upload-video', uploadPostVideo);
 router.post('/sections', createSection);
 router.put('/sections/:id', updateSection);
 router.delete('/sections/:id', deleteSection);
