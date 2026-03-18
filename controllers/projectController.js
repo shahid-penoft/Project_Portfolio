@@ -1,5 +1,5 @@
 import db from '../configs/db.js';
-import { successResponse, errorResponse, slugify } from '../utils/helpers.js';
+import { successResponse, errorResponse, slugify, renameMediaToSeoFriendly } from '../utils/helpers.js';
 
 import { uploadImage, runMulter } from '../configs/multer.js';
 import fs from 'fs';
