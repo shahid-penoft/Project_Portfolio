@@ -13,8 +13,8 @@ const CATEGORIES = ['membership', 'local issues', 'submit ideas', 'submit opinio
 export const submitContact = async (req, res) => {
     const { full_name, mobile, email, panchayat_id, category, subject, message } = req.body;
 
-    if (!full_name?.trim() || !mobile?.trim() || !email?.trim() || !message?.trim()) {
-        return errorResponse(res, 'full_name, mobile, email and message are required.', 400);
+    if (!full_name?.trim() || !mobile?.trim() || !message?.trim()) {
+        return errorResponse(res, 'full_name, mobile, and message are required.', 400);
     }
     if (category && !CATEGORIES.includes(category.toLowerCase())) {
         return errorResponse(res, `Invalid category. Must be one of: ${CATEGORIES.join(', ')}.`, 400);
@@ -28,7 +28,7 @@ export const submitContact = async (req, res) => {
             [
                 full_name.trim(),
                 mobile.trim(),
-                email.trim(),
+                email?.trim() || null,
                 panchayat_id || null,
                 category?.toLowerCase() || 'general',
                 subject?.trim() || null,
@@ -49,7 +49,7 @@ export const submitContact = async (req, res) => {
             id: enquiryId,
             full_name: full_name.trim(),
             mobile: mobile.trim(),
-            email: email.trim(),
+            email: email?.trim() || null,
             panchayat: panchayatName,
             category: category?.toLowerCase() || 'general',
             subject: subject?.trim() || 'N/A',
@@ -75,16 +75,18 @@ export const submitContact = async (req, res) => {
                     automationTriggered = true;
                     let finalMessage = auto.content;
                     finalMessage = finalMessage.replace(/{name}/g, enquiry.full_name);
-                    finalMessage = finalMessage.replace(/{email}/g, enquiry.email);
+                    finalMessage = finalMessage.replace(/{email}/g, enquiry.email || '');
                     finalMessage = finalMessage.replace(/{mobile}/g, enquiry.mobile);
 
-                    if (auto.template_type === 'email') {
+                    if (auto.template_type === 'email' && enquiry.email) {
                         await sendEnquiryReplyEmail({
                             to: enquiry.email,
                             full_name: enquiry.full_name,
                             subject: auto.template_subject || enquiry.subject,
                             replyMessage: finalMessage,
                         });
+                    } else if (auto.template_type === 'email' && !enquiry.email) {
+                        console.log(`[Automation] Skipping email automation for enquiry ${enquiryId} as no email was provided.`);
                     } else if (auto.template_type === 'sms') {
                         let phone = enquiry.mobile.trim();
                         if (!phone.startsWith('+')) phone = phone.startsWith('0') ? '+91' + phone.substring(1) : '+91' + phone;
@@ -110,7 +112,7 @@ export const submitContact = async (req, res) => {
                         `INSERT INTO enquiry_communications (enquiry_id, template_id, type, recipient, message, status)
                          VALUES (?, ?, ?, ?, ?, ?)`,
                         [enquiryId, auto.template_id, auto.template_type,
-                            auto.template_type === 'email' ? enquiry.email : enquiry.mobile, finalMessage, 'automated']
+                            auto.template_type === 'email' ? (enquiry.email || 'N/A') : enquiry.mobile, finalMessage, 'automated']
                     ).catch(e => console.error('[Log Automation]', e));
                 }
             } catch (err) {
@@ -126,8 +128,7 @@ export const submitContact = async (req, res) => {
         ];
 
         // Skip default confirmation ONLY if an automated EMAIL was triggered
-        // (If it was SMS/WhatsApp automation, we still want the email confirmation)
-        if (!automationTriggered) {
+        if (!automationTriggered && enquiry.email) {
             notifications.push(sendEnquiryReceivedEmail(enquiry).catch(e => console.error('[Email:UserConfirm]', e)));
         }
 
@@ -343,6 +344,10 @@ export const sendEmail = async (req, res) => {
         );
         if (!enquiry) return errorResponse(res, 'Enquiry not found.', 404);
 
+        if (!enquiry.email) {
+            return errorResponse(res, 'No email address found for this enquiry.', 400);
+        }
+
         await sendEnquiryReplyEmail({
             to: enquiry.email,
             full_name: enquiry.full_name,
@@ -545,13 +550,18 @@ export const bulkSend = async (req, res) => {
                     if (!phone.startsWith('+')) phone = phone.startsWith('0') ? '+91' + phone.substring(1) : '+91' + phone;
                     await sendBrevoSMS(phone, finalMessage);
                 }
-                else if (type === 'email') {
+                else if (type === 'email' && target.email) {
                     await sendEnquiryReplyEmail({
                         to: target.email,
                         full_name: target.full_name,
                         subject: template?.subject || target.subject || 'Reply to your enquiry',
                         replyMessage: finalMessage,
                     });
+                }
+                else if (type === 'email' && !target.email) {
+                    console.log(`[BulkSend] Skipping target ${target.id} as no email was provided.`);
+                    results.failure++;
+                    continue;
                 }
                 else if (type === 'whatsapp') {
                     let phone = target.mobile.trim();

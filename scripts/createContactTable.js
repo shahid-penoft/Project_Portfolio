@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS contact_enquiries (
     id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
     full_name       VARCHAR(150)    NOT NULL,
     mobile          VARCHAR(20)     NOT NULL,
-    email           VARCHAR(200)    NOT NULL,
+    email           VARCHAR(200)    DEFAULT NULL,
     panchayat_id    INT UNSIGNED    DEFAULT NULL,
     category        ENUM('membership','local issues','submit ideas','submit opinions','general')
                                     NOT NULL DEFAULT 'general',
