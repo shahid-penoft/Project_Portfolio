@@ -1,18 +1,8 @@
 import pool from '../configs/db.js';
-import { successResponse, errorResponse } from '../utils/helpers.js';
+import { successResponse, errorResponse, slugify } from '../utils/helpers.js';
 import fs from 'fs';
 import path from 'path';
 
-// Generate an SEO-friendly slug from a string
-const slugify = (text) =>
-    text
-        .toString()
-        .toLowerCase()
-        .trim()
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .slice(0, 80);
 
 // ─────────────────────────────────────────────────────────────
 //  GET /api/achievements

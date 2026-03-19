@@ -1,18 +1,9 @@
 import db from '../configs/db.js';
+import { slugify } from '../utils/helpers.js';
 import { uploadImage, runMulter } from '../configs/multer.js';
 import fs from 'fs';
 import path from 'path';
 
-// Generate an SEO-friendly slug from a string
-const slugify = (text) =>
-    text
-        .toString()
-        .toLowerCase()
-        .trim()
-        .replace(/[^\w\s-]/g, '')   // remove special chars
-        .replace(/\s+/g, '-')       // spaces to hyphens
-        .replace(/-+/g, '-')        // collapse multiple hyphens
-        .slice(0, 80);              // max length
 
 // @desc    Get all timelines
 // @route   GET /api/timeline
