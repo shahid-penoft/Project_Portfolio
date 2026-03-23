@@ -34,11 +34,17 @@ import kothamangalamGalleryRoutes from './routes/kothamangalamGalleryRoutes.js';
 import programRoutes from './routes/programRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 
+import { apiLimiter } from './middlewares/rateLimiter.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust proxy if you are behind a load balancer (Cloudflare, Nginx, Heroku, etc.)
+app.set('trust proxy', 1);
+
 // ─── Global Middleware ────────────────────────────────────────
+app.use(apiLimiter);
 app.use(cors({
     origin: function (origin, callback) {
         // Extract strictly the origin (e.g., scheme://domain:port) from the configured URLs

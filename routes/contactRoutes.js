@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { verifyToken } from '../middlewares/auth.js';
+import { contactFormLimiter } from '../middlewares/rateLimiter.js';
 import {
     submitContact,
     getEnquiries,
@@ -28,7 +29,7 @@ import {
 const router = Router();
 
 // ─── Public ───────────────────────────────────────────────────
-router.post('/', submitContact);   // anyone can submit a contact form
+router.post('/', contactFormLimiter, submitContact);   // anyone can submit a contact form
 
 // ─── Protected (admin only) ───────────────────────────────────
 router.use(verifyToken);
