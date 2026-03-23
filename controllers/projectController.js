@@ -327,7 +327,12 @@ export const getProjectBySlug = async (req, res) => {
              WHERE p.slug = ?`, [req.params.slug]
         );
         if (!rows.length) return errorResponse(res, 'Project not found.', 404);
-        return successResponse(res, { data: rows[0] }, 'Project fetched.');
+
+        const p = rows[0];
+        p.images = parseImages(p.images);
+        p.videos = parseVideos(p.videos);
+
+        return successResponse(res, { data: p }, 'Project fetched.');
     } catch (err) {
         console.error('[getProjectBySlug]', err);
         return errorResponse(res, 'Server error.');
