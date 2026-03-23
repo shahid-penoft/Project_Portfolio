@@ -3,7 +3,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import db from '../configs/db.js';
 import transporter from '../configs/mailer.js';
-import { uploadMedia, uploadMediaFields, uploadImage, uploadThumbnail, runMulter } from '../configs/multer.js';
+import { uploadMedia, uploadMediaFields, uploadImage, uploadThumbnail, runMulter } from '../configs/multerS3.js';
 import { successResponse, errorResponse, slugify, renameMediaToSeoFriendly } from '../utils/helpers.js';
 
 
@@ -589,13 +589,13 @@ export const addEventMedia = async (req, res) => {
         // Check event exists
         const [evtRows] = await db.query('SELECT id, event_name FROM events WHERE id = ?', [id]);
         if (!evtRows.length) {
-            fs.unlinkSync(mainFile.path);
-            if (thumbFile) fs.unlinkSync(thumbFile.path);
+            if (mainFile.path) fs.unlinkSync(mainFile.path);
+            if (thumbFile && thumbFile.path) fs.unlinkSync(thumbFile.path);
             return errorResponse(res, 'Event not found.', 404);
         }
 
-        let fileUrl = `/uploads/${mainFile.filename}`;
-        let thumbnailUrl = thumbFile ? `/uploads/${thumbFile.filename}` : null;
+        let fileUrl = mainFile.location || `/uploads/${mainFile.filename}`;
+        let thumbnailUrl = thumbFile ? (thumbFile.location || `/uploads/${thumbFile.filename}`) : null;
 
         // Since we rename array of URLs, we feed it an array of 1 or 2 items
         const urlsToRename = [fileUrl];
@@ -642,11 +642,11 @@ export const addYouTubeMedia = async (req, res) => {
 
         const [evtRows] = await db.query('SELECT id FROM events WHERE id = ?', [id]);
         if (!evtRows.length) {
-            if (req.file) fs.unlinkSync(req.file.path);
+            if (req.file && req.file.path) fs.unlinkSync(req.file.path);
             return errorResponse(res, 'Event not found.', 404);
         }
 
-        const thumbnailUrl = req.file ? `uploads/${req.file.filename}` : null;
+        const thumbnailUrl = req.file ? (req.file.location || `uploads/${req.file.filename}`) : null;
 
         const [result] = await db.query(
             'INSERT INTO event_media (event_id, media_type, file_url, thumbnail_url, youtube_url, caption) VALUES (?, ?, ?, ?, ?, ?)',
@@ -722,13 +722,11 @@ export const uploadInlineImage = async (req, res) => {
         const [evtRows] = await db.query('SELECT id FROM events WHERE id = ?', [id]);
         if (!evtRows.length) {
             // Clean up orphaned upload
-            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             return errorResponse(res, 'Event not found.', 404);
         }
 
-        const imageUrl = `/uploads/${req.file.filename}`;
-        // Return full URL for image embed in rich text editor
-        const fullUrl = `${req.protocol}://${req.get('host')}${imageUrl}`;
+        const fullUrl = req.file.location || `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
         return successResponse(res, { url: fullUrl }, 'Image uploaded for editor.');
     } catch (err) {
         if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);

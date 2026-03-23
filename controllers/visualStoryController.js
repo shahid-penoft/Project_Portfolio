@@ -1,5 +1,5 @@
 import db from '../configs/db.js';
-import { uploadVisualStoryFiles, runMulter } from '../configs/multer.js';
+import { uploadVisualStoryFiles, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 import { renameMediaToSeoFriendly } from '../utils/helpers.js';
@@ -35,8 +35,8 @@ export const createStory = async (req, res) => {
 
         if (req.files) {
             const urlsToRename = [];
-            if (req.files.video && req.files.video.length > 0) urlsToRename.push(`/uploads/${req.files.video[0].filename}`);
-            if (req.files.thumbnail && req.files.thumbnail.length > 0) urlsToRename.push(`/uploads/${req.files.thumbnail[0].filename}`);
+            if (req.files.video && req.files.video.length > 0) urlsToRename.push(req.files.video[0].location || `/uploads/${req.files.video[0].filename}`);
+            if (req.files.thumbnail && req.files.thumbnail.length > 0) urlsToRename.push(req.files.thumbnail[0].location || `/uploads/${req.files.thumbnail[0].filename}`);
 
             if (urlsToRename.length > 0) {
                 const renamedUrls = renameMediaToSeoFriendly(urlsToRename, title);
@@ -97,14 +97,14 @@ export const updateStory = async (req, res) => {
             let tempThumbUrl = null;
 
             if (req.files.video && req.files.video.length > 0) {
-                tempVideoUrl = `/uploads/${req.files.video[0].filename}`;
+                tempVideoUrl = req.files.video[0].location || `/uploads/${req.files.video[0].filename}`;
                 if (story.video_type === 'upload' && story.video_url) {
                     const oldPath = path.join(process.cwd(), story.video_url);
                     if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
                 }
             }
             if (req.files.thumbnail && req.files.thumbnail.length > 0) {
-                tempThumbUrl = `/uploads/${req.files.thumbnail[0].filename}`;
+                tempThumbUrl = req.files.thumbnail[0].location || `/uploads/${req.files.thumbnail[0].filename}`;
                 if (story.thumbnail_url) {
                     const oldPath = path.join(process.cwd(), story.thumbnail_url);
                     if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);

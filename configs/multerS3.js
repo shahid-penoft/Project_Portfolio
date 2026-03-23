@@ -2,6 +2,7 @@ import multer from 'multer';
 import multerS3 from 'multer-s3';
 import { S3Client } from '@aws-sdk/client-s3';
 import dotenv from 'dotenv';
+import fs from 'fs';
 dotenv.config();
 
 // ─── S3 Config ───────────────────────────────────────────
@@ -17,9 +18,11 @@ const s3Bucket = process.env.AWS_S3_BUCKET || 'my-portfolio-bucket';
 
 // ─── File type filter ─────────────────────────────────────────
 const fileFilter = (req, file, cb) => {
+    fs.appendFileSync('multer_debug.log', `fileFilter called for: ${file.originalname} mimetype: ${file.mimetype}\n`);
     const allowed = [
         'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
         'video/mp4', 'video/webm', 'video/quicktime', 'application/pdf',
+        'application/octet-stream'
     ];
     if (allowed.includes(file.mimetype)) {
         cb(null, true);

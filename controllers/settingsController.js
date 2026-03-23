@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { runMulter, uploadDocument } from '../configs/multer.js';
+import { runMulter, uploadDocument } from '../configs/multerS3.js';
 
 // Get all settings
 export const getAllSettings = async (req, res) => {
@@ -67,7 +67,7 @@ export const uploadManifestoPDF = async (req, res) => {
             return errorResponse(res, 'No file uploaded.', 400);
         }
 
-        const pdfUrl = `/uploads/${req.file.filename}`;
+        const pdfUrl = req.file.location || `/uploads/${req.file.filename}`;
         
         // Update or Insert the manifesto_pdf_url setting
         await db.query(`

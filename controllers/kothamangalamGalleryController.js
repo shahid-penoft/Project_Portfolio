@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { uploadMediaFields, runMulter } from '../configs/multer.js';
+import { uploadMediaFields, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -150,10 +150,10 @@ export const createGalleryItem = async (req, res) => {
         // Handle uploaded files
         if (req.files) {
             if (req.files.file?.[0]) {
-                file_url = `/uploads/${req.files.file[0].filename}`;
+                file_url = req.files.file[0].location || `/uploads/${req.files.file[0].filename}`;
             }
             if (req.files.thumbnail?.[0]) {
-                thumbnail_url = `/uploads/${req.files.thumbnail[0].filename}`;
+                thumbnail_url = req.files.thumbnail[0].location || `/uploads/${req.files.thumbnail[0].filename}`;
             }
         }
 
@@ -207,7 +207,7 @@ export const updateGalleryItem = async (req, res) => {
         // Handle uploaded files
         if (req.files) {
             if (req.files.file?.[0]) {
-                file_url = `/uploads/${req.files.file[0].filename}`;
+                file_url = req.files.file[0].location || `/uploads/${req.files.file[0].filename}`;
                 // Delete old file if it was an upload
                 if (item.file_url?.startsWith('/uploads/')) {
                     const oldPath = path.join(process.cwd(), item.file_url);
@@ -215,7 +215,7 @@ export const updateGalleryItem = async (req, res) => {
                 }
             }
             if (req.files.thumbnail?.[0]) {
-                thumbnail_url = `/uploads/${req.files.thumbnail[0].filename}`;
+                thumbnail_url = req.files.thumbnail[0].location || `/uploads/${req.files.thumbnail[0].filename}`;
                 // Delete old thumbnail
                 if (item.thumbnail_url?.startsWith('/uploads/')) {
                     const oldPath = path.join(process.cwd(), item.thumbnail_url);

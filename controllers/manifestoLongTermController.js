@@ -1,6 +1,6 @@
 import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { uploadImage, runMulter } from '../configs/multer.js';
+import { uploadImage, runMulter } from '../configs/multerS3.js';
 
 // ─────────────────────────────────────────────────────────────
 //  GET /api/manifesto/long-term-commitments
@@ -145,7 +145,7 @@ export const uploadCommitmentIcon = async (req, res) => {
     try {
         await runMulter(uploadImage, req, res);
         if (!req.file) return errorResponse(res, 'No file provided.', 400);
-        return successResponse(res, { url: `/uploads/${req.file.filename}` }, 'Icon uploaded.');
+        return successResponse(res, { url: req.file.location || `/uploads/${req.file.filename}` }, 'Icon uploaded.');
     } catch (err) {
         console.error('[uploadCommitmentIcon]', err);
         return errorResponse(res, err.message || 'Upload failed.');

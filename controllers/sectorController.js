@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { uploadImage, runMulter } from '../configs/multer.js';
+import { uploadImage, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,7 +19,7 @@ export const uploadSectorImage = async (req, res) => {
     try {
         await runMulter(uploadImage, req, res);
         if (!req.file) return errorResponse(res, 'No file provided.', 400);
-        return successResponse(res, { url: `/uploads/${req.file.filename}` }, 'Image uploaded.');
+        return successResponse(res, { url: req.file.location || `/uploads/${req.file.filename}` }, 'Image uploaded.');
     } catch (err) {
         console.error('[uploadSectorImage]', err);
         if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'Image too large (max 10 MB).', 413);
