@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse, slugify, renameMediaToSeoFriendly } from '../utils/helpers.js';
-import { uploadMedia, uploadImage, runMulter } from '../configs/multer.js';
+import { uploadMedia, uploadImage, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,7 +18,7 @@ export const uploadMediaFile = async (req, res) => {
         await runMulter(uploadMedia, req, res);
         if (!req.file) return errorResponse(res, 'No file provided.', 400);
 
-        const fileUrl = `/uploads/${req.file.filename}`;
+        const fileUrl = req.file.location || `/uploads/${req.file.filename}`;
         const isVideo = req.file.mimetype.startsWith('video/');
         return successResponse(res, { url: fileUrl, type: isVideo ? 'video' : 'image' }, 'File uploaded successfully.');
     } catch (err) {
@@ -31,7 +31,7 @@ export const uploadMediaFile = async (req, res) => {
 // POST /api/media-centre/posts/upload-video (admin)
 export const uploadPostVideo = async (req, res) => {
     try {
-        const { uploadMediaFields, runMulter: runMulterWrapper } = await import('../configs/multer.js');
+        const { uploadMediaFields, runMulter: runMulterWrapper } = await import('../configs/multerS3.js');
         await runMulterWrapper(uploadMediaFields, req, res);
 
         const mainFile = req.files?.file?.[0];
@@ -40,8 +40,8 @@ export const uploadPostVideo = async (req, res) => {
         if (!mainFile) return errorResponse(res, 'No video file provided.', 400);
 
         return successResponse(res, {
-            url: `/uploads/${mainFile.filename}`,
-            thumbnail_url: thumbFile ? `/uploads/${thumbFile.filename}` : null
+            url: mainFile.location || `/uploads/${mainFile.filename}`,
+            thumbnail_url: thumbFile ? (thumbFile.location || `/uploads/${thumbFile.filename}`) : null
         }, 'Video uploaded.');
     } catch (err) {
         console.error('[uploadPostVideo]', err);
@@ -59,12 +59,11 @@ export const uploadPostInlineImage = async (req, res) => {
         const { id } = req.params;
         const [rows] = await db.query('SELECT id FROM media_posts WHERE id = ?', [id]);
         if (!rows.length) {
-            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             return errorResponse(res, 'Post not found.', 404);
         }
 
-        const imageUrl = `/uploads/${req.file.filename}`;
-        const fullUrl = `${req.protocol}://${req.get('host')}${imageUrl}`;
+        const fullUrl = req.file.location || `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
         return successResponse(res, { url: fullUrl }, 'Image uploaded.');
     } catch (err) {
         if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);

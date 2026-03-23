@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { uploadImage, runMulter } from '../configs/multer.js';
+import { uploadImage, runMulter } from '../configs/multerS3.js';
 
 // GET /api/hero (public)
 export const getHero = async (req, res) => {
@@ -40,7 +40,7 @@ export const uploadHeroImage = async (req, res) => {
         await runMulter(uploadImage, req, res);
         if (!req.file) return errorResponse(res, 'No file provided.', 400);
 
-        const fileUrl = `/uploads/${req.file.filename}`;
+        const fileUrl = req.file.location || `/uploads/${req.file.filename}`;
         return successResponse(res, { url: fileUrl }, 'Hero image uploaded.');
     } catch (err) {
         console.error('[uploadHeroImage]', err);

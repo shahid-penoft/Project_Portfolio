@@ -13,6 +13,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1014.0",
     "@getbrevo/brevo": "^4.0.1",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
@@ -23,6 +24,7 @@
     "express-rate-limit": "^8.2.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "multer-s3": "^3.0.1",
     "mysql2": "^3.17.3",
     "nodemailer": "^8.0.1",
     "xlsx": "^0.18.5"

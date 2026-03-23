@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { slugify } from '../utils/helpers.js';
-import { uploadImage, runMulter } from '../configs/multer.js';
+import { uploadImage, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -33,13 +33,17 @@ export const createTimeline = async (req, res) => {
 
         let image_url = null;
         if (req.file) {
-            const ext = path.extname(req.file.originalname) || '.jpg';
-            const seoName = `shibu-kothamangalam-timeline-${year}-${slugify(title)}${ext}`;
-            const oldPath = req.file.path;
-            const newPath = path.join(path.dirname(oldPath), seoName);
-            if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-            fs.renameSync(oldPath, newPath);
-            image_url = `/uploads/${seoName}`;
+            if (req.file.location) {
+                image_url = req.file.location;
+            } else {
+                const ext = path.extname(req.file.originalname) || '.jpg';
+                const seoName = `shibu-kothamangalam-timeline-${year}-${slugify(title)}${ext}`;
+                const oldPath = req.file.path;
+                const newPath = path.join(path.dirname(oldPath), seoName);
+                if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+                fs.renameSync(oldPath, newPath);
+                image_url = `/uploads/${seoName}`;
+            }
         }
 
         const [result] = await db.query(
@@ -77,18 +81,26 @@ export const updateTimeline = async (req, res) => {
         let image_url = timeline.image_url;
 
         if (req.file) {
-            const updatedYear = year || timeline.year;
-            const updatedTitle = title || timeline.title;
-            const ext = path.extname(req.file.originalname) || '.jpg';
-            const seoName = `shibu-kothamangalam-timeline-${updatedYear}-${slugify(updatedTitle)}${ext}`;
-            const newFilePath = path.join(path.dirname(req.file.path), seoName);
-            if (fs.existsSync(newFilePath)) fs.unlinkSync(newFilePath);
-            fs.renameSync(req.file.path, newFilePath);
-            image_url = `/uploads/${seoName}`;
-            // delete old image
-            if (timeline.image_url) {
-                const oldPath = path.join(process.cwd(), timeline.image_url);
-                if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+            if (req.file.location) {
+                image_url = req.file.location;
+                if (timeline.image_url && !timeline.image_url.startsWith('http')) {
+                    const oldPath = path.join(process.cwd(), timeline.image_url);
+                    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+                }
+            } else {
+                const updatedYear = year || timeline.year;
+                const updatedTitle = title || timeline.title;
+                const ext = path.extname(req.file.originalname) || '.jpg';
+                const seoName = `shibu-kothamangalam-timeline-${updatedYear}-${slugify(updatedTitle)}${ext}`;
+                const newFilePath = path.join(path.dirname(req.file.path), seoName);
+                if (fs.existsSync(newFilePath)) fs.unlinkSync(newFilePath);
+                fs.renameSync(req.file.path, newFilePath);
+                image_url = `/uploads/${seoName}`;
+                // delete old image
+                if (timeline.image_url && !timeline.image_url.startsWith('http')) {
+                    const oldPath = path.join(process.cwd(), timeline.image_url);
+                    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+                }
             }
         }
 
@@ -122,7 +134,7 @@ export const deleteTimeline = async (req, res) => {
 
         const timeline = existing[0];
 
-        if (timeline.image_url) {
+        if (timeline.image_url && !timeline.image_url.startsWith('http')) {
             const oldPath = path.join(process.cwd(), timeline.image_url);
             if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
         }

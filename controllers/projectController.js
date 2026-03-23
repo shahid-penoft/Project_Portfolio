@@ -1,7 +1,7 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse, slugify, renameMediaToSeoFriendly } from '../utils/helpers.js';
 
-import { uploadImage, runMulter } from '../configs/multer.js';
+import { uploadImage, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -33,7 +33,7 @@ export const uploadProjectImage = async (req, res) => {
     try {
         await runMulter(uploadImage, req, res);
         if (!req.file) return errorResponse(res, 'No file provided.', 400);
-        return successResponse(res, { url: `/uploads/${req.file.filename}` }, 'Image uploaded.');
+        return successResponse(res, { url: req.file.location || `/uploads/${req.file.filename}` }, 'Image uploaded.');
     } catch (err) {
         console.error('[uploadProjectImage]', err);
         if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'Image too large (max 10 MB).', 413);
@@ -44,7 +44,7 @@ export const uploadProjectImage = async (req, res) => {
 // ── POST /api/projects/upload-video (admin) ────────────────────
 export const uploadProjectVideo = async (req, res) => {
     try {
-        const { uploadMediaFields: multerFields, runMulter: runMulterWrapper } = await import('../configs/multer.js');
+        const { uploadMediaFields: multerFields, runMulter: runMulterWrapper } = await import('../configs/multerS3.js');
         await runMulterWrapper(multerFields, req, res);
 
         const mainFile = req.files?.file?.[0];
@@ -53,8 +53,8 @@ export const uploadProjectVideo = async (req, res) => {
         if (!mainFile) return errorResponse(res, 'No video file provided.', 400);
 
         return successResponse(res, {
-            url: `/uploads/${mainFile.filename}`,
-            thumbnail_url: thumbFile ? `/uploads/${thumbFile.filename}` : null
+            url: mainFile.location || `/uploads/${mainFile.filename}`,
+            thumbnail_url: thumbFile ? (thumbFile.location || `/uploads/${thumbFile.filename}`) : null
         }, 'Video uploaded.');
     } catch (err) {
         console.error('[uploadProjectVideo]', err);
@@ -79,12 +79,11 @@ export const uploadProjectInlineImage = async (req, res) => {
         const [rows] = await db.query('SELECT id FROM projects WHERE id = ?', [id]);
         if (!rows.length) {
             console.error('[uploadProjectInlineImage] Project not found for ID:', id);
-            if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             return errorResponse(res, 'Project not found.', 404);
         }
 
-        const imageUrl = `/uploads/${req.file.filename}`;
-        const fullUrl = `${req.protocol}://${req.get('host')}${imageUrl}`;
+        const fullUrl = req.file.location || `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
         console.log('[uploadProjectInlineImage] Success, URL:', fullUrl);
         return successResponse(res, { url: fullUrl }, 'Image uploaded for editor.');
     } catch (err) {

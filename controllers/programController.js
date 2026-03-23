@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse, slugify, renameMediaToSeoFriendly } from '../utils/helpers.js';
-import { uploadMediaFields, runMulter } from '../configs/multer.js';
+import { uploadMediaFields, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -239,8 +239,8 @@ export const addProgramMedia = async (req, res) => {
             return errorResponse(res, 'No file uploaded.', 400);
         }
 
-        let fileUrl = mainFile ? `/uploads/${mainFile.filename}` : youtube_url;
-        let thumbnailUrl = thumbFile ? `/uploads/${thumbFile.filename}` : null;
+        let fileUrl = mainFile ? (mainFile.location || `/uploads/${mainFile.filename}`) : youtube_url;
+        let thumbnailUrl = thumbFile ? (thumbFile.location || `/uploads/${thumbFile.filename}`) : null;
 
         // Fetch program title
         const [progRows] = await db.query('SELECT title FROM programs WHERE id = ?', [id]);
