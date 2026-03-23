@@ -69,12 +69,19 @@ export const createAchievement = async (req, res) => {
 
         let iconUrl = null;
         if (req.file) {
-            const ext = path.extname(req.file.originalname) || '.jpg';
-            const seoName = `shibu-kothamangalam-achievement-${slugify(title.trim())}${ext}`;
-            const newPath = path.join(path.dirname(req.file.path), seoName);
-            if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-            fs.renameSync(req.file.path, newPath);
-            iconUrl = `/uploads/ente-nadu-icons/${seoName}`;
+            iconUrl = req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`;
+            if (!req.file.location && req.file.path) {
+                try {
+                    const ext = path.extname(req.file.originalname) || '.jpg';
+                    const seoName = `shibu-kothamangalam-achievement-${slugify(title.trim())}${ext}`;
+                    const newPath = path.join(path.dirname(req.file.path), seoName);
+                    if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+                    fs.renameSync(req.file.path, newPath);
+                    iconUrl = `/uploads/ente-nadu-icons/${seoName}`;
+                } catch (e) {
+                    console.error('Rename failed', e);
+                }
+            }
         }
 
         const [result] = await pool.query(
@@ -106,12 +113,19 @@ export const updateAchievement = async (req, res) => {
 
         let iconUrl = existing.icon_url;
         if (req.file) {
-            const ext = path.extname(req.file.originalname) || '.jpg';
-            const seoName = `shibu-kothamangalam-achievement-${slugify(title.trim())}${ext}`;
-            const newPath = path.join(path.dirname(req.file.path), seoName);
-            if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
-            fs.renameSync(req.file.path, newPath);
-            iconUrl = `/uploads/ente-nadu-icons/${seoName}`;
+            iconUrl = req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`;
+            if (!req.file.location && req.file.path) {
+                try {
+                    const ext = path.extname(req.file.originalname) || '.jpg';
+                    const seoName = `shibu-kothamangalam-achievement-${slugify(title.trim())}${ext}`;
+                    const newPath = path.join(path.dirname(req.file.path), seoName);
+                    if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
+                    fs.renameSync(req.file.path, newPath);
+                    iconUrl = `/uploads/ente-nadu-icons/${seoName}`;
+                } catch (e) {
+                    console.error('Rename failed', e);
+                }
+            }
         } else if (req.body.icon_url === null || req.body.icon_url === 'null') {
             iconUrl = null;
         }

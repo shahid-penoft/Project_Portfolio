@@ -26,7 +26,7 @@ export const createRecognition = async (req, res) => {
 
         const safeIcon = icon_name || 'Activity';
         const safeOrder = order_index || 0;
-        const iconUrl = req.file ? `/uploads/ente-nadu-icons/${req.file.filename}` : null;
+        const iconUrl = req.file ? (req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`) : null;
 
         const [result] = await db.query(
             'INSERT INTO recognitions (description, icon_name, icon_url, order_index) VALUES (?, ?, ?, ?)',
@@ -58,7 +58,7 @@ export const updateRecognition = async (req, res) => {
         }
         const rec = existing[0];
 
-        const iconUrl = req.file ? `/uploads/ente-nadu-icons/${req.file.filename}` : rec.icon_url;
+        const iconUrl = req.file ? (req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`) : rec.icon_url;
 
         await db.query(
             'UPDATE recognitions SET description = ?, icon_name = ?, icon_url = ?, order_index = ? WHERE id = ?',

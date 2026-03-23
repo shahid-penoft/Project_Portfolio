@@ -7,7 +7,7 @@ import {
     promoteAchievement,
 } from '../controllers/achievementsController.js';
 import { verifyToken } from '../middlewares/auth.js';
-import { safeUploadIcon } from '../configs/multer.js';
+import { safeUploadIcon } from '../configs/multerS3.js';
 
 const router = express.Router();
 

@@ -60,7 +60,7 @@ export const createCard = async (req, res) => {
         let iconUrl = null;
         if (req.file) {
             // Use uploaded file
-            iconUrl = `/uploads/ente-nadu-icons/${req.file.filename}`;
+            iconUrl = req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`;
         }
 
         const [result] = await pool.query(
@@ -84,7 +84,7 @@ export const updateCard = async (req, res) => {
         
         if (req.file) {
             // Use new uploaded file
-            iconUrl = `/uploads/ente-nadu-icons/${req.file.filename}`;
+            iconUrl = req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`;
         }
 
         await pool.query(

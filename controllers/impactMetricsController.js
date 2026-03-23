@@ -16,7 +16,7 @@ export const createMetric = async (req, res) => {
     try {
         let iconUrl = null;
         if (req.file) {
-            iconUrl = `/uploads/ente-nadu-icons/${req.file.filename}`;
+            iconUrl = req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`;
         }
 
         const [result] = await pool.query(
@@ -36,7 +36,7 @@ export const updateMetric = async (req, res) => {
     try {
         let iconUrl = (req.body.icon_url === 'null' || req.body.icon_url === '') ? null : (req.body.icon_url || null);
         if (req.file) {
-            iconUrl = `/uploads/ente-nadu-icons/${req.file.filename}`;
+            iconUrl = req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`;
         }
 
         await pool.query(
