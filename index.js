@@ -35,6 +35,7 @@ import programRoutes from './routes/programRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import constituentAuthRoutes from './routes/constituentAuthRoutes.js';
 import jobsRoutes from './routes/jobsRoutes.js';
+import schemesRoutes from './routes/schemesRoutes.js';
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -111,6 +112,7 @@ app.use('/api/kothamangalam-gallery', kothamangalamGalleryRoutes);
 app.use('/api/programs', programRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/mla-connect/auth', constituentAuthRoutes);
+app.use('/api/schemes', schemesRoutes);
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
     res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` })
