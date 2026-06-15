@@ -107,6 +107,13 @@ export const uploadIcon = multer({
     limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB
 }).single('icon');
 
+export const uploadJobDocuments = multer({
+    storage: multerS3(s3StorageOptions('job-applications')),
+    fileFilter,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
+}).array('documents', 5);
+
+
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>

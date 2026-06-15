@@ -34,6 +34,7 @@ import kothamangalamGalleryRoutes from './routes/kothamangalamGalleryRoutes.js';
 import programRoutes from './routes/programRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
 import constituentAuthRoutes from './routes/constituentAuthRoutes.js';
+import jobsRoutes from './routes/jobsRoutes.js';
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -98,6 +99,7 @@ app.use('/api/recognitions', recognitionRoutes);
 app.use('/api/visual-stories', visualStoryRoutes);
 app.use('/api/achievements', achievementsRoutes);
 app.use('/api/ente-nadu-testimonials', enteNaduTestimonialsRoutes);
+app.use('/api/jobs', jobsRoutes);
 app.use('/api/manifesto/long-term-commitments', manifestoRoutes);
 app.use('/api/manifesto/development-goals', manifestoDevGoalsRoutes);
 app.use('/api/contact', contactRoutes);
