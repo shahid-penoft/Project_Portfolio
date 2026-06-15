@@ -33,7 +33,7 @@ import impactMetricsRoutes from './routes/impactMetricsRoutes.js';
 import kothamangalamGalleryRoutes from './routes/kothamangalamGalleryRoutes.js';
 import programRoutes from './routes/programRoutes.js';
 import settingsRoutes from './routes/settingsRoutes.js';
-
+import constituentAuthRoutes from './routes/constituentAuthRoutes.js';
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,8 +67,8 @@ app.use(cors({
     },
     credentials: true,
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 
 // ─── Static: serve uploaded media files ──────────────────────
@@ -108,7 +108,7 @@ app.use('/api/impact-metrics', impactMetricsRoutes);
 app.use('/api/kothamangalam-gallery', kothamangalamGalleryRoutes);
 app.use('/api/programs', programRoutes);
 app.use('/api/settings', settingsRoutes);
-
+app.use('/api/mla-connect/auth', constituentAuthRoutes);
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
     res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` })
