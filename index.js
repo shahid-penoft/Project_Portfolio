@@ -36,6 +36,7 @@ import settingsRoutes from './routes/settingsRoutes.js';
 import constituentAuthRoutes from './routes/constituentAuthRoutes.js';
 import jobsRoutes from './routes/jobsRoutes.js';
 import schemesRoutes from './routes/schemesRoutes.js';
+import tourismRoutes from './routes/tourismRoutes.js';
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -113,6 +114,7 @@ app.use('/api/programs', programRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/mla-connect/auth', constituentAuthRoutes);
 app.use('/api/schemes', schemesRoutes);
+app.use('/api/tourism', tourismRoutes);
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
     res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` })
