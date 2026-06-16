@@ -109,7 +109,11 @@ export const getAllEvents = async (req, res) => {
                 const eventVideos = videosByEvent[event.id] || [];
                 return {
                     ...event,
-                    cover_image: eventPhotos.length > 0 ? eventPhotos[0].file_url : null,
+                    cover_image: eventPhotos.length > 0
+                        ? eventPhotos[0].file_url
+                        : (eventVideos.length > 0 && eventVideos[0].thumbnail_url
+                            ? eventVideos[0].thumbnail_url
+                            : null),
                     photos: eventPhotos,
                     videos: eventVideos
                 };
@@ -197,7 +201,11 @@ export const getEventsByStatus = async (req, res) => {
                 const eventVideos = videosByEvent[event.id] || [];
                 return {
                     ...event,
-                    cover_image: eventPhotos.length > 0 ? eventPhotos[0].file_url : null,
+                    cover_image: eventPhotos.length > 0
+                        ? eventPhotos[0].file_url
+                        : (eventVideos.length > 0 && eventVideos[0].thumbnail_url
+                            ? eventVideos[0].thumbnail_url
+                            : null),
                     photos: eventPhotos,
                     videos: eventVideos
                 };
@@ -382,7 +390,11 @@ export const getEventsBySectorName = async (req, res) => {
                 const eventVideos = videosByEvent[event.id] || [];
                 return {
                     ...event,
-                    cover_image: eventPhotos.length > 0 ? eventPhotos[0].file_url : null,
+                    cover_image: eventPhotos.length > 0
+                        ? eventPhotos[0].file_url
+                        : (eventVideos.length > 0 && eventVideos[0].thumbnail_url
+                            ? eventVideos[0].thumbnail_url
+                            : null),
                     photos: eventPhotos,
                     videos: eventVideos
                 };
