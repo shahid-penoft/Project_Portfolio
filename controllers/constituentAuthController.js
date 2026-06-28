@@ -157,6 +157,10 @@ export const validateVoterId = async (req, res) => {
         });
 
         // If voter is valid, send OTP via 2factor
+        if (process.env.DEVOTP === 'true') {
+            return res.json({ success: true, session_id: 'mock_voter_session' });
+        }
+
         const response = await axios.get(`https://2factor.in/API/V1/${process.env.TWO_FACTOR_API_KEY}/SMS/${phone}/AUTOGEN`);
         
         if (response.data.Status === 'Success') {
@@ -173,6 +177,10 @@ export const validateVoterId = async (req, res) => {
 export const confirmVoterIdOtp = async (req, res) => {
     const { session_id, otp } = req.body;
     try {
+        if (process.env.DEVOTP === 'true' && otp === '12345') {
+            return res.json({ success: true });
+        }
+
         const response = await axios.get(`https://2factor.in/API/V1/${process.env.TWO_FACTOR_API_KEY}/SMS/VERIFY/${session_id}/${otp}`);
         if (response.data.Status === 'Success') {
             return res.json({ success: true });
@@ -224,6 +232,10 @@ export const sendLoginOtp = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Mobile number not found. Please register first.' });
         }
 
+        if (process.env.DEVOTP === 'true') {
+            return res.json({ success: true, session_id: 'mock_login_session' });
+        }
+
         const response = await axios.get(`https://2factor.in/API/V1/${process.env.TWO_FACTOR_API_KEY}/SMS/${phone}/AUTOGEN`);
         if (response.data.Status === 'Success') {
             return res.json({ success: true, session_id: response.data.Details });
@@ -239,9 +251,16 @@ export const sendLoginOtp = async (req, res) => {
 export const verifyLoginOtp = async (req, res) => {
     const { phone, otp, session_id, rememberMe } = req.body;
     try {
-        const response = await axios.get(`https://2factor.in/API/V1/${process.env.TWO_FACTOR_API_KEY}/SMS/VERIFY/${session_id}/${otp}`);
+        let isSuccess = false;
+
+        if (process.env.DEVOTP === 'true' && otp === '12345') {
+            isSuccess = true;
+        } else {
+            const response = await axios.get(`https://2factor.in/API/V1/${process.env.TWO_FACTOR_API_KEY}/SMS/VERIFY/${session_id}/${otp}`);
+            isSuccess = response.data.Status === 'Success';
+        }
         
-        if (response.data.Status === 'Success') {
+        if (isSuccess) {
             // Find user
             const rawPhone = phone.replace(/^91/, '');
             const [users] = await db.query('SELECT id, full_name, phone, email, is_active FROM constituent_users WHERE phone = ?', [rawPhone]);
