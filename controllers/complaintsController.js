@@ -1,0 +1,652 @@
+import pool from '../configs/db.js';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+
+const s3Client = new S3Client({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    },
+});
+const s3Bucket = process.env.AWS_S3_BUCKET || 'my-portfolio-bucket';
+
+// Helper: extract S3 key from a full URL
+const keyFromUrl = (url) => {
+    try { return new URL(url).pathname.replace(/^\//, ''); } catch { return null; }
+};
+
+// Helper: delete an S3 object (non-fatal)
+const deleteS3Object = async (url) => {
+    const key = keyFromUrl(url);
+    if (!key) return;
+    try {
+        await s3Client.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: key }));
+    } catch (err) {
+        console.warn('[S3 delete warn]', key, err.message);
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/complaints/categories
+// ─────────────────────────────────────────────────────────────
+export const getCategories = async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT * FROM complaint_categories ORDER BY created_at ASC');
+        res.json({ success: true, data: rows });
+    } catch (err) {
+        console.error('[getCategories]', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch categories.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/complaints/categories
+// ─────────────────────────────────────────────────────────────
+export const createCategory = async (req, res) => {
+    try {
+        const { name, status } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: 'name is required.' });
+
+        const [result] = await pool.query(
+            'INSERT INTO complaint_categories (name, status) VALUES (?, ?)',
+            [name, status || 'Active']
+        );
+        const [[newCategory]] = await pool.query('SELECT * FROM complaint_categories WHERE id = ?', [result.insertId]);
+        res.status(201).json({ success: true, data: newCategory });
+    } catch (err) {
+        console.error('[createCategory]', err);
+        if (err.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ success: false, message: 'Category name already exists.' });
+        }
+        res.status(500).json({ success: false, message: 'Failed to create category.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PUT /api/complaints/categories/:id
+// ─────────────────────────────────────────────────────────────
+export const updateCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, status } = req.body;
+
+        const [result] = await pool.query(
+            'UPDATE complaint_categories SET name = COALESCE(?, name), status = COALESCE(?, status) WHERE id = ?',
+            [name, status, id]
+        );
+
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Category not found.' });
+        const [[updated]] = await pool.query('SELECT * FROM complaint_categories WHERE id = ?', [id]);
+        res.json({ success: true, data: updated });
+    } catch (err) {
+        console.error('[updateCategory]', err);
+        if (err.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ success: false, message: 'Category name already exists.' });
+        }
+        res.status(500).json({ success: false, message: 'Failed to update category.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/complaints/categories/:id
+// ─────────────────────────────────────────────────────────────
+export const deleteCategory = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await pool.query('DELETE FROM complaint_categories WHERE id = ?', [id]);
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Category not found.' });
+        res.json({ success: true, message: 'Category deleted successfully.' });
+    } catch (err) {
+        console.error('[deleteCategory]', err);
+        res.status(500).json({ success: false, message: 'Failed to delete category.' });
+    }
+};
+
+// Helper: log an activity entry
+const logActivity = async (complaintId, text) => {
+    await pool.query(
+        'INSERT INTO complaint_activity (complaint_id, text) VALUES (?, ?)',
+        [complaintId, text]
+    );
+};
+
+// Helper: generate reference number  COMP-YYYY-NNNN
+const generateReferenceNo = async () => {
+    const year = new Date().getFullYear();
+    const [[{ cnt }]] = await pool.query(
+        'SELECT COUNT(*) as cnt FROM complaints WHERE YEAR(created_at) = ?', [year]
+    );
+    const seq = String(cnt + 1).padStart(4, '0');
+    return `COMP-${year}-${seq}`;
+};
+
+// Helper: fetch full complaint with all sub-resources
+const fetchFullComplaint = async (id) => {
+    const [[complaint]] = await pool.query(`
+        SELECT c.*,
+               d.name  AS department_name,
+               lb.name AS local_body_name,
+               lbw.ward_no,
+               lbw.place_name AS ward_place_name,
+               au.full_name   AS filed_by_admin_name
+        FROM complaints c
+        LEFT JOIN departments      d   ON c.department_id     = d.id
+        LEFT JOIN local_bodies     lb  ON c.local_body_id     = lb.id
+        LEFT JOIN local_body_wards lbw ON c.ward_id           = lbw.id
+        LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
+        WHERE c.id = ?
+    `, [id]);
+
+    if (!complaint) return null;
+
+    const [updates]     = await pool.query('SELECT * FROM complaint_updates     WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [media]       = await pool.query('SELECT * FROM complaint_media        WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [attachments] = await pool.query('SELECT * FROM complaint_attachments  WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [team]        = await pool.query(`
+        SELECT ct.id, ct.role_label, ct.created_at,
+               au.id as admin_user_id, au.full_name as name, au.email
+        FROM complaint_team ct
+        JOIN admin_users au ON ct.admin_user_id = au.id
+        WHERE ct.complaint_id = ?
+        ORDER BY ct.created_at ASC
+    `, [id]);
+    const [activity]    = await pool.query('SELECT * FROM complaint_activity     WHERE complaint_id = ? ORDER BY created_at DESC', [id]);
+
+    return { ...complaint, updates, media, attachments, team, activity };
+};
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/complaints
+// Query: status, category, priority, search, page, limit, trash
+// ─────────────────────────────────────────────────────────────
+export const getComplaints = async (req, res) => {
+    try {
+        const { status, category, priority, search, page = 1, limit = 20, trash } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        const conditions = [];
+        const params = [];
+
+        // Trash vs live
+        if (trash === 'true') {
+            conditions.push('c.is_deleted = 1');
+        } else {
+            conditions.push('c.is_deleted = 0');
+        }
+
+        // Constituent scoping — only see own complaints
+        if (!req.isAdmin && req.constituent) {
+            conditions.push('c.constituent_user_id = ?');
+            params.push(req.constituent.id);
+        }
+
+        if (status)   { conditions.push('c.status = ?');   params.push(status); }
+        if (category) { conditions.push('c.category = ?'); params.push(category); }
+        if (priority) { conditions.push('c.priority = ?'); params.push(priority); }
+        if (search) {
+            conditions.push('(c.title LIKE ? OR c.complainant_name LIKE ? OR c.reference_no LIKE ?)');
+            const q = `%${search}%`;
+            params.push(q, q, q);
+        }
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        const [[{ total }]] = await pool.query(
+            `SELECT COUNT(*) as total FROM complaints c ${where}`, params
+        );
+
+        const [rows] = await pool.query(`
+            SELECT c.id, c.reference_no, c.title, c.category, c.priority, c.status,
+                   c.complainant_name, c.phone, c.date_filed, c.created_at, c.is_deleted,
+                   d.name AS department_name,
+                   lb.name AS local_body_name,
+                   lbw.ward_no
+            FROM complaints c
+            LEFT JOIN departments      d   ON c.department_id = d.id
+            LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
+            LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id
+            ${where}
+            ORDER BY c.created_at DESC
+            LIMIT ? OFFSET ?
+        `, [...params, parseInt(limit), offset]);
+
+        res.json({
+            success: true,
+            data: rows,
+            total,
+            page: parseInt(page),
+            totalPages: Math.ceil(total / parseInt(limit)),
+        });
+    } catch (err) {
+        console.error('[getComplaints]', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch complaints.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/complaints/stats  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const getComplaintStats = async (req, res) => {
+    try {
+        const [[stats]] = await pool.query(`
+            SELECT
+                COUNT(*)                                          AS total,
+                SUM(status = 'Pending')                          AS pending,
+                SUM(status = 'Under Process')                    AS underProcess,
+                SUM(status = 'Not Attended')                     AS notAttended,
+                SUM(status = 'Resolved')                         AS resolved,
+                SUM(status = 'Escalated')                        AS escalated,
+                SUM(is_deleted = 1)                              AS trashed
+            FROM complaints
+        `);
+        res.json({ success: true, data: stats });
+    } catch (err) {
+        console.error('[getComplaintStats]', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch stats.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// GET /api/complaints/:id
+// ─────────────────────────────────────────────────────────────
+export const getComplaintById = async (req, res) => {
+    try {
+        const complaint = await fetchFullComplaint(req.params.id);
+        if (!complaint) return res.status(404).json({ success: false, message: 'Complaint not found.' });
+
+        // Constituent can only view their own
+        if (!req.isAdmin && req.constituent) {
+            if (complaint.constituent_user_id !== req.constituent.id) {
+                return res.status(403).json({ success: false, message: 'Access denied.' });
+            }
+        }
+
+        res.json({ success: true, data: complaint });
+    } catch (err) {
+        console.error('[getComplaintById]', err);
+        res.status(500).json({ success: false, message: 'Failed to fetch complaint.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/complaints
+// ─────────────────────────────────────────────────────────────
+export const createComplaint = async (req, res) => {
+    try {
+        const {
+            title, category, priority, status, description, location, internal_note,
+            complainant_name, phone, alternative_phone, email,
+            local_body_id, ward_id, department_id, date_filed,
+        } = req.body;
+
+        if (!title || !complainant_name || !phone) {
+            return res.status(400).json({ success: false, message: 'title, complainant_name and phone are required.' });
+        }
+
+        const reference_no = await generateReferenceNo();
+
+        const constituentId = req.constituent?.id || null;
+        const adminId       = req.admin?.id       || null;
+
+        const [result] = await pool.query(`
+            INSERT INTO complaints
+              (reference_no, title, category, priority, status, description, location, internal_note,
+               complainant_name, phone, alternative_phone, email,
+               local_body_id, ward_id, department_id,
+               constituent_user_id, filed_by_admin_id, date_filed)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `, [
+            reference_no,
+            title,
+            category || 'Other',
+            priority || 'Medium',
+            status || 'Pending',
+            description || null,
+            location || null,
+            internal_note || null,
+            complainant_name,
+            phone,
+            alternative_phone || null,
+            email || null,
+            local_body_id || null,
+            ward_id || null,
+            department_id || null,
+            constituentId,
+            adminId,
+            date_filed || new Date().toISOString().split('T')[0],
+        ]);
+
+        const newId = result.insertId;
+        await logActivity(newId, `Complaint "${title}" filed. Reference: ${reference_no}`);
+
+        const complaint = await fetchFullComplaint(newId);
+        res.status(201).json({ success: true, message: 'Complaint created successfully.', data: complaint });
+    } catch (err) {
+        console.error('[createComplaint]', err);
+        res.status(500).json({ success: false, message: 'Failed to create complaint.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PATCH /api/complaints/:id  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const updateComplaint = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            title, category, priority, status, description, location, internal_note,
+            complainant_name, phone, alternative_phone, email,
+            local_body_id, ward_id, department_id, date_filed,
+        } = req.body;
+
+        const [result] = await pool.query(`
+            UPDATE complaints SET
+              title = COALESCE(?, title),
+              category = COALESCE(?, category),
+              priority = COALESCE(?, priority),
+              status = COALESCE(?, status),
+              description = COALESCE(?, description),
+              location = COALESCE(?, location),
+              internal_note = COALESCE(?, internal_note),
+              complainant_name = COALESCE(?, complainant_name),
+              phone = COALESCE(?, phone),
+              alternative_phone = COALESCE(?, alternative_phone),
+              email = COALESCE(?, email),
+              local_body_id = COALESCE(?, local_body_id),
+              ward_id = COALESCE(?, ward_id),
+              department_id = COALESCE(?, department_id),
+              date_filed = COALESCE(?, date_filed)
+            WHERE id = ?
+        `, [
+            title, category, priority, status, description, location, internal_note,
+            complainant_name, phone, alternative_phone, email,
+            local_body_id, ward_id, department_id, date_filed, id,
+        ]);
+
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
+        await logActivity(id, `Complaint details updated by admin.`);
+        const complaint = await fetchFullComplaint(id);
+        res.json({ success: true, message: 'Complaint updated.', data: complaint });
+    } catch (err) {
+        console.error('[updateComplaint]', err);
+        res.status(500).json({ success: false, message: 'Failed to update complaint.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PATCH /api/complaints/:id/status  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const updateComplaintStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        if (!status) return res.status(400).json({ success: false, message: 'status is required.' });
+
+        const [result] = await pool.query('UPDATE complaints SET status = ? WHERE id = ?', [status, id]);
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
+
+        await logActivity(id, `Status changed to "${status}".`);
+        res.json({ success: true, message: `Status updated to ${status}.` });
+    } catch (err) {
+        console.error('[updateComplaintStatus]', err);
+        res.status(500).json({ success: false, message: 'Failed to update status.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PATCH /api/complaints/:id/trash  (admin only — soft delete)
+// ─────────────────────────────────────────────────────────────
+export const trashComplaint = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await pool.query(
+            'UPDATE complaints SET is_deleted = 1, deleted_at = NOW() WHERE id = ? AND is_deleted = 0', [id]
+        );
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found or already trashed.' });
+        await logActivity(id, 'Complaint moved to trash.');
+        res.json({ success: true, message: 'Complaint moved to trash.' });
+    } catch (err) {
+        console.error('[trashComplaint]', err);
+        res.status(500).json({ success: false, message: 'Failed to trash complaint.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PATCH /api/complaints/:id/restore  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const restoreComplaint = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await pool.query(
+            'UPDATE complaints SET is_deleted = 0, deleted_at = NULL WHERE id = ? AND is_deleted = 1', [id]
+        );
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found in trash.' });
+        await logActivity(id, 'Complaint restored from trash.');
+        res.json({ success: true, message: 'Complaint restored successfully.' });
+    } catch (err) {
+        console.error('[restoreComplaint]', err);
+        res.status(500).json({ success: false, message: 'Failed to restore complaint.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/complaints/:id  (admin only — permanent delete, requires ?force=true)
+// ─────────────────────────────────────────────────────────────
+export const deleteComplaint = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { force } = req.query;
+
+        if (force !== 'true') {
+            return res.status(400).json({ success: false, message: 'Permanent deletion requires ?force=true. Use PATCH /trash to soft-delete.' });
+        }
+
+        // Delete all S3 files first
+        const [media]       = await pool.query('SELECT file_url FROM complaint_media       WHERE complaint_id = ?', [id]);
+        const [attachments] = await pool.query('SELECT file_url FROM complaint_attachments WHERE complaint_id = ?', [id]);
+        await Promise.all([...media, ...attachments].map(r => deleteS3Object(r.file_url)));
+
+        const [result] = await pool.query('DELETE FROM complaints WHERE id = ?', [id]);
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
+
+        res.json({ success: true, message: 'Complaint permanently deleted.' });
+    } catch (err) {
+        console.error('[deleteComplaint]', err);
+        res.status(500).json({ success: false, message: 'Failed to delete complaint.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/complaints/:id/updates  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const addComplaintUpdate = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { type, title, note } = req.body;
+        if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
+
+        const [result] = await pool.query(
+            'INSERT INTO complaint_updates (complaint_id, type, title, note) VALUES (?,?,?,?)',
+            [id, type || 'Status Update', title, note || null]
+        );
+        await logActivity(id, `Update added: "${title}"`);
+        const [[row]] = await pool.query('SELECT * FROM complaint_updates WHERE id = ?', [result.insertId]);
+        res.status(201).json({ success: true, data: row });
+    } catch (err) {
+        console.error('[addComplaintUpdate]', err);
+        res.status(500).json({ success: false, message: 'Failed to add update.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/complaints/:id/updates/:updateId  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const deleteComplaintUpdate = async (req, res) => {
+    try {
+        const { id, updateId } = req.params;
+        const [result] = await pool.query(
+            'DELETE FROM complaint_updates WHERE id = ? AND complaint_id = ?', [updateId, id]
+        );
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Update not found.' });
+        await logActivity(id, `An update entry was removed.`);
+        res.json({ success: true, message: 'Update deleted.' });
+    } catch (err) {
+        console.error('[deleteComplaintUpdate]', err);
+        res.status(500).json({ success: false, message: 'Failed to delete update.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/complaints/:id/media  (admin or owner constituent)
+// Multer processes files before this handler runs.
+// ─────────────────────────────────────────────────────────────
+export const uploadComplaintMedia = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!req.files?.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });
+
+        const rows = req.files.map(f => {
+            const isVideo = f.mimetype.startsWith('video/');
+            return [id, isVideo ? 'video' : 'photo', f.location, f.originalname];
+        });
+
+        await pool.query(
+            'INSERT INTO complaint_media (complaint_id, media_type, file_url, caption) VALUES ?',
+            [rows]
+        );
+        await logActivity(id, `${req.files.length} media file(s) uploaded.`);
+
+        const [media] = await pool.query('SELECT * FROM complaint_media WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+        res.status(201).json({ success: true, data: media });
+    } catch (err) {
+        console.error('[uploadComplaintMedia]', err);
+        res.status(500).json({ success: false, message: 'Failed to upload media.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/complaints/:id/media/:mediaId  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const deleteComplaintMedia = async (req, res) => {
+    try {
+        const { id, mediaId } = req.params;
+        const [[row]] = await pool.query('SELECT file_url FROM complaint_media WHERE id = ? AND complaint_id = ?', [mediaId, id]);
+        if (!row) return res.status(404).json({ success: false, message: 'Media not found.' });
+
+        await deleteS3Object(row.file_url);
+        await pool.query('DELETE FROM complaint_media WHERE id = ?', [mediaId]);
+        await logActivity(id, 'A media file was removed.');
+        res.json({ success: true, message: 'Media deleted.' });
+    } catch (err) {
+        console.error('[deleteComplaintMedia]', err);
+        res.status(500).json({ success: false, message: 'Failed to delete media.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/complaints/:id/attachments  (admin or owner)
+// ─────────────────────────────────────────────────────────────
+export const uploadComplaintAttachment = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!req.files?.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });
+
+        const rows = req.files.map(f => {
+            const ext = f.originalname.split('.').pop()?.toLowerCase() || '';
+            const sizeKb = Math.round(f.size / 1024);
+            return [id, f.originalname, f.location, ext, sizeKb];
+        });
+
+        await pool.query(
+            'INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_size_kb) VALUES ?',
+            [rows]
+        );
+        await logActivity(id, `${req.files.length} attachment(s) uploaded.`);
+
+        const [attachments] = await pool.query('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+        res.status(201).json({ success: true, data: attachments });
+    } catch (err) {
+        console.error('[uploadComplaintAttachment]', err);
+        res.status(500).json({ success: false, message: 'Failed to upload attachment.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/complaints/:id/attachments/:attachId  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const deleteComplaintAttachment = async (req, res) => {
+    try {
+        const { id, attachId } = req.params;
+        const [[row]] = await pool.query('SELECT file_url FROM complaint_attachments WHERE id = ? AND complaint_id = ?', [attachId, id]);
+        if (!row) return res.status(404).json({ success: false, message: 'Attachment not found.' });
+
+        await deleteS3Object(row.file_url);
+        await pool.query('DELETE FROM complaint_attachments WHERE id = ?', [attachId]);
+        await logActivity(id, 'An attachment was removed.');
+        res.json({ success: true, message: 'Attachment deleted.' });
+    } catch (err) {
+        console.error('[deleteComplaintAttachment]', err);
+        res.status(500).json({ success: false, message: 'Failed to delete attachment.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/complaints/:id/team  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const addComplaintTeamMember = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { admin_user_id, role_label } = req.body;
+        if (!admin_user_id) return res.status(400).json({ success: false, message: 'admin_user_id is required.' });
+
+        // Verify admin user exists
+        const [[adminUser]] = await pool.query('SELECT id, full_name FROM admin_users WHERE id = ?', [admin_user_id]);
+        if (!adminUser) return res.status(404).json({ success: false, message: 'Admin user not found.' });
+
+        try {
+            const [result] = await pool.query(
+                'INSERT INTO complaint_team (complaint_id, admin_user_id, role_label) VALUES (?,?,?)',
+                [id, admin_user_id, role_label || null]
+            );
+            await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`);
+            const [[row]] = await pool.query(`
+                SELECT ct.id, ct.role_label, ct.created_at,
+                       au.id as admin_user_id, au.full_name as name, au.email
+                FROM complaint_team ct
+                JOIN admin_users au ON ct.admin_user_id = au.id
+                WHERE ct.id = ?
+            `, [result.insertId]);
+            res.status(201).json({ success: true, data: row });
+        } catch (dupErr) {
+            if (dupErr.code === 'ER_DUP_ENTRY') {
+                return res.status(409).json({ success: false, message: 'This admin is already in the team.' });
+            }
+            throw dupErr;
+        }
+    } catch (err) {
+        console.error('[addComplaintTeamMember]', err);
+        res.status(500).json({ success: false, message: 'Failed to add team member.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/complaints/:id/team/:memberId  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const removeComplaintTeamMember = async (req, res) => {
+    try {
+        const { id, memberId } = req.params;
+        const [[row]] = await pool.query(`
+            SELECT ct.id, au.full_name
+            FROM complaint_team ct JOIN admin_users au ON ct.admin_user_id = au.id
+            WHERE ct.id = ? AND ct.complaint_id = ?
+        `, [memberId, id]);
+        if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
+
+        await pool.query('DELETE FROM complaint_team WHERE id = ?', [memberId]);
+        await logActivity(id, `Team member "${row.full_name}" removed.`);
+        res.json({ success: true, message: 'Team member removed.' });
+    } catch (err) {
+        console.error('[removeComplaintTeamMember]', err);
+        res.status(500).json({ success: false, message: 'Failed to remove team member.' });
+    }
+};

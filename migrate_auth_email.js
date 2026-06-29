@@ -1,9 +1,11 @@
 import db from './configs/db.js';
 
-const runMigration = async () => {
+const migrate = async () => {
     try {
-        console.log('Running Constituent Auth Migration...');
+        console.log('Dropping constituent_users...');
+        await db.query('DROP TABLE IF EXISTS constituent_users');
 
+        console.log('Recreating constituent_users...');
         await db.query(`
             CREATE TABLE IF NOT EXISTS constituent_users (
                 id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -11,6 +13,7 @@ const runMigration = async () => {
                 phone               VARCHAR(20)  DEFAULT NULL,
                 email               VARCHAR(150) NOT NULL UNIQUE,
                 password            VARCHAR(255) NOT NULL,
+                gender              ENUM('male', 'female', 'other') DEFAULT NULL,
                 panchayat_id        INT UNSIGNED NOT NULL,
                 ward_id             INT UNSIGNED NOT NULL,
                 house_name          VARCHAR(150) NOT NULL,
@@ -24,27 +27,13 @@ const runMigration = async () => {
                 FOREIGN KEY (ward_id)      REFERENCES local_body_wards(id)
             )
         `);
-        console.log('Created constituent_users table');
 
-        await db.query(`
-            CREATE TABLE IF NOT EXISTS constituent_password_resets (
-                id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-                email      VARCHAR(150) NOT NULL,
-                token      VARCHAR(255) NOT NULL,
-                expires_at DATETIME     NOT NULL,
-                used       BOOLEAN      NOT NULL DEFAULT 0,
-                created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_token (token)
-            )
-        `);
-        console.log('Created constituent_password_resets table');
-
-        console.log('Migration completed successfully!');
+        console.log('Done!');
         process.exit(0);
-    } catch (error) {
-        console.error('Migration failed:', error);
+    } catch (e) {
+        console.error(e);
         process.exit(1);
     }
-};
+}
 
-runMigration();
+migrate();

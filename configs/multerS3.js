@@ -19,16 +19,8 @@ const s3Bucket = process.env.AWS_S3_BUCKET || 'my-portfolio-bucket';
 // ─── File type filter ─────────────────────────────────────────
 const fileFilter = (req, file, cb) => {
     fs.appendFileSync('multer_debug.log', `fileFilter called for: ${file.originalname} mimetype: ${file.mimetype}\n`);
-    const allowed = [
-        'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
-        'video/mp4', 'video/webm', 'video/quicktime', 'application/pdf',
-        'application/octet-stream'
-    ];
-    if (allowed.includes(file.mimetype)) {
-        cb(null, true);
-    } else {
-        cb(new Error(`File type not allowed: ${file.mimetype}`), false);
-    }
+    // User requested to allow all file types
+    cb(null, true);
 };
 
 const iconFileFilter = (req, file, cb) => {
@@ -46,9 +38,13 @@ const iconFileFilter = (req, file, cb) => {
 const s3StorageOptions = (folder = 'uploads') => ({
     s3: s3Client,
     bucket: s3Bucket,
+    contentType: (req, file, cb) => {
+        cb(null, file.mimetype);
+    },
     key: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
         const name = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '-');
-        cb(null, `${folder}/${name}`);
+        cb(null, `${folder}/${uniqueSuffix}-${name}`);
     },
 });
 
@@ -76,6 +72,12 @@ export const uploadMedia = multer({
     fileFilter,
     limits: { fileSize: 200 * 1024 * 1024 },
 }).single('file');
+
+export const uploadMediaArray = multer({
+    storage: multerS3(s3StorageOptions('media')),
+    fileFilter,
+    limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB
+}).array('media', 10);
 
 export const uploadMediaFields = multer({
     storage: multerS3(s3StorageOptions('media')),
@@ -112,6 +114,19 @@ export const uploadJobDocuments = multer({
     fileFilter,
     limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
 }).array('documents', 5);
+
+// ─── Complaint Uploads ────────────────────────────────────────
+export const uploadComplaintMedia = multer({
+    storage: multerS3(s3StorageOptions('complaints/media')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — photos & videos
+}).array('files', 10);
+
+export const uploadComplaintAttachments = multer({
+    storage: multerS3(s3StorageOptions('complaints/attachments')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+}).array('files', 5);
 
 
 // Helper: wrap multer in a promise (for use inside async controllers)

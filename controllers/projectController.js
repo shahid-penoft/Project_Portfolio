@@ -117,10 +117,11 @@ export const getAllProjects = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p ${where}`, vals
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN departments d ON d.id = p.department_id
              ${where}
              ORDER BY p.display_order ASC, p.created_at DESC
              LIMIT ? OFFSET ?`,
@@ -344,10 +345,11 @@ export const getProjectById = async (req, res) => {
     try {
         const { id } = req.params;
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, p.images, p.videos
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name, p.images, p.videos
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN departments d ON d.id = p.department_id
              WHERE p.id = ?`,
             [id]
         );
@@ -356,6 +358,44 @@ export const getProjectById = async (req, res) => {
         const p = rows[0];
         p.images = parseImages(p.images);
         p.videos = parseVideos(p.videos);
+        p.departments = typeof p.departments === 'string' ? JSON.parse(p.departments) : (p.departments || []);
+
+        // Hydrate related tables
+        const [[milestones], [updates], [attachments], [budget_entries], [contractors], [team], [activity_log]] = await Promise.all([
+            db.query('SELECT * FROM project_milestones WHERE project_id = ? ORDER BY display_order ASC, target_date ASC', [id]),
+            db.query(`SELECT u.*, au.full_name as author_name 
+                      FROM project_updates u 
+                      LEFT JOIN admin_users au ON u.created_by = au.id 
+                      WHERE project_id = ? ORDER BY u.created_at DESC`, [id]),
+            db.query('SELECT * FROM project_attachments WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query('SELECT * FROM project_budget_entries WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query('SELECT * FROM project_contractors WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query(`SELECT t.*, au.full_name as name, au.role, au.profile_image 
+                      FROM project_team_members t
+                      JOIN admin_users au ON t.admin_user_id = au.id
+                      WHERE project_id = ? ORDER BY t.assigned_at DESC`, [id]),
+            db.query(`SELECT l.*, au.full_name as author_name 
+                      FROM project_activity_logs l
+                      LEFT JOIN admin_users au ON l.admin_user_id = au.id
+                      WHERE project_id = ? ORDER BY l.created_at DESC LIMIT 50`, [id])
+        ]);
+
+        // Attach media to updates
+        if (updates.length > 0) {
+            const updateIds = updates.map(u => u.id);
+            const [media] = await db.query('SELECT * FROM project_update_media WHERE update_id IN (?)', [updateIds]);
+            updates.forEach(u => {
+                u.media = media.filter(m => m.update_id === u.id);
+            });
+        }
+
+        p.milestones = milestones;
+        p.updates = updates;
+        p.attachments = attachments;
+        p.budget_entries = budget_entries;
+        p.contractors = contractors;
+        p.team = team;
+        p.activity_log = activity_log;
 
         return successResponse(res, { data: p }, 'Project fetched.');
     } catch (err) {
@@ -371,6 +411,9 @@ export const createProject = async (req, res) => {
             title, description, project_content, images = [], videos = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
+            // New fields
+            status = 'In Progress', ward_id, start_date, end_date,
+            actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00
         } = req.body;
 
         if (!title?.trim()) return errorResponse(res, 'Title is required.', 400);
@@ -388,11 +431,14 @@ export const createProject = async (req, res) => {
         const seoImages = renameMediaToSeoFriendly(images, title);
         const imagesJson = JSON.stringify(Array.isArray(seoImages) ? seoImages : []);
         const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
+        const depsJson = JSON.stringify(Array.isArray(departments) ? departments : []);
+        
         const [result] = await db.query(
-            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
-            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0]
+            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0,
+            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget]
         );
 
         const [rows] = await db.query(
@@ -405,6 +451,8 @@ export const createProject = async (req, res) => {
         const p = rows[0];
         p.images = parseImages(p.images);
         p.videos = parseVideos(p.videos);
+        p.departments = typeof p.departments === 'string' ? JSON.parse(p.departments) : (p.departments || []);
+        
         return successResponse(res, { data: p }, 'Project created.', 201);
     } catch (err) {
         console.error('[createProject]', err);
@@ -420,6 +468,9 @@ export const updateProject = async (req, res) => {
             title, description, project_content, images = [], videos = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
+            // New fields
+            status = 'In Progress', ward_id, start_date, end_date,
+            actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00
         } = req.body;
 
         if (!title?.trim()) return errorResponse(res, 'Title is required.', 400);
@@ -442,12 +493,16 @@ export const updateProject = async (req, res) => {
 
         const imagesJson = JSON.stringify(Array.isArray(images) ? images : []);
         const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
+        const depsJson = JSON.stringify(Array.isArray(departments) ? departments : []);
+        
         const [result] = await db.query(
             `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, videos=?, tags=?, year=?,
-             sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW()
+             sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(),
+             status=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?
              WHERE id=?`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
-            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0, id]
+            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0,
+            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, id]
         );
 
         if (!result.affectedRows) return errorResponse(res, 'Project not found.', 404);
@@ -461,6 +516,7 @@ export const updateProject = async (req, res) => {
         const p = rows[0];
         p.images = parseImages(p.images);
         p.videos = parseVideos(p.videos);
+        p.departments = typeof p.departments === 'string' ? JSON.parse(p.departments) : (p.departments || []);
 
         return successResponse(res, { data: p }, 'Project fetched.');
     } catch (err) {

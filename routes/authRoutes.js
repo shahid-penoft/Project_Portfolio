@@ -10,6 +10,7 @@ import {
     logout,
     getProfile,
     updateProfile,
+    searchUsers,
 } from '../controllers/authController.js';
 
 const router = express.Router();
@@ -42,5 +43,6 @@ router.post('/logout', logout);
 router.post('/change-password', changePassword);
 router.get('/profile', getProfile);
 router.put('/profile', updateProfile);
+router.get('/search-users', searchUsers);
 
 export default router;

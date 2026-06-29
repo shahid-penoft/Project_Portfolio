@@ -496,11 +496,10 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS constituent_users (
     id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     full_name           VARCHAR(100) NOT NULL,
-    phone               VARCHAR(20)  NOT NULL UNIQUE,
-    email               VARCHAR(150) DEFAULT NULL,
+    phone               VARCHAR(20)  DEFAULT NULL,
+    email               VARCHAR(150) NOT NULL UNIQUE,
     password            VARCHAR(255) NOT NULL,
-    verification_method ENUM('aadhar','voterId') NOT NULL,
-    verification_id     VARCHAR(20)  NOT NULL,
+    gender              VARCHAR(20)  DEFAULT NULL,
     panchayat_id        INT UNSIGNED NOT NULL,
     ward_id             INT UNSIGNED NOT NULL,
     house_name          VARCHAR(150) NOT NULL,
@@ -527,7 +526,18 @@ CREATE TABLE IF NOT EXISTS constituent_password_resets (
     INDEX idx_token (token)
 );
 
-
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: constituent_email_otps
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS constituent_email_otps (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    email      VARCHAR(150) NOT NULL,
+    otp        VARCHAR(10)  NOT NULL,
+    expires_at DATETIME     NOT NULL,
+    is_verified BOOLEAN     NOT NULL DEFAULT 0,
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_email (email)
+);
 
 -- Tourism Attractions (admin-managed)
 CREATE TABLE IF NOT EXISTS tourism_attractions (
@@ -561,4 +571,138 @@ CREATE TABLE IF NOT EXISTS tourism_suggestions (
     submitter_name  VARCHAR(255),
     status          ENUM('pending','approved','rejected') DEFAULT 'pending',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+--  MODULE: Complaints (MLA Connect + Admin Panel)
+-- ============================================================
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: complaints
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaints (
+    id                  INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    reference_no        VARCHAR(30)     NOT NULL UNIQUE,
+    title               VARCHAR(255)    NOT NULL,
+    category            VARCHAR(255)    NOT NULL DEFAULT 'Other',
+    priority            ENUM('Low','Medium','High','Critical') NOT NULL DEFAULT 'Medium',
+    status              ENUM(
+                          'Pending','Under Process','Not Attended',
+                          'Resolved','Escalated','Draft'
+                        ) NOT NULL DEFAULT 'Pending',
+    description         TEXT            DEFAULT NULL,
+    location            VARCHAR(500)    DEFAULT NULL,
+    internal_note       TEXT            DEFAULT NULL,
+    -- Complainant info
+    complainant_name    VARCHAR(150)    NOT NULL,
+    phone               VARCHAR(25)     NOT NULL,
+    alternative_phone   VARCHAR(25)     DEFAULT NULL,
+    email               VARCHAR(200)    DEFAULT NULL,
+    -- Geography
+    local_body_id       INT UNSIGNED    DEFAULT NULL,
+    ward_id             INT UNSIGNED    DEFAULT NULL,
+    -- Department
+    department_id       INT UNSIGNED    DEFAULT NULL,
+    -- Auth ownership (one or the other is set, not both)
+    constituent_user_id INT UNSIGNED    DEFAULT NULL,
+    filed_by_admin_id   INT UNSIGNED    DEFAULT NULL,
+    -- Soft delete / Trash
+    is_deleted          BOOLEAN         NOT NULL DEFAULT 0,
+    deleted_at          DATETIME        DEFAULT NULL,
+    -- Filing date
+    date_filed          DATE            NOT NULL DEFAULT (CURRENT_DATE),
+    created_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (local_body_id)       REFERENCES local_bodies(id)       ON DELETE SET NULL,
+    FOREIGN KEY (ward_id)             REFERENCES local_body_wards(id)   ON DELETE SET NULL,
+    FOREIGN KEY (department_id)       REFERENCES departments(id)        ON DELETE SET NULL,
+    FOREIGN KEY (constituent_user_id) REFERENCES constituent_users(id)  ON DELETE SET NULL,
+    FOREIGN KEY (filed_by_admin_id)   REFERENCES admin_users(id)        ON DELETE SET NULL,
+    INDEX idx_status      (status),
+    INDEX idx_category    (category),
+    INDEX idx_priority    (priority),
+    INDEX idx_deleted     (is_deleted),
+    INDEX idx_created     (created_at),
+    INDEX idx_constituent (constituent_user_id)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: complaint_updates  (progress / timeline entries)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaint_updates (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    complaint_id    INT UNSIGNED    NOT NULL,
+    type            VARCHAR(100)    NOT NULL DEFAULT 'Status Update',
+    title           VARCHAR(255)    NOT NULL,
+    note            TEXT            DEFAULT NULL,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+    INDEX idx_complaint_updates (complaint_id)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: complaint_media  (evidence gallery photos/videos)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaint_media (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    complaint_id    INT UNSIGNED    NOT NULL,
+    media_type      ENUM('photo','video') NOT NULL DEFAULT 'photo',
+    file_url        VARCHAR(1000)   NOT NULL,
+    caption         VARCHAR(500)    DEFAULT NULL,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+    INDEX idx_complaint_media (complaint_id)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: complaint_attachments  (supporting documents)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaint_attachments (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    complaint_id    INT UNSIGNED    NOT NULL,
+    file_name       VARCHAR(255)    NOT NULL,
+    file_url        VARCHAR(1000)   NOT NULL,
+    file_type       VARCHAR(50)     DEFAULT NULL,
+    file_size_kb    INT UNSIGNED    DEFAULT NULL,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+    INDEX idx_complaint_attach (complaint_id)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: complaint_team  (follow-up team — admin users only)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaint_team (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    complaint_id    INT UNSIGNED    NOT NULL,
+    admin_user_id   INT UNSIGNED    NOT NULL,
+    role_label      VARCHAR(100)    DEFAULT NULL,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (complaint_id)  REFERENCES complaints(id)   ON DELETE CASCADE,
+    FOREIGN KEY (admin_user_id) REFERENCES admin_users(id)  ON DELETE CASCADE,
+    UNIQUE KEY uk_complaint_admin (complaint_id, admin_user_id),
+    INDEX idx_complaint_team (complaint_id)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: complaint_activity  (activity log)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaint_activity (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    complaint_id    INT UNSIGNED    NOT NULL,
+    text            TEXT            NOT NULL,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+    INDEX idx_complaint_activity (complaint_id)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: complaint_categories
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS complaint_categories (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    name            VARCHAR(255)    NOT NULL UNIQUE,
+    status          ENUM('Active', 'Inactive') DEFAULT 'Active',
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

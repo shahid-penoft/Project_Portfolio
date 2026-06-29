@@ -242,3 +242,37 @@ export const updateProfile = async (req, res) => {
         return errorResponse(res, 'Server error updating profile.');
     }
 };
+
+// ─────────────────────────────────────────────────────────────
+//  GET /api/auth/search-users   (Authenticated)
+// ─────────────────────────────────────────────────────────────
+export const searchUsers = async (req, res) => {
+    try {
+        const { query } = req.query;
+        let sql = 'SELECT id, full_name as name, role, email FROM admin_users WHERE is_active = 1';
+        const params = [];
+
+        if (query) {
+            sql += ' AND (full_name LIKE ? OR role LIKE ? OR email LIKE ?)';
+            const wildcard = `%${query}%`;
+            params.push(wildcard, wildcard, wildcard);
+        }
+
+        const [rows] = await db.query(sql, params);
+        
+        const formatted = rows.map(u => {
+            const initials = u.name ? u.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
+            return {
+                ...u,
+                initials,
+                color: '#3B82F6', // fallback color
+                department: 'Administration' // mock department since it is not in schema
+            };
+        });
+
+        return successResponse(res, { data: formatted }, 'Users fetched successfully.');
+    } catch (err) {
+        console.error('[searchUsers]', err);
+        return errorResponse(res, 'Server error fetching users.');
+    }
+};

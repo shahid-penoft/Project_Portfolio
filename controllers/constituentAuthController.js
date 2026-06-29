@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import axios from 'axios';
 import sandboxTokenService from '../services/sandboxTokenService.js';
 import crypto from 'crypto';
+import { successResponse, errorResponse } from '../utils/helpers.js';
+import { sendConstituentPasswordResetEmail, sendRegistrationOtpEmail } from '../utils/email.js';
 
 // --- Identity Verification ---
 
@@ -194,26 +196,87 @@ export const confirmVoterIdOtp = async (req, res) => {
 
 // --- Auth / Login / Register ---
 
-// Register Constituent
-export const registerConstituent = async (req, res) => {
-    const { verification_method, verification_id, full_name, email, panchayat_id, ward_id, house_name, house_number, password, gender } = req.body;
-    const phone = (req.body.phone || '').replace(/^91/, ''); // Normalize to 10 digits
+export const sendRegistrationOtp = async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'Email is required.' });
 
     try {
-        // Check if phone exists
-        const [existing] = await db.query('SELECT id FROM constituent_users WHERE phone = ?', [phone]);
+        const [existing] = await db.query('SELECT id FROM constituent_users WHERE email = ?', [email]);
         if (existing.length > 0) {
-            return res.status(409).json({ success: false, message: 'Mobile number already registered.' });
+            return res.status(409).json({ success: false, message: 'Email address already registered.' });
+        }
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        await db.query('DELETE FROM constituent_email_otps WHERE email = ?', [email]);
+        await db.query(
+            'INSERT INTO constituent_email_otps (email, otp, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 10 MINUTE)',
+            [email, otp]
+        );
+
+        await sendRegistrationOtpEmail({ to: email, otp });
+        res.status(200).json({ success: true, message: 'OTP sent successfully.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error while sending OTP.' });
+    }
+};
+
+export const verifyRegistrationOtp = async (req, res) => {
+    const { email, otp } = req.body;
+    if (!email || !otp) return res.status(400).json({ success: false, message: 'Email and OTP are required.' });
+
+    try {
+        const [rows] = await db.query(
+            'SELECT * FROM constituent_email_otps WHERE email = ? AND otp = ? AND is_verified = 0 AND expires_at > UTC_TIMESTAMP()',
+            [email, otp]
+        );
+
+        if (!rows.length) {
+            return res.status(400).json({ success: false, message: 'Invalid or expired OTP.' });
+        }
+
+        await db.query('UPDATE constituent_email_otps SET is_verified = 1 WHERE email = ?', [email]);
+        res.status(200).json({ success: true, message: 'Email verified successfully.' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error during OTP verification.' });
+    }
+};
+
+// Register Constituent
+export const registerConstituent = async (req, res) => {
+    const { full_name, email, panchayat_id, ward_id, house_name, house_number, password, gender, phone } = req.body;
+    
+    // Format phone to max 10 digits if provided
+    let formattedPhone = null;
+    if (phone) {
+        formattedPhone = phone.replace(/^91/, '').slice(-10);
+    }
+
+    try {
+        // Check if email already exists
+        const [existing] = await db.query('SELECT id FROM constituent_users WHERE email = ?', [email]);
+        if (existing.length > 0) {
+            return res.status(409).json({ success: false, message: 'Email address already registered.' });
+        }
+
+        // Check if email is verified
+        const [verified] = await db.query('SELECT id FROM constituent_email_otps WHERE email = ? AND is_verified = 1', [email]);
+        if (verified.length === 0) {
+            return res.status(403).json({ success: false, message: 'Email address has not been verified.' });
         }
 
         const hashedPassword = await bcrypt.hash(password, 12);
 
         await db.query(
             `INSERT INTO constituent_users 
-             (full_name, phone, email, password, verification_method, verification_id, panchayat_id, ward_id, house_name, house_number, gender) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [full_name, phone, email || null, hashedPassword, verification_method, verification_id, panchayat_id, ward_id, house_name, house_number, gender || null]
+             (full_name, phone, email, password, gender, panchayat_id, ward_id, house_name, house_number) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [full_name, formattedPhone, email, hashedPassword, gender, panchayat_id, ward_id, house_name, house_number]
         );
+
+        await db.query('DELETE FROM constituent_email_otps WHERE email = ?', [email]);
 
         res.status(201).json({ success: true, message: 'Account created successfully.' });
     } catch (error) {
@@ -222,85 +285,55 @@ export const registerConstituent = async (req, res) => {
     }
 };
 
-// Send Login OTP
-export const sendLoginOtp = async (req, res) => {
-    const { phone } = req.body;
+// Login Constituent
+export const loginConstituent = async (req, res) => {
+    const { email, password, rememberMe } = req.body;
+
     try {
-        // Check if user exists
-        const [users] = await db.query('SELECT id FROM constituent_users WHERE phone = ?', [phone.replace(/^91/, '')]);
+        const [users] = await db.query('SELECT * FROM constituent_users WHERE email = ?', [email]);
+        
         if (!users.length) {
-            return res.status(404).json({ success: false, message: 'Mobile number not found. Please register first.' });
-        }
-
-        if (process.env.DEVOTP === 'true') {
-            return res.json({ success: true, session_id: 'mock_login_session' });
-        }
-
-        const response = await axios.get(`https://2factor.in/API/V1/${process.env.TWO_FACTOR_API_KEY}/SMS/${phone}/AUTOGEN`);
-        if (response.data.Status === 'Success') {
-            return res.json({ success: true, session_id: response.data.Details });
-        } else {
-            return res.status(400).json({ success: false, message: 'Failed to send OTP.' });
-        }
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Server error while sending OTP.' });
-    }
-};
-
-// Verify Login OTP
-export const verifyLoginOtp = async (req, res) => {
-    const { phone, otp, session_id, rememberMe } = req.body;
-    try {
-        let isSuccess = false;
-
-        if (process.env.DEVOTP === 'true' && otp === '12345') {
-            isSuccess = true;
-        } else {
-            const response = await axios.get(`https://2factor.in/API/V1/${process.env.TWO_FACTOR_API_KEY}/SMS/VERIFY/${session_id}/${otp}`);
-            isSuccess = response.data.Status === 'Success';
+            return res.status(401).json({ success: false, message: 'Invalid email or password.' });
         }
         
-        if (isSuccess) {
-            // Find user
-            const rawPhone = phone.replace(/^91/, '');
-            const [users] = await db.query('SELECT id, full_name, phone, email, is_active FROM constituent_users WHERE phone = ?', [rawPhone]);
-            
-            if (!users.length) {
-                return res.status(404).json({ success: false, message: 'User not found.' });
-            }
-            
-            const user = users[0];
-            if (!user.is_active) {
-                return res.status(403).json({ success: false, message: 'Account is deactivated.' });
-            }
-
-            // Update last login
-            await db.query('UPDATE constituent_users SET last_login = NOW() WHERE id = ?', [user.id]);
-
-            // Generate JWT
-            const expiresIn = rememberMe ? process.env.JWT_EXPIRES_IN || '7d' : '24h';
-            const token = jwt.sign(
-                { id: user.id },
-                process.env.CONSTITUENT_JWT_SECRET,
-                { expiresIn }
-            );
-
-            // Set cookie
-            const isProd = process.env.NODE_ENV === 'production';
-            res.cookie('constituent_token', token, {
-                httpOnly: true,
-                secure: isProd,
-                sameSite: isProd ? 'none' : 'lax',
-                maxAge: rememberMe ? 7 * 24 * 60 * 60 * 1000 : undefined,
-                path: '/'
-            });
-
-            return res.json({ success: true, data: user });
-        } else {
-            return res.status(400).json({ success: false, message: 'Invalid OTP.' });
+        const user = users[0];
+        
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+            return res.status(401).json({ success: false, message: 'Invalid email or password.' });
         }
+
+        if (!user.is_active) {
+            return res.status(403).json({ success: false, message: 'Account is deactivated.' });
+        }
+
+        // Update last login
+        await db.query('UPDATE constituent_users SET last_login = NOW() WHERE id = ?', [user.id]);
+
+        // Generate JWT
+        const expiresIn = rememberMe ? process.env.JWT_EXPIRES_IN || '7d' : '24h';
+        const token = jwt.sign(
+            { id: user.id },
+            process.env.CONSTITUENT_JWT_SECRET,
+            { expiresIn }
+        );
+
+        // Set cookie
+        const isProd = process.env.NODE_ENV === 'production';
+        res.cookie('constituent_token', token, {
+            httpOnly: true,
+            secure: isProd,
+            sameSite: isProd ? 'none' : 'lax',
+            maxAge: rememberMe ? 7 * 24 * 60 * 60 * 1000 : undefined,
+            path: '/'
+        });
+
+        // Omit password from response
+        const { password: _, ...userData } = user;
+        return res.json({ success: true, data: userData });
     } catch (error) {
-        return res.status(400).json({ success: false, message: 'Invalid OTP or verification failed.' });
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server error during login.' });
     }
 };
 
@@ -323,11 +356,64 @@ export const constituentLogout = (req, res) => {
 
 // Forgot Password (Email-based)
 export const constituentForgotPassword = async (req, res) => {
-    // Basic stub for email based forgot password if needed later
-    return res.status(501).json({ success: false, message: 'Not implemented.' });
+    try {
+        const { email } = req.body;
+        if (!email) return errorResponse(res, 'Email is required.', 400);
+
+        const [users] = await db.query('SELECT * FROM constituent_users WHERE email = ? AND is_active = 1', [email]);
+        if (!users.length) {
+            return successResponse(res, {}, 'If that email exists, a reset link has been sent.');
+        }
+
+        const user = users[0];
+        const token = crypto.randomBytes(32).toString('hex');
+        
+        await db.query('UPDATE constituent_password_resets SET used = 1 WHERE email = ? AND used = 0', [email]);
+        
+        await db.query(
+            'INSERT INTO constituent_password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 30 MINUTE)',
+            [email, token]
+        );
+
+        await sendConstituentPasswordResetEmail({ to: email, name: user.full_name, token });
+
+        return successResponse(res, {}, 'If that email exists, a reset link has been sent.');
+    } catch (err) {
+        console.error('[constituentForgotPassword]', err);
+        return errorResponse(res, 'Server error. Please try again later.');
+    }
 };
 
 // Reset Password
 export const constituentResetPassword = async (req, res) => {
-    return res.status(501).json({ success: false, message: 'Not implemented.' });
+    try {
+        const { token, new_password } = req.body;
+        if (!token || !new_password) {
+            return errorResponse(res, 'Token and new_password are required.', 400);
+        }
+
+        if (new_password.length < 8) {
+            return errorResponse(res, 'Password must be at least 8 characters.', 400);
+        }
+
+        const [rows] = await db.query(
+            'SELECT * FROM constituent_password_resets WHERE token = ? AND used = 0 AND expires_at > UTC_TIMESTAMP()',
+            [token]
+        );
+
+        if (!rows.length) {
+            return errorResponse(res, 'Invalid or expired reset token.', 400);
+        }
+
+        const resetRecord = rows[0];
+        const hashed = await bcrypt.hash(new_password, 12);
+
+        await db.query('UPDATE constituent_users SET password = ? WHERE email = ?', [hashed, resetRecord.email]);
+        await db.query('UPDATE constituent_password_resets SET used = 1 WHERE id = ?', [resetRecord.id]);
+
+        return successResponse(res, {}, 'Password has been reset successfully.');
+    } catch (err) {
+        console.error('[constituentResetPassword]', err);
+        return errorResponse(res, 'Server error during password reset.');
+    }
 };

@@ -17,6 +17,14 @@ import {
     getProjectsBySectorName
 } from '../controllers/projectController.js';
 
+import { getMilestones, addMilestone, updateMilestone, deleteMilestone } from '../controllers/projectMilestonesController.js';
+import { getUpdates, addUpdate, deleteUpdate, deleteUpdateMedia, updateUpdate } from '../controllers/projectUpdatesController.js';
+import { getAttachments, addAttachment, deleteAttachment } from '../controllers/projectAttachmentsController.js';
+import { getBudgetEntries, addBudgetEntry, deleteBudgetEntry } from '../controllers/projectBudgetController.js';
+import { getContractors, addContractor, updateContractor, deleteContractor } from '../controllers/projectContractorsController.js';
+import { getTeamMembers, addTeamMember, removeTeamMember } from '../controllers/projectTeamController.js';
+import { getActivityLogs, addActivityLog } from '../controllers/projectActivityController.js';
+
 const router = express.Router();
 
 // Public routes (must be defined before verifyToken)
@@ -43,5 +51,44 @@ router.get('/:id', getProjectById);
 router.post('/', createProject);
 router.put('/:id', updateProject);
 router.delete('/:id', deleteProject);
+
+// ── Sub-entities ───────────────────────────────────────────────
+// Milestones
+router.get('/:id/milestones', getMilestones);
+router.post('/:id/milestones', addMilestone);
+router.put('/:id/milestones/:mid', updateMilestone);
+router.delete('/:id/milestones/:mid', deleteMilestone);
+
+// Updates
+router.get('/:id/updates', getUpdates);
+router.post('/:id/updates', addUpdate);
+router.put('/:id/updates/:uid', updateUpdate);
+router.delete('/:id/updates/:uid', deleteUpdate);
+router.delete('/:id/updates/:uid/media/:mid', deleteUpdateMedia);
+
+// Attachments
+router.get('/:id/attachments', getAttachments);
+router.post('/:id/attachments', addAttachment);
+router.delete('/:id/attachments/:aid', deleteAttachment);
+
+// Budget Entries
+router.get('/:id/budget', getBudgetEntries);
+router.post('/:id/budget', addBudgetEntry);
+router.delete('/:id/budget/:bid', deleteBudgetEntry);
+
+// Contractors
+router.get('/:id/contractors', getContractors);
+router.post('/:id/contractors', addContractor);
+router.put('/:id/contractors/:cid', updateContractor);
+router.delete('/:id/contractors/:cid', deleteContractor);
+
+// Team Members
+router.get('/:id/team', getTeamMembers);
+router.post('/:id/team', addTeamMember);
+router.delete('/:id/team/:uid', removeTeamMember);
+
+// Activity Logs
+router.get('/:id/activity', getActivityLogs);
+router.post('/:id/activity', addActivityLog);
 
 export default router;

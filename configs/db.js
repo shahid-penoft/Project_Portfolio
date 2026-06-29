@@ -11,6 +11,11 @@ const pool = mysql.createPool({
     connectionLimit: 10,
     queueLimit: 0,
     timezone: '+00:00',
+
+    // --- add these ---
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000,   // start sending TCP keep-alive pings after 10s idle
+    connectTimeout: 10000,          // fail fast on a dead connection attempt instead of hanging
 });
 
 // Test connection on startup
