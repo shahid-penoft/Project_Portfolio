@@ -39,6 +39,8 @@ import schemesRoutes from './routes/schemesRoutes.js';
 import tourismRoutes from './routes/tourismRoutes.js';
 import departmentRoutes from './routes/departmentRoutes.js';
 import complaintsRoutes from './routes/complaintsRoutes.js';
+import ideasRoutes from './routes/ideasRoutes.js';
+import suggestionsRoutes from './routes/suggestionsRoutes.js';
 import rbacRoutes from './routes/rbacRoutes.js';
 import adminUsersRoutes from './routes/adminUsersRoutes.js';
 
@@ -122,6 +124,8 @@ app.use('/api/schemes', schemesRoutes);
 app.use('/api/tourism', tourismRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/complaints',  complaintsRoutes);
+app.use('/api/ideas',       ideasRoutes);
+app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/rbac/roles', rbacRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
 

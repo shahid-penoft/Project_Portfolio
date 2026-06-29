@@ -38,6 +38,7 @@ const iconFileFilter = (req, file, cb) => {
 const s3StorageOptions = (folder = 'uploads') => ({
     s3: s3Client,
     bucket: s3Bucket,
+    // acl: 'public-read', // Removed because bucket does not allow ACLs
     contentType: (req, file, cb) => {
         cb(null, file.mimetype);
     },
@@ -128,6 +129,31 @@ export const uploadComplaintAttachments = multer({
     limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
 }).array('files', 5);
 
+// ─── Idea Uploads ────────────────────────────────────────
+export const uploadIdeaMediaS3 = multer({
+    storage: multerS3(s3StorageOptions('ideas/media')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — photos & videos
+}).array('files', 10);
+
+export const uploadIdeaAttachmentsS3 = multer({
+    storage: multerS3(s3StorageOptions('ideas/attachments')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+}).array('files', 5);
+
+// ─── Suggestion Uploads ────────────────────────────────────────
+export const uploadSuggestionMediaS3 = multer({
+    storage: multerS3(s3StorageOptions('suggestions/media')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — photos & videos
+}).array('files', 10);
+
+export const uploadSuggestionAttachmentsS3 = multer({
+    storage: multerS3(s3StorageOptions('suggestions/attachments')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+}).array('files', 5);
 
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
