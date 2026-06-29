@@ -1,6 +1,6 @@
 import express from 'express';
 import { dualAuth, adminOnly } from '../middlewares/dualAuthMiddleware.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { uploadComplaintMedia, uploadComplaintAttachments } from '../configs/multerS3.js';
 import {
     getComplaints,

@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import * as ctrl from '../controllers/tourismController.js';
 import { apiLimiter } from '../middlewares/rateLimiter.js';
 

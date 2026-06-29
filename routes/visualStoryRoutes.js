@@ -5,14 +5,14 @@ import {
     updateStory,
     deleteStory
 } from '../controllers/visualStoryController.js';
-import { verifyToken, requireRole } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
 
 router.get('/', getAllStories);
 
-router.use(verifyToken);
-router.use(requireRole(['superadmin', 'admin']));
+router.use(verifyToken, requirePermission('home'));
+router.use(requirePermission('home'));
 
 router.post('/', createStory);
 router.put('/:id', updateStory);

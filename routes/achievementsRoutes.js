@@ -6,7 +6,7 @@ import {
     deleteAchievement,
     promoteAchievement,
 } from '../controllers/achievementsController.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { safeUploadIcon } from '../configs/multerS3.js';
 
 const router = express.Router();
@@ -15,7 +15,7 @@ const router = express.Router();
 router.get('/', getAchievements);
 
 // Protected
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('ente_nadu'));
 router.post('/', safeUploadIcon, createAchievement);
 router.put('/:id', safeUploadIcon, updateAchievement);
 router.delete('/:id', deleteAchievement);

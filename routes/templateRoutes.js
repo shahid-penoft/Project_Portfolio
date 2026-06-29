@@ -6,12 +6,12 @@ import {
     updateTemplate,
     deleteTemplate
 } from '../controllers/templateController.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
 
 // All template routes require admin authentication
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('enquiries'));
 
 router.get('/', getAllTemplates);
 router.get('/:id', getTemplateById);

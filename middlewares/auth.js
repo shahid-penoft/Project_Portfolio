@@ -21,7 +21,11 @@ export const verifyToken = async (req, res, next) => {
 
         // Fetch fresh user from DB (ensures deactivated accounts are blocked instantly)
         const [rows] = await db.query(
-            'SELECT id, full_name, email, role, is_active FROM admin_users WHERE id = ?',
+            `SELECT u.id, u.full_name, u.email, u.is_active, 
+                    r.name as role, r.permissions, r.is_system 
+             FROM admin_users u 
+             LEFT JOIN admin_roles r ON u.role_id = r.id 
+             WHERE u.id = ?`,
             [decoded.id]
         );
 
@@ -43,14 +47,33 @@ export const verifyToken = async (req, res, next) => {
 };
 
 /**
- * Role guard — usage: requireRole('superadmin')  or  requireRole(['superadmin','admin'])
+ * Permission guard — usage: requirePermission('projects') or requirePermission(['projects', 'dashboard'])
  */
-export const requireRole = (roles) => (req, res, next) => {
-    const allowed = Array.isArray(roles) ? roles : [roles];
-    if (!allowed.includes(req.admin?.role)) {
+export const requirePermission = (permissions) => (req, res, next) => {
+    // Superadmins bypass all permission checks
+    if (req.admin?.is_system || req.admin?.role?.toLowerCase() === 'superadmin') {
+        return next();
+    }
+
+    const required = Array.isArray(permissions) ? permissions : [permissions];
+    
+    // Parse permissions if it's a string from DB (JSON)
+    let userPerms = req.admin?.permissions || [];
+    if (typeof userPerms === 'string') {
+        try {
+            userPerms = JSON.parse(userPerms);
+        } catch (e) {
+            userPerms = [];
+        }
+    }
+
+    // Check if user has at least one of the required permissions
+    const hasPermission = required.some(perm => userPerms.includes(perm));
+
+    if (!hasPermission) {
         return res.status(403).json({
             success: false,
-            message: 'Forbidden. You do not have permission to perform this action.',
+            message: 'Forbidden. You do not have permission to access this module.',
         });
     }
     next();

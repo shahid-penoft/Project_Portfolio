@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { verifyConstituentToken } from '../middlewares/constituentAuth.js';
 import * as ctrl from '../controllers/schemesController.js';
 

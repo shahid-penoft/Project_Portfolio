@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import {
     getAllEvents,
     getEventsByStatus,
@@ -28,7 +28,7 @@ router.get('/:id', getEventById);
 
 
 // ─── Protected (cookie JWT) ───────────────────────────────────
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('events'));
 
 router.post('/', createEvent);
 router.put('/:id', updateEvent);

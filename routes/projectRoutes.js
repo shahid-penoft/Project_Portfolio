@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import {
     getAllProjects,
     getProjectById,
@@ -41,7 +41,7 @@ router.get('/public/sector-name/:sectorName', getProjectsBySectorName);
 
 
 // All project routes are protected (admin only)
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('projects'));
 
 router.post('/upload', uploadProjectImage);
 router.post('/upload-video', uploadProjectVideo);

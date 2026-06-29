@@ -62,7 +62,13 @@ export const login = async (req, res) => {
         if (!email || !password)
             return errorResponse(res, 'Email and password are required.', 400);
 
-        const [rows] = await db.query('SELECT * FROM admin_users WHERE email = ?', [email]);
+        const [rows] = await db.query(
+            `SELECT u.*, r.name as role, r.permissions, r.is_system 
+             FROM admin_users u 
+             LEFT JOIN admin_roles r ON u.role_id = r.id 
+             WHERE u.email = ?`,
+            [email]
+        );
         if (!rows.length)
             return errorResponse(res, 'Invalid email or password.', 401);
 
@@ -213,9 +219,22 @@ export const logout = (req, res) => {
 export const getProfile = async (req, res) => {
     try {
         const [rows] = await db.query(
-            'SELECT id, full_name, email, role, profile_image, last_login, created_at FROM admin_users WHERE id = ?',
+            `SELECT u.id, u.full_name, u.email, r.name as role, r.permissions, u.profile_image, u.last_login, u.created_at 
+             FROM admin_users u 
+             LEFT JOIN admin_roles r ON u.role_id = r.id 
+             WHERE u.id = ?`,
             [req.admin.id]
         );
+        
+        // Parse permissions if string
+        if (rows[0] && typeof rows[0].permissions === 'string') {
+            try {
+                rows[0].permissions = JSON.parse(rows[0].permissions);
+            } catch (e) {
+                rows[0].permissions = [];
+            }
+        }
+        
         return successResponse(res, { data: rows[0] }, 'Profile fetched successfully.');
     } catch (err) {
         console.error('[getProfile]', err);
@@ -249,11 +268,16 @@ export const updateProfile = async (req, res) => {
 export const searchUsers = async (req, res) => {
     try {
         const { query } = req.query;
-        let sql = 'SELECT id, full_name as name, role, email FROM admin_users WHERE is_active = 1';
+        let sql = `
+            SELECT u.id, u.full_name as name, r.name as role, u.email 
+            FROM admin_users u 
+            LEFT JOIN admin_roles r ON u.role_id = r.id 
+            WHERE u.is_active = 1
+        `;
         const params = [];
 
         if (query) {
-            sql += ' AND (full_name LIKE ? OR role LIKE ? OR email LIKE ?)';
+            sql += ' AND (u.full_name LIKE ? OR r.name LIKE ? OR u.email LIKE ?)';
             const wildcard = `%${query}%`;
             params.push(wildcard, wildcard, wildcard);
         }

@@ -1,6 +1,6 @@
 import express from 'express';
 import { getJobs, getJobByIdOrSlug, createJob, updateJob, deleteJob, submitApplication, getJobApplications, getMyApplications, getAllApplications, getApplicationById, updateApplicationStatus } from '../controllers/jobsController.js';
-import { verifyToken, requireRole } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { verifyConstituentToken } from '../middlewares/constituentAuth.js';
 
 const router = express.Router();

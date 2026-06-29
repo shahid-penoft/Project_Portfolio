@@ -3,7 +3,7 @@ import {
     getPillars, createPillar, updatePillar, deletePillar,
     promotePillar, uploadPillarImage
 } from '../controllers/coreVisionController.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
 
@@ -11,7 +11,7 @@ const router = express.Router();
 router.get('/pillars', getPillars);
 
 // Protected
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('about'));
 router.post('/pillars', createPillar);
 router.put('/pillars/:id', updatePillar);
 router.delete('/pillars/:id', deletePillar);

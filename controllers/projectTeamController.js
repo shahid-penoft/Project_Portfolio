@@ -5,9 +5,10 @@ export const getTeamMembers = async (req, res) => {
     try {
         const { id } = req.params;
         const [rows] = await db.query(
-            `SELECT t.*, au.full_name as name, au.role, au.profile_image 
+            `SELECT t.*, au.full_name as name, r.name as role, au.profile_image 
              FROM project_team_members t
              JOIN admin_users au ON t.admin_user_id = au.id
+             LEFT JOIN admin_roles r ON au.role_id = r.id
              WHERE t.project_id = ? ORDER BY t.assigned_at DESC`, [id]
         );
         return successResponse(res, { data: rows }, 'Team members fetched.');
@@ -37,9 +38,10 @@ export const addTeamMember = async (req, res) => {
         }
 
         const [rows] = await db.query(
-            `SELECT t.*, au.full_name as name, au.role, au.profile_image 
+            `SELECT t.*, au.full_name as name, r.name as role, au.profile_image 
              FROM project_team_members t
              JOIN admin_users au ON t.admin_user_id = au.id
+             LEFT JOIN admin_roles r ON au.role_id = r.id
              WHERE t.project_id = ? AND t.admin_user_id = ?`, [id, admin_user_id]
         );
         return successResponse(res, { data: rows[0] }, 'Team member added.', 201);

@@ -7,7 +7,7 @@ import {
     getVideosByLocalBody, getVideosBySector, getVideosByYear, searchVideos,
     getGalleryFilterOptions,
 } from '../controllers/galleryController.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
 

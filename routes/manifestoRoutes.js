@@ -3,7 +3,7 @@ import {
     getCommitments, createCommitment, updateCommitment,
     deleteCommitment, promoteCommitment, uploadCommitmentIcon,
 } from '../controllers/manifestoLongTermController.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
 
@@ -11,7 +11,7 @@ const router = express.Router();
 router.get('/', getCommitments);
 
 // Protected
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('manifesto'));
 router.post('/upload', uploadCommitmentIcon);
 router.post('/', createCommitment);
 router.put('/:id', updateCommitment);

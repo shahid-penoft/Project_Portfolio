@@ -6,7 +6,7 @@ import {
     deleteRecognition,
     promoteRecognition
 } from '../controllers/recognitionController.js';
-import { verifyToken, requireRole } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { safeUploadIcon } from '../configs/multerS3.js';
 
 const router = express.Router();
@@ -14,8 +14,8 @@ const router = express.Router();
 router.get('/', getAllRecognitions);
 
 // Protect all other routes to admin/superadmin only
-router.use(verifyToken);
-router.use(requireRole(['superadmin', 'admin']));
+router.use(verifyToken, requirePermission('about'));
+router.use(requirePermission('about'));
 
 router.post('/', safeUploadIcon, createRecognition);
 router.put('/:id', safeUploadIcon, updateRecognition);

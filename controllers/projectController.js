@@ -370,9 +370,10 @@ export const getProjectById = async (req, res) => {
             db.query('SELECT * FROM project_attachments WHERE project_id = ? ORDER BY created_at DESC', [id]),
             db.query('SELECT * FROM project_budget_entries WHERE project_id = ? ORDER BY created_at DESC', [id]),
             db.query('SELECT * FROM project_contractors WHERE project_id = ? ORDER BY created_at DESC', [id]),
-            db.query(`SELECT t.*, au.full_name as name, au.role, au.profile_image 
+            db.query(`SELECT t.*, au.full_name as name, r.name as role, au.profile_image 
                       FROM project_team_members t
                       JOIN admin_users au ON t.admin_user_id = au.id
+                      LEFT JOIN admin_roles r ON au.role_id = r.id
                       WHERE project_id = ? ORDER BY t.assigned_at DESC`, [id]),
             db.query(`SELECT l.*, au.full_name as author_name 
                       FROM project_activity_logs l

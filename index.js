@@ -39,6 +39,8 @@ import schemesRoutes from './routes/schemesRoutes.js';
 import tourismRoutes from './routes/tourismRoutes.js';
 import departmentRoutes from './routes/departmentRoutes.js';
 import complaintsRoutes from './routes/complaintsRoutes.js';
+import rbacRoutes from './routes/rbacRoutes.js';
+import adminUsersRoutes from './routes/adminUsersRoutes.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
@@ -120,6 +122,8 @@ app.use('/api/schemes', schemesRoutes);
 app.use('/api/tourism', tourismRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/complaints',  complaintsRoutes);
+app.use('/api/rbac/roles', rbacRoutes);
+app.use('/api/admin-users', adminUsersRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>

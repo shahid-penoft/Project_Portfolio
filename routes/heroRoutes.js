@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { getHero, updateHero, uploadHeroImage } from '../controllers/heroController.js';
 
 const router = express.Router();

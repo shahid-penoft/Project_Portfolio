@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import {
     getCampaigns,
     getCampaignById,
@@ -12,7 +12,7 @@ import {
 const router = Router();
 
 // All campaign routes require authentication
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('enquiries'));
 
 router.get('/', getCampaigns);
 router.get('/:id', getCampaignById);

@@ -3,7 +3,7 @@ import {
     getAllPrograms, getProgramById, getProgramBySlug, createProgram, updateProgram, deleteProgram,
     addProgramMedia, deleteProgramMedia 
 } from '../controllers/programController.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
 

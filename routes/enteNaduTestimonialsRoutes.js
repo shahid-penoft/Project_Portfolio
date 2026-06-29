@@ -5,7 +5,7 @@ import {
     deleteTestimonial, promoteTestimonial,
     uploadTestimonialMedia,
 } from '../controllers/enteNaduTestimonialsController.js';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ router.get('/', getTestimonials);
 router.get('/:id', getTestimonialById);
 
 // Protected
-router.use(verifyToken);
+router.use(verifyToken, requirePermission('ente_nadu'));
 router.post('/', createTestimonial);
 router.put('/:id', updateTestimonial);
 router.delete('/:id', deleteTestimonial);

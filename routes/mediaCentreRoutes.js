@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../middlewares/auth.js';
+import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import {
     getPublicSections,
     getAllSections,
@@ -32,7 +32,7 @@ router.get('/posts/slug/:slug', getPostBySlug);   // ← must be before /:id
 router.get('/posts/:id', getPostById);
 
 // ─── Protected (cookie JWT) ───────────────────────────────────
-// router.use(verifyToken);
+// router.use(verifyToken, requirePermission('media'));
 
 router.post('/upload', uploadMediaFile);          // ← file upload
 router.post('/upload-video', uploadPostVideo);
