@@ -7,6 +7,9 @@ import {
     forgotPassword,
     resetPassword,
     changePassword,
+    sendChangePasswordOtp,
+    verifyChangePasswordOtp,
+    confirmChangePassword,
     logout,
     getProfile,
     updateProfile,
@@ -41,6 +44,9 @@ router.use(verifyToken);
 router.post('/register', register);
 router.post('/logout', logout);
 router.post('/change-password', changePassword);
+router.post('/change-password/send-otp', sendChangePasswordOtp);
+router.post('/change-password/verify-otp', verifyChangePasswordOtp);
+router.post('/change-password/confirm', confirmChangePassword);
 router.get('/profile', getProfile);
 router.put('/profile', updateProfile);
 router.get('/search-users', searchUsers);

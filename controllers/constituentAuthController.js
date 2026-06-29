@@ -5,7 +5,7 @@ import axios from 'axios';
 import sandboxTokenService from '../services/sandboxTokenService.js';
 import crypto from 'crypto';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { sendConstituentPasswordResetEmail, sendRegistrationOtpEmail } from '../utils/email.js';
+import { sendConstituentPasswordResetEmail, sendRegistrationOtpEmail, sendConstituentChangePasswordOtpEmail } from '../utils/email.js';
 
 // --- Identity Verification ---
 
@@ -278,7 +278,30 @@ export const registerConstituent = async (req, res) => {
 
         await db.query('DELETE FROM constituent_email_otps WHERE email = ?', [email]);
 
-        res.status(201).json({ success: true, message: 'Account created successfully.' });
+        // Fetch the newly created user
+        const [newUsers] = await db.query('SELECT * FROM constituent_users WHERE email = ?', [email]);
+        const newUser = newUsers[0];
+
+        // Generate JWT
+        const token = jwt.sign(
+            { id: newUser.id },
+            process.env.CONSTITUENT_JWT_SECRET,
+            { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+        );
+
+        // Set HTTP-only cookie
+        const isProd = process.env.NODE_ENV === 'production';
+        res.cookie('constituent_token', token, {
+            httpOnly: true,
+            secure: isProd,
+            sameSite: isProd ? 'none' : 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+            path: '/'
+        });
+
+        // Omit password from response
+        const { password: _, ...userData } = newUser;
+        res.status(201).json({ success: true, message: 'Account created successfully.', data: userData });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: 'Server error during registration.' });
@@ -415,5 +438,92 @@ export const constituentResetPassword = async (req, res) => {
     } catch (err) {
         console.error('[constituentResetPassword]', err);
         return errorResponse(res, 'Server error during password reset.');
+    }
+};
+
+// Change Password (OTP-based, for logged-in users)
+export const sendChangePasswordOtp = async (req, res) => {
+    const email = req.constituent.email;
+    try {
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        await db.query('DELETE FROM constituent_email_otps WHERE email = ?', [email]);
+        await db.query(
+            'INSERT INTO constituent_email_otps (email, otp, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 10 MINUTE)',
+            [email, otp]
+        );
+
+        await sendConstituentChangePasswordOtpEmail({ to: email, otp }); 
+        return successResponse(res, {}, 'OTP sent successfully.');
+    } catch (error) {
+        console.error(error);
+        return errorResponse(res, 'Server error while sending OTP.', 500);
+    }
+};
+
+export const verifyChangePasswordOtp = async (req, res) => {
+    const email = req.constituent.email;
+    const { otp } = req.body;
+    
+    if (!otp) return errorResponse(res, 'OTP is required.', 400);
+
+    try {
+        const [rows] = await db.query(
+            'SELECT * FROM constituent_email_otps WHERE email = ? AND otp = ? AND is_verified = 0 AND expires_at > UTC_TIMESTAMP()',
+            [email, otp]
+        );
+
+        if (!rows.length) {
+            return errorResponse(res, 'Invalid or expired OTP.', 400);
+        }
+
+        await db.query('UPDATE constituent_email_otps SET is_verified = 1 WHERE email = ?', [email]);
+        
+        const temp_token = crypto.randomBytes(32).toString('hex');
+        
+        await db.query('UPDATE constituent_password_resets SET used = 1 WHERE email = ? AND used = 0', [email]);
+        await db.query(
+            'INSERT INTO constituent_password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 15 MINUTE)',
+            [email, temp_token]
+        );
+        
+        return successResponse(res, { temp_token }, 'OTP verified successfully.');
+    } catch (error) {
+        console.error(error);
+        return errorResponse(res, 'Server error during OTP verification.', 500);
+    }
+};
+
+export const confirmChangePassword = async (req, res) => {
+    const email = req.constituent.email;
+    const { temp_token, new_password } = req.body;
+
+    if (!temp_token || !new_password) {
+        return errorResponse(res, 'Token and new_password are required.', 400);
+    }
+
+    if (new_password.length < 8) {
+        return errorResponse(res, 'Password must be at least 8 characters.', 400);
+    }
+
+    try {
+        const [rows] = await db.query(
+            'SELECT * FROM constituent_password_resets WHERE token = ? AND email = ? AND used = 0 AND expires_at > UTC_TIMESTAMP()',
+            [temp_token, email]
+        );
+
+        if (!rows.length) {
+            return errorResponse(res, 'Invalid or expired token.', 400);
+        }
+
+        const hashed = await bcrypt.hash(new_password, 12);
+
+        await db.query('UPDATE constituent_users SET password = ? WHERE email = ?', [hashed, email]);
+        await db.query('UPDATE constituent_password_resets SET used = 1 WHERE id = ?', [rows[0].id]);
+
+        return successResponse(res, {}, 'Password has been updated successfully.');
+    } catch (error) {
+        console.error(error);
+        return errorResponse(res, 'Server error during password change.', 500);
     }
 };

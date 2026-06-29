@@ -24,10 +24,10 @@ const deleteS3Object = async (url) => {
     }
 };
 
-const logActivity = async (suggestionId, text) => {
+const logActivity = async (suggestionId, text, adminUserId = null) => {
     await pool.query(
-        'INSERT INTO suggestion_activity (suggestion_id, text) VALUES (?, ?)',
-        [suggestionId, text]
+        'INSERT INTO suggestion_activity (suggestion_id, text, admin_user_id) VALUES (?, ?, ?)',
+        [suggestionId, text, adminUserId]
     );
 };
 
@@ -69,7 +69,13 @@ const fetchFullSuggestion = async (id) => {
         WHERE it.suggestion_id = ?
         ORDER BY it.created_at ASC
     `, [id]);
-    const [activity]    = await pool.query('SELECT * FROM suggestion_activity     WHERE suggestion_id = ? ORDER BY created_at DESC', [id]);
+    const [activity]    = await pool.query(`
+        SELECT sa.*, au.full_name as author_name 
+        FROM suggestion_activity sa
+        LEFT JOIN admin_users au ON sa.admin_user_id = au.id
+        WHERE sa.suggestion_id = ? 
+        ORDER BY sa.created_at DESC
+    `, [id]);
 
     return { ...suggestion, updates, media, attachments, team, activity };
 };
@@ -219,7 +225,7 @@ export const createSuggestion = async (req, res) => {
         ]);
 
         const newId = result.insertId;
-        await logActivity(newId, `Suggestion "${title}" filed. Reference: ${reference_no}`);
+        await logActivity(newId, `Suggestion "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
 
         const suggestion = await fetchFullSuggestion(newId);
         res.status(201).json({ success: true, message: 'Suggestion created successfully.', data: suggestion });
@@ -263,7 +269,7 @@ export const updateSuggestion = async (req, res) => {
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found.' });
-        await logActivity(id, `Suggestion details updated by admin.`);
+        await logActivity(id, `Suggestion details updated by admin.`, req.admin?.id);
         const suggestion = await fetchFullSuggestion(id);
         res.json({ success: true, message: 'Suggestion updated.', data: suggestion });
     } catch (err) {
@@ -281,7 +287,7 @@ export const updateSuggestionStatus = async (req, res) => {
         const [result] = await pool.query('UPDATE suggestions SET status = ? WHERE id = ?', [status, id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found.' });
 
-        await logActivity(id, `Status changed to "${status}".`);
+        await logActivity(id, `Status changed to "${status}".`, req.admin?.id);
         res.json({ success: true, message: `Status updated to ${status}.` });
     } catch (err) {
         console.error('[updateSuggestionStatus]', err);
@@ -296,7 +302,7 @@ export const trashSuggestion = async (req, res) => {
             'UPDATE suggestions SET is_deleted = 1, deleted_at = NOW() WHERE id = ? AND is_deleted = 0', [id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found or already trashed.' });
-        await logActivity(id, 'Suggestion moved to trash.');
+        await logActivity(id, 'Suggestion moved to trash.', req.admin?.id);
         res.json({ success: true, message: 'Suggestion moved to trash.' });
     } catch (err) {
         console.error('[trashSuggestion]', err);
@@ -311,7 +317,7 @@ export const restoreSuggestion = async (req, res) => {
             'UPDATE suggestions SET is_deleted = 0, deleted_at = NULL WHERE id = ? AND is_deleted = 1', [id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found in trash.' });
-        await logActivity(id, 'Suggestion restored from trash.');
+        await logActivity(id, 'Suggestion restored from trash.', req.admin?.id);
         res.json({ success: true, message: 'Suggestion restored successfully.' });
     } catch (err) {
         console.error('[restoreSuggestion]', err);
@@ -352,7 +358,7 @@ export const addSuggestionUpdate = async (req, res) => {
             'INSERT INTO suggestion_updates (suggestion_id, type, title, note) VALUES (?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
-        await logActivity(id, `Update added: "${title}"`);
+        await logActivity(id, `Update added: "${title}"`, req.admin?.id);
         const [[row]] = await pool.query('SELECT * FROM suggestion_updates WHERE id = ?', [result.insertId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
@@ -368,7 +374,7 @@ export const deleteSuggestionUpdate = async (req, res) => {
             'DELETE FROM suggestion_updates WHERE id = ? AND suggestion_id = ?', [updateId, id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Update not found.' });
-        await logActivity(id, `An update entry was removed.`);
+        await logActivity(id, `An update entry was removed.`, req.admin?.id);
         res.json({ success: true, message: 'Update deleted.' });
     } catch (err) {
         console.error('[deleteSuggestionUpdate]', err);
@@ -390,7 +396,7 @@ export const uploadSuggestionMedia = async (req, res) => {
             'INSERT INTO suggestion_media (suggestion_id, media_type, file_url, caption) VALUES ?',
             [rows]
         );
-        await logActivity(id, `${req.files.length} media file(s) uploaded.`);
+        await logActivity(id, `${req.files.length} media file(s) uploaded.`, req.admin?.id);
 
         const [media] = await pool.query('SELECT * FROM suggestion_media WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: media });
@@ -408,7 +414,7 @@ export const deleteSuggestionMedia = async (req, res) => {
 
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM suggestion_media WHERE id = ?', [mediaId]);
-        await logActivity(id, 'A media file was removed.');
+        await logActivity(id, 'A media file was removed.', req.admin?.id);
         res.json({ success: true, message: 'Media deleted.' });
     } catch (err) {
         console.error('[deleteSuggestionMedia]', err);
@@ -431,7 +437,7 @@ export const uploadSuggestionAttachment = async (req, res) => {
             'INSERT INTO suggestion_attachments (suggestion_id, file_name, file_url, file_type, file_size_kb) VALUES ?',
             [rows]
         );
-        await logActivity(id, `${req.files.length} attachment(s) uploaded.`);
+        await logActivity(id, `${req.files.length} attachment(s) uploaded.`, req.admin?.id);
 
         const [attachments] = await pool.query('SELECT * FROM suggestion_attachments WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: attachments });
@@ -449,7 +455,7 @@ export const deleteSuggestionAttachment = async (req, res) => {
 
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM suggestion_attachments WHERE id = ?', [attachId]);
-        await logActivity(id, 'An attachment was removed.');
+        await logActivity(id, 'An attachment was removed.', req.admin?.id);
         res.json({ success: true, message: 'Attachment deleted.' });
     } catch (err) {
         console.error('[deleteSuggestionAttachment]', err);
@@ -471,7 +477,7 @@ export const addSuggestionTeamMember = async (req, res) => {
                 'INSERT INTO suggestion_team (suggestion_id, admin_user_id, role_label) VALUES (?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
-            await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`);
+            await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);
             const [[row]] = await pool.query(`
                 SELECT it.id, it.role_label, it.created_at,
                        au.id as admin_user_id, au.full_name as name, au.email
@@ -503,7 +509,7 @@ export const removeSuggestionTeamMember = async (req, res) => {
         if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
 
         await pool.query('DELETE FROM suggestion_team WHERE id = ?', [memberId]);
-        await logActivity(id, `Team member "${row.full_name}" removed.`);
+        await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);
         res.json({ success: true, message: 'Team member removed.' });
     } catch (err) {
         console.error('[removeSuggestionTeamMember]', err);

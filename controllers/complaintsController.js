@@ -103,10 +103,10 @@ export const deleteCategory = async (req, res) => {
 };
 
 // Helper: log an activity entry
-const logActivity = async (complaintId, text) => {
+const logActivity = async (complaintId, text, adminUserId = null) => {
     await pool.query(
-        'INSERT INTO complaint_activity (complaint_id, text) VALUES (?, ?)',
-        [complaintId, text]
+        'INSERT INTO complaint_activity (complaint_id, text, admin_user_id) VALUES (?, ?, ?)',
+        [complaintId, text, adminUserId]
     );
 };
 
@@ -150,7 +150,13 @@ const fetchFullComplaint = async (id) => {
         WHERE ct.complaint_id = ?
         ORDER BY ct.created_at ASC
     `, [id]);
-    const [activity]    = await pool.query('SELECT * FROM complaint_activity     WHERE complaint_id = ? ORDER BY created_at DESC', [id]);
+    const [activity]    = await pool.query(`
+        SELECT ca.*, au.full_name as author_name 
+        FROM complaint_activity ca
+        LEFT JOIN admin_users au ON ca.admin_user_id = au.id
+        WHERE ca.complaint_id = ? 
+        ORDER BY ca.created_at DESC
+    `, [id]);
 
     return { ...complaint, updates, media, attachments, team, activity };
 };
@@ -317,7 +323,7 @@ export const createComplaint = async (req, res) => {
         ]);
 
         const newId = result.insertId;
-        await logActivity(newId, `Complaint "${title}" filed. Reference: ${reference_no}`);
+        await logActivity(newId, `Complaint "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
 
         const complaint = await fetchFullComplaint(newId);
         res.status(201).json({ success: true, message: 'Complaint created successfully.', data: complaint });
@@ -364,7 +370,7 @@ export const updateComplaint = async (req, res) => {
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
-        await logActivity(id, `Complaint details updated by admin.`);
+        await logActivity(id, `Complaint details updated by admin.`, req.admin?.id);
         const complaint = await fetchFullComplaint(id);
         res.json({ success: true, message: 'Complaint updated.', data: complaint });
     } catch (err) {
@@ -385,7 +391,7 @@ export const updateComplaintStatus = async (req, res) => {
         const [result] = await pool.query('UPDATE complaints SET status = ? WHERE id = ?', [status, id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
 
-        await logActivity(id, `Status changed to "${status}".`);
+        await logActivity(id, `Status changed to "${status}".`, req.admin?.id);
         res.json({ success: true, message: `Status updated to ${status}.` });
     } catch (err) {
         console.error('[updateComplaintStatus]', err);
@@ -403,7 +409,7 @@ export const trashComplaint = async (req, res) => {
             'UPDATE complaints SET is_deleted = 1, deleted_at = NOW() WHERE id = ? AND is_deleted = 0', [id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found or already trashed.' });
-        await logActivity(id, 'Complaint moved to trash.');
+        await logActivity(id, 'Complaint moved to trash.', req.admin?.id);
         res.json({ success: true, message: 'Complaint moved to trash.' });
     } catch (err) {
         console.error('[trashComplaint]', err);
@@ -421,7 +427,7 @@ export const restoreComplaint = async (req, res) => {
             'UPDATE complaints SET is_deleted = 0, deleted_at = NULL WHERE id = ? AND is_deleted = 1', [id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found in trash.' });
-        await logActivity(id, 'Complaint restored from trash.');
+        await logActivity(id, 'Complaint restored from trash.', req.admin?.id);
         res.json({ success: true, message: 'Complaint restored successfully.' });
     } catch (err) {
         console.error('[restoreComplaint]', err);
@@ -469,7 +475,7 @@ export const addComplaintUpdate = async (req, res) => {
             'INSERT INTO complaint_updates (complaint_id, type, title, note) VALUES (?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
-        await logActivity(id, `Update added: "${title}"`);
+        await logActivity(id, `Update added: "${title}"`, req.admin?.id);
         const [[row]] = await pool.query('SELECT * FROM complaint_updates WHERE id = ?', [result.insertId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
@@ -488,7 +494,7 @@ export const deleteComplaintUpdate = async (req, res) => {
             'DELETE FROM complaint_updates WHERE id = ? AND complaint_id = ?', [updateId, id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Update not found.' });
-        await logActivity(id, `An update entry was removed.`);
+        await logActivity(id, `An update entry was removed.`, req.admin?.id);
         res.json({ success: true, message: 'Update deleted.' });
     } catch (err) {
         console.error('[deleteComplaintUpdate]', err);
@@ -514,7 +520,7 @@ export const uploadComplaintMedia = async (req, res) => {
             'INSERT INTO complaint_media (complaint_id, media_type, file_url, caption) VALUES ?',
             [rows]
         );
-        await logActivity(id, `${req.files.length} media file(s) uploaded.`);
+        await logActivity(id, `${req.files.length} media file(s) uploaded.`, req.admin?.id);
 
         const [media] = await pool.query('SELECT * FROM complaint_media WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: media });
@@ -535,7 +541,7 @@ export const deleteComplaintMedia = async (req, res) => {
 
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM complaint_media WHERE id = ?', [mediaId]);
-        await logActivity(id, 'A media file was removed.');
+        await logActivity(id, 'A media file was removed.', req.admin?.id);
         res.json({ success: true, message: 'Media deleted.' });
     } catch (err) {
         console.error('[deleteComplaintMedia]', err);
@@ -561,7 +567,7 @@ export const uploadComplaintAttachment = async (req, res) => {
             'INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_size_kb) VALUES ?',
             [rows]
         );
-        await logActivity(id, `${req.files.length} attachment(s) uploaded.`);
+        await logActivity(id, `${req.files.length} attachment(s) uploaded.`, req.admin?.id);
 
         const [attachments] = await pool.query('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: attachments });
@@ -582,7 +588,7 @@ export const deleteComplaintAttachment = async (req, res) => {
 
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM complaint_attachments WHERE id = ?', [attachId]);
-        await logActivity(id, 'An attachment was removed.');
+        await logActivity(id, 'An attachment was removed.', req.admin?.id);
         res.json({ success: true, message: 'Attachment deleted.' });
     } catch (err) {
         console.error('[deleteComplaintAttachment]', err);
@@ -608,7 +614,7 @@ export const addComplaintTeamMember = async (req, res) => {
                 'INSERT INTO complaint_team (complaint_id, admin_user_id, role_label) VALUES (?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
-            await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`);
+            await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);
             const [[row]] = await pool.query(`
                 SELECT ct.id, ct.role_label, ct.created_at,
                        au.id as admin_user_id, au.full_name as name, au.email
@@ -643,7 +649,7 @@ export const removeComplaintTeamMember = async (req, res) => {
         if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
 
         await pool.query('DELETE FROM complaint_team WHERE id = ?', [memberId]);
-        await logActivity(id, `Team member "${row.full_name}" removed.`);
+        await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);
         res.json({ success: true, message: 'Team member removed.' });
     } catch (err) {
         console.error('[removeComplaintTeamMember]', err);

@@ -24,10 +24,10 @@ const deleteS3Object = async (url) => {
     }
 };
 
-const logActivity = async (ideaId, text) => {
+const logActivity = async (ideaId, text, adminUserId = null) => {
     await pool.query(
-        'INSERT INTO idea_activity (idea_id, text) VALUES (?, ?)',
-        [ideaId, text]
+        'INSERT INTO idea_activity (idea_id, text, admin_user_id) VALUES (?, ?, ?)',
+        [ideaId, text, adminUserId]
     );
 };
 
@@ -69,7 +69,13 @@ const fetchFullIdea = async (id) => {
         WHERE it.idea_id = ?
         ORDER BY it.created_at ASC
     `, [id]);
-    const [activity]    = await pool.query('SELECT * FROM idea_activity     WHERE idea_id = ? ORDER BY created_at DESC', [id]);
+    const [activity]    = await pool.query(`
+        SELECT ia.*, au.full_name as author_name 
+        FROM idea_activity ia
+        LEFT JOIN admin_users au ON ia.admin_user_id = au.id
+        WHERE ia.idea_id = ? 
+        ORDER BY ia.created_at DESC
+    `, [id]);
 
     return { ...idea, updates, media, attachments, team, activity };
 };
@@ -219,7 +225,7 @@ export const createIdea = async (req, res) => {
         ]);
 
         const newId = result.insertId;
-        await logActivity(newId, `Idea "${title}" filed. Reference: ${reference_no}`);
+        await logActivity(newId, `Idea "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
 
         const idea = await fetchFullIdea(newId);
         res.status(201).json({ success: true, message: 'Idea created successfully.', data: idea });
@@ -263,7 +269,7 @@ export const updateIdea = async (req, res) => {
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found.' });
-        await logActivity(id, `Idea details updated by admin.`);
+        await logActivity(id, `Idea details updated by admin.`, req.admin?.id);
         const idea = await fetchFullIdea(id);
         res.json({ success: true, message: 'Idea updated.', data: idea });
     } catch (err) {
@@ -281,7 +287,7 @@ export const updateIdeaStatus = async (req, res) => {
         const [result] = await pool.query('UPDATE ideas SET status = ? WHERE id = ?', [status, id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found.' });
 
-        await logActivity(id, `Status changed to "${status}".`);
+        await logActivity(id, `Status changed to "${status}".`, req.admin?.id);
         res.json({ success: true, message: `Status updated to ${status}.` });
     } catch (err) {
         console.error('[updateIdeaStatus]', err);
@@ -296,7 +302,7 @@ export const trashIdea = async (req, res) => {
             'UPDATE ideas SET is_deleted = 1, deleted_at = NOW() WHERE id = ? AND is_deleted = 0', [id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found or already trashed.' });
-        await logActivity(id, 'Idea moved to trash.');
+        await logActivity(id, 'Idea moved to trash.', req.admin?.id);
         res.json({ success: true, message: 'Idea moved to trash.' });
     } catch (err) {
         console.error('[trashIdea]', err);
@@ -311,7 +317,7 @@ export const restoreIdea = async (req, res) => {
             'UPDATE ideas SET is_deleted = 0, deleted_at = NULL WHERE id = ? AND is_deleted = 1', [id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found in trash.' });
-        await logActivity(id, 'Idea restored from trash.');
+        await logActivity(id, 'Idea restored from trash.', req.admin?.id);
         res.json({ success: true, message: 'Idea restored successfully.' });
     } catch (err) {
         console.error('[restoreIdea]', err);
@@ -352,7 +358,7 @@ export const addIdeaUpdate = async (req, res) => {
             'INSERT INTO idea_updates (idea_id, type, title, note) VALUES (?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
-        await logActivity(id, `Update added: "${title}"`);
+        await logActivity(id, `Update added: "${title}"`, req.admin?.id);
         const [[row]] = await pool.query('SELECT * FROM idea_updates WHERE id = ?', [result.insertId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
@@ -368,7 +374,7 @@ export const deleteIdeaUpdate = async (req, res) => {
             'DELETE FROM idea_updates WHERE id = ? AND idea_id = ?', [updateId, id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Update not found.' });
-        await logActivity(id, `An update entry was removed.`);
+        await logActivity(id, `An update entry was removed.`, req.admin?.id);
         res.json({ success: true, message: 'Update deleted.' });
     } catch (err) {
         console.error('[deleteIdeaUpdate]', err);
@@ -390,7 +396,7 @@ export const uploadIdeaMedia = async (req, res) => {
             'INSERT INTO idea_media (idea_id, media_type, file_url, caption) VALUES ?',
             [rows]
         );
-        await logActivity(id, `${req.files.length} media file(s) uploaded.`);
+        await logActivity(id, `${req.files.length} media file(s) uploaded.`, req.admin?.id);
 
         const [media] = await pool.query('SELECT * FROM idea_media WHERE idea_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: media });
@@ -408,7 +414,7 @@ export const deleteIdeaMedia = async (req, res) => {
 
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM idea_media WHERE id = ?', [mediaId]);
-        await logActivity(id, 'A media file was removed.');
+        await logActivity(id, 'A media file was removed.', req.admin?.id);
         res.json({ success: true, message: 'Media deleted.' });
     } catch (err) {
         console.error('[deleteIdeaMedia]', err);
@@ -431,7 +437,7 @@ export const uploadIdeaAttachment = async (req, res) => {
             'INSERT INTO idea_attachments (idea_id, file_name, file_url, file_type, file_size_kb) VALUES ?',
             [rows]
         );
-        await logActivity(id, `${req.files.length} attachment(s) uploaded.`);
+        await logActivity(id, `${req.files.length} attachment(s) uploaded.`, req.admin?.id);
 
         const [attachments] = await pool.query('SELECT * FROM idea_attachments WHERE idea_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: attachments });
@@ -449,7 +455,7 @@ export const deleteIdeaAttachment = async (req, res) => {
 
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM idea_attachments WHERE id = ?', [attachId]);
-        await logActivity(id, 'An attachment was removed.');
+        await logActivity(id, 'An attachment was removed.', req.admin?.id);
         res.json({ success: true, message: 'Attachment deleted.' });
     } catch (err) {
         console.error('[deleteIdeaAttachment]', err);
@@ -471,7 +477,7 @@ export const addIdeaTeamMember = async (req, res) => {
                 'INSERT INTO idea_team (idea_id, admin_user_id, role_label) VALUES (?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
-            await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`);
+            await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);
             const [[row]] = await pool.query(`
                 SELECT it.id, it.role_label, it.created_at,
                        au.id as admin_user_id, au.full_name as name, au.email
@@ -503,7 +509,7 @@ export const removeIdeaTeamMember = async (req, res) => {
         if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
 
         await pool.query('DELETE FROM idea_team WHERE id = ?', [memberId]);
-        await logActivity(id, `Team member "${row.full_name}" removed.`);
+        await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);
         res.json({ success: true, message: 'Team member removed.' });
     } catch (err) {
         console.error('[removeIdeaTeamMember]', err);

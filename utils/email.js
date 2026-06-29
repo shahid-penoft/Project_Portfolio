@@ -301,3 +301,72 @@ export const sendRegistrationOtpEmail = async ({ to, otp }) => {
     `,
   });
 };
+
+// ─────────────────────────────────────────────────────────────
+//  Admin Change Password OTP Email
+// ─────────────────────────────────────────────────────────────
+export const sendAdminChangePasswordOtpEmail = async ({ to, name, otp }) => {
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to,
+    subject: `[${APP_NAME}] Admin Password Reset OTP`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;">
+        <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+          <div style="background:#1a3c5e;padding:28px 32px;">
+            <h1 style="color:#fff;margin:0;font-size:22px;">${APP_NAME}</h1>
+          </div>
+          <div style="padding:32px;">
+            <h2 style="color:#1a3c5e;margin-top:0;">Admin Password Reset</h2>
+            <p>Hi <strong>${name}</strong>,</p>
+            <p>We received a request to change your admin account password.</p>
+            <p>Please use the following OTP to verify your request. This OTP is valid for 10 minutes.</p>
+            <div style="background:#f8f9fa;border-left:4px solid #1a3c5e;padding:16px;border-radius:4px;margin:20px 0;text-align:center;">
+              <p style="margin:4px 0;font-size:24px;font-weight:bold;letter-spacing:4px;color:#1a3c5e;">${otp}</p>
+            </div>
+            <p style="color:#666;font-size:13px;">If you didn't request this, please ignore this email. Your password will remain unchanged.</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+            <p style="color:#999;font-size:12px;margin:0;">© ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  });
+};
+
+// ─────────────────────────────────────────────────────────────
+//  Constituent Change Password OTP Email
+// ─────────────────────────────────────────────────────────────
+export const sendConstituentChangePasswordOtpEmail = async ({ to, otp }) => {
+  await transporter.sendMail({
+    from: MAIL_FROM,
+    to,
+    subject: `[${APP_NAME}] MLA Connect Password Reset OTP`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;">
+        <div style="max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+          <div style="background:#1a3c5e;padding:28px 32px;">
+            <h1 style="color:#fff;margin:0;font-size:22px;">${APP_NAME}</h1>
+          </div>
+          <div style="padding:32px;">
+            <h2 style="color:#1a3c5e;margin-top:0;">Password Reset</h2>
+            <p>We received a request to change your MLA Connect account password.</p>
+            <p>Please use the following OTP to verify your request. This OTP is valid for 10 minutes.</p>
+            <div style="background:#f8f9fa;border-left:4px solid #1a3c5e;padding:16px;border-radius:4px;margin:20px 0;text-align:center;">
+              <p style="margin:4px 0;font-size:24px;font-weight:bold;letter-spacing:4px;color:#1a3c5e;">${otp}</p>
+            </div>
+            <p style="color:#666;font-size:13px;">If you didn't request this, please ignore this email. Your password will remain unchanged.</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:24px 0;">
+            <p style="color:#999;font-size:12px;margin:0;">© ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+  });
+};

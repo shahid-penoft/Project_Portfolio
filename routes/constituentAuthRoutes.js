@@ -24,5 +24,8 @@ router.post('/reset-password', C.constituentResetPassword);
 router.use(verifyConstituentToken);
 router.get('/me', C.getConstituentProfile);
 router.post('/logout', C.constituentLogout);
+router.post('/change-password/send-otp', authLimiter, C.sendChangePasswordOtp);
+router.post('/change-password/verify-otp', authLimiter, C.verifyChangePasswordOtp);
+router.post('/change-password/confirm', C.confirmChangePassword);
 
 export default router;

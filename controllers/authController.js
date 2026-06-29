@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../configs/db.js';
-import { sendPasswordResetEmail, sendWelcomeEmail } from '../utils/email.js';
+import { sendPasswordResetEmail, sendWelcomeEmail, sendAdminChangePasswordOtpEmail } from '../utils/email.js';
 import { generateToken, minutesFromNow, successResponse, errorResponse } from '../utils/helpers.js';
 
 // ─────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ export const logout = (req, res) => {
 export const getProfile = async (req, res) => {
     try {
         const [rows] = await db.query(
-            `SELECT u.id, u.full_name, u.email, r.name as role, r.permissions, u.profile_image, u.last_login, u.created_at 
+            `SELECT u.id, u.full_name, u.email, u.phone, u.department, r.name as role, r.permissions, u.profile_image, u.last_login, u.created_at 
              FROM admin_users u 
              LEFT JOIN admin_roles r ON u.role_id = r.id 
              WHERE u.id = ?`,
@@ -298,5 +298,101 @@ export const searchUsers = async (req, res) => {
     } catch (err) {
         console.error('[searchUsers]', err);
         return errorResponse(res, 'Server error fetching users.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/auth/change-password/send-otp
+// ─────────────────────────────────────────────────────────────
+export const sendChangePasswordOtp = async (req, res) => {
+    try {
+        const email = req.admin.email;
+        if (!email) return errorResponse(res, 'Admin email not found in token.', 400);
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        await db.query('UPDATE password_resets SET used = 1 WHERE email = ? AND used = 0', [email]);
+        await db.query(
+            'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 10 MINUTE)',
+            [email, otp]
+        );
+
+        await sendAdminChangePasswordOtpEmail({ to: email, name: req.admin.full_name || 'Admin', otp }).catch(() => {});
+        return successResponse(res, {}, 'OTP sent successfully.');
+    } catch (err) {
+        console.error('[sendChangePasswordOtp]', err);
+        return errorResponse(res, 'Server error sending OTP.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/auth/change-password/verify-otp
+// ─────────────────────────────────────────────────────────────
+export const verifyChangePasswordOtp = async (req, res) => {
+    try {
+        const email = req.admin.email;
+        const { otp } = req.body;
+
+        if (!otp) return errorResponse(res, 'OTP is required.', 400);
+
+        const [rows] = await db.query(
+            'SELECT * FROM password_resets WHERE email = ? AND token = ? AND used = 0 AND expires_at > UTC_TIMESTAMP()',
+            [email, otp]
+        );
+
+        if (!rows.length) {
+            return errorResponse(res, 'Invalid or expired OTP.', 400);
+        }
+
+        // Mark OTP as used
+        await db.query('UPDATE password_resets SET used = 1 WHERE id = ?', [rows[0].id]);
+
+        // Generate temp token for next step
+        const temp_token = generateToken(32);
+        await db.query(
+            'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 15 MINUTE)',
+            [email, temp_token]
+        );
+
+        return successResponse(res, { temp_token }, 'OTP verified successfully.');
+    } catch (err) {
+        console.error('[verifyChangePasswordOtp]', err);
+        return errorResponse(res, 'Server error verifying OTP.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/auth/change-password/confirm
+// ─────────────────────────────────────────────────────────────
+export const confirmChangePassword = async (req, res) => {
+    try {
+        const email = req.admin.email;
+        const { temp_token, new_password } = req.body;
+
+        if (!temp_token || !new_password) {
+            return errorResponse(res, 'temp_token and new_password are required.', 400);
+        }
+
+        if (new_password.length < 8) {
+            return errorResponse(res, 'Password must be at least 8 characters.', 400);
+        }
+
+        const [rows] = await db.query(
+            'SELECT * FROM password_resets WHERE email = ? AND token = ? AND used = 0 AND expires_at > UTC_TIMESTAMP()',
+            [email, temp_token]
+        );
+
+        if (!rows.length) {
+            return errorResponse(res, 'Invalid or expired token.', 400);
+        }
+
+        const hashed = await bcrypt.hash(new_password, 12);
+        await db.query('UPDATE admin_users SET password = ? WHERE email = ?', [hashed, email]);
+        await db.query('UPDATE password_resets SET used = 1 WHERE id = ?', [rows[0].id]);
+
+        return successResponse(res, {}, 'Password updated successfully.');
+    } catch (err) {
+        console.error('[confirmChangePassword]', err);
+        return errorResponse(res, 'Server error confirming password change.');
     }
 };

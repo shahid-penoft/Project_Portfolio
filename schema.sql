@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
     id                INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
     full_name         VARCHAR(100)    NOT NULL,
     email             VARCHAR(150)    NOT NULL UNIQUE,
+    phone             VARCHAR(25)     DEFAULT NULL,
+    department        VARCHAR(100)    DEFAULT NULL,
     password          VARCHAR(255)    NOT NULL,
     role              ENUM('superadmin', 'admin', 'editor') NOT NULL DEFAULT 'admin',
     profile_image     VARCHAR(500)    DEFAULT NULL,
@@ -690,9 +692,11 @@ CREATE TABLE IF NOT EXISTS complaint_team (
 CREATE TABLE IF NOT EXISTS complaint_activity (
     id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
     complaint_id    INT UNSIGNED    NOT NULL,
+    admin_user_id   INT UNSIGNED    DEFAULT NULL,
     text            TEXT            NOT NULL,
     created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE SET NULL,
     INDEX idx_complaint_activity (complaint_id)
 );
 
@@ -818,8 +822,10 @@ CREATE TABLE IF NOT EXISTS idea_team (
 CREATE TABLE IF NOT EXISTS idea_activity (
     id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
     idea_id         INT UNSIGNED    NOT NULL,
+    admin_user_id   INT UNSIGNED    DEFAULT NULL,
     text            TEXT            NOT NULL,
     created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (idea_id) REFERENCES ideas(id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE SET NULL,
     INDEX idx_idea_activity (idea_id)
 );
