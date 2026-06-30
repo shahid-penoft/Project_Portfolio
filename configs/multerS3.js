@@ -129,6 +129,19 @@ export const uploadComplaintAttachments = multer({
     limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
 }).array('files', 5);
 
+// ─── Issue Uploads ────────────────────────────────────────
+export const uploadIssueMedia = multer({
+    storage: multerS3(s3StorageOptions('issues/media')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — photos & videos
+}).array('files', 10);
+
+export const uploadIssueAttachments = multer({
+    storage: multerS3(s3StorageOptions('issues/attachments')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+}).array('files', 5);
+
 // ─── Idea Uploads ────────────────────────────────────────
 export const uploadIdeaMediaS3 = multer({
     storage: multerS3(s3StorageOptions('ideas/media')),

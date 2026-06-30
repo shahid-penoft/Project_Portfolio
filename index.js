@@ -43,6 +43,7 @@ import ideasRoutes from './routes/ideasRoutes.js';
 import suggestionsRoutes from './routes/suggestionsRoutes.js';
 import rbacRoutes from './routes/rbacRoutes.js';
 import adminUsersRoutes from './routes/adminUsersRoutes.js';
+import issuesRoutes from './routes/issuesRoutes.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
@@ -128,6 +129,7 @@ app.use('/api/ideas',       ideasRoutes);
 app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/rbac/roles', rbacRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
+app.use('/api/issues', issuesRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
