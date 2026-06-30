@@ -1,6 +1,6 @@
 import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { runMulter, uploadJobDocuments } from '../configs/multerS3.js'; // Reusing job documents config since S3 destination was chosen
+import { runMulter, uploadJobDocuments, uploadSchemeAttachments } from '../configs/multerS3.js'; 
 
 // ─── HELPER: Auto-expire schemes ──────────────────────────────
 const updateExpiredSchemes = async () => {
@@ -20,6 +20,7 @@ const formatScheme = (row) => ({
     eligibilities: typeof row.eligibilities === 'string' ? JSON.parse(row.eligibilities || '[]') : row.eligibilities || [],
     supportingDocuments: typeof row.supporting_documents === 'string' ? JSON.parse(row.supporting_documents || '[]') : row.supporting_documents || [],
     features: typeof row.features === 'string' ? JSON.parse(row.features || '[]') : row.features || [],
+    attachments: typeof row.attachments === 'string' ? JSON.parse(row.attachments || '[]') : row.attachments || [],
     deadline: row.deadline ? new Date(row.deadline).toISOString().split('T')[0] : null,
 });
 
@@ -97,26 +98,48 @@ export const getSchemeById = async (req, res) => {
 //  Admin Auth
 // ─────────────────────────────────────────────────────────────
 export const createScheme = async (req, res) => {
-    const { title, description, deadline, status, userBenefits, eligibilities, supportingDocuments, features } = req.body;
-
-    if (!title) {
-        return errorResponse(res, 'Title is required.', 400);
-    }
-
     try {
+        await runMulter(uploadSchemeAttachments, req, res);
+
+        let { title, description, deadline, status, userBenefits, eligibilities, supportingDocuments, features } = req.body;
+
+        if (!title) {
+            return errorResponse(res, 'Title is required.', 400);
+        }
+
+        const parseJSON = (str) => {
+            try { return JSON.parse(str); } catch { return []; }
+        };
+
+        userBenefits = typeof userBenefits === 'string' ? parseJSON(userBenefits) : (userBenefits || []);
+        eligibilities = typeof eligibilities === 'string' ? parseJSON(eligibilities) : (eligibilities || []);
+        supportingDocuments = typeof supportingDocuments === 'string' ? parseJSON(supportingDocuments) : (supportingDocuments || []);
+        features = typeof features === 'string' ? parseJSON(features) : (features || []);
+
+        let attachments = [];
+        if (req.files && req.files.length > 0) {
+            attachments = req.files.map(f => ({
+                name: f.originalname,
+                url: f.location || f.path,
+                type: f.mimetype,
+                size: f.size
+            }));
+        }
+
         const [[{ maxId }]] = await pool.query('SELECT MAX(id) as maxId FROM welfare_schemes');
         const nextId = (maxId || 0) + 1;
-        const schemeRef = `SCH-${nextId.toString().padStart(3, '0')}`; // E.g., SCH-001
+        const schemeRef = `SCH-${nextId.toString().padStart(3, '0')}`;
 
         const [result] = await pool.query(
-            `INSERT INTO welfare_schemes (scheme_ref, title, description, deadline, status, user_benefits, eligibilities, supporting_documents, features)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO welfare_schemes (scheme_ref, title, description, deadline, status, user_benefits, eligibilities, supporting_documents, features, attachments)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 schemeRef, title, description || null, deadline || null, status || 'active',
-                JSON.stringify(userBenefits || []),
-                JSON.stringify(eligibilities || []),
-                JSON.stringify(supportingDocuments || []),
-                JSON.stringify(features || [])
+                JSON.stringify(userBenefits),
+                JSON.stringify(eligibilities),
+                JSON.stringify(supportingDocuments),
+                JSON.stringify(features),
+                JSON.stringify(attachments)
             ]
         );
 
@@ -133,28 +156,52 @@ export const createScheme = async (req, res) => {
 //  Admin Auth
 // ─────────────────────────────────────────────────────────────
 export const updateScheme = async (req, res) => {
-    const { id } = req.params; // scheme_ref or id
-    const { title, description, deadline, status, userBenefits, eligibilities, supportingDocuments, features } = req.body;
-
-    if (!title) {
-        return errorResponse(res, 'Title is required.', 400);
-    }
-
     try {
-        const query = isNaN(id) ? 'SELECT id FROM welfare_schemes WHERE scheme_ref = ?' : 'SELECT id FROM welfare_schemes WHERE id = ?';
+        await runMulter(uploadSchemeAttachments, req, res);
+
+        const { id } = req.params; // scheme_ref or id
+        let { title, description, deadline, status, userBenefits, eligibilities, supportingDocuments, features, existingAttachments } = req.body;
+
+        if (!title) {
+            return errorResponse(res, 'Title is required.', 400);
+        }
+
+        const query = isNaN(id) ? 'SELECT id, attachments FROM welfare_schemes WHERE scheme_ref = ?' : 'SELECT id, attachments FROM welfare_schemes WHERE id = ?';
         const [[existing]] = await pool.query(query, [id]);
         
         if (!existing) return errorResponse(res, 'Scheme not found.', 404);
 
+        const parseJSON = (str) => {
+            try { return JSON.parse(str); } catch { return []; }
+        };
+
+        userBenefits = typeof userBenefits === 'string' ? parseJSON(userBenefits) : (userBenefits || []);
+        eligibilities = typeof eligibilities === 'string' ? parseJSON(eligibilities) : (eligibilities || []);
+        supportingDocuments = typeof supportingDocuments === 'string' ? parseJSON(supportingDocuments) : (supportingDocuments || []);
+        features = typeof features === 'string' ? parseJSON(features) : (features || []);
+        existingAttachments = typeof existingAttachments === 'string' ? parseJSON(existingAttachments) : (existingAttachments || []);
+
+        let attachments = [...existingAttachments];
+        if (req.files && req.files.length > 0) {
+            const newAttachments = req.files.map(f => ({
+                name: f.originalname,
+                url: f.location || f.path,
+                type: f.mimetype,
+                size: f.size
+            }));
+            attachments = [...attachments, ...newAttachments];
+        }
+
         await pool.query(
-            `UPDATE welfare_schemes SET title = ?, description = ?, deadline = ?, status = ?, user_benefits = ?, eligibilities = ?, supporting_documents = ?, features = ?
+            `UPDATE welfare_schemes SET title = ?, description = ?, deadline = ?, status = ?, user_benefits = ?, eligibilities = ?, supporting_documents = ?, features = ?, attachments = ?
              WHERE id = ?`,
             [
                 title, description || null, deadline || null, status || 'active',
-                JSON.stringify(userBenefits || []),
-                JSON.stringify(eligibilities || []),
-                JSON.stringify(supportingDocuments || []),
-                JSON.stringify(features || []),
+                JSON.stringify(userBenefits),
+                JSON.stringify(eligibilities),
+                JSON.stringify(supportingDocuments),
+                JSON.stringify(features),
+                JSON.stringify(attachments),
                 existing.id
             ]
         );

@@ -142,6 +142,13 @@ export const uploadIssueAttachments = multer({
     limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
 }).array('files', 5);
 
+// ─── Scheme Uploads ───────────────────────────────────────
+export const uploadSchemeAttachments = multer({
+    storage: multerS3(s3StorageOptions('schemes/attachments')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+}).array('files', 5);
+
 // ─── Idea Uploads ────────────────────────────────────────
 export const uploadIdeaMediaS3 = multer({
     storage: multerS3(s3StorageOptions('ideas/media')),

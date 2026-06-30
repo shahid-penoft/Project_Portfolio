@@ -15,6 +15,7 @@ const runMigration = async () => {
                 user_benefits JSON,
                 eligibilities JSON,
                 supporting_documents JSON,
+                attachments JSON,
                 features JSON,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
