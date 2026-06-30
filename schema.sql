@@ -482,8 +482,12 @@ CREATE TABLE IF NOT EXISTS projects (
     is_active     BOOLEAN         NOT NULL DEFAULT 1,
     created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    created_by    INT UNSIGNED    DEFAULT NULL,
+    updated_by    INT UNSIGNED    DEFAULT NULL,
     FOREIGN KEY (sector_id)     REFERENCES sectors(id)      ON DELETE SET NULL,
     FOREIGN KEY (local_body_id) REFERENCES local_bodies(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by)    REFERENCES admin_users(id)  ON DELETE SET NULL,
+    FOREIGN KEY (updated_by)    REFERENCES admin_users(id)  ON DELETE SET NULL,
     INDEX idx_is_active (is_active),
     INDEX idx_year (year)
 );

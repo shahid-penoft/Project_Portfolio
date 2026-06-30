@@ -321,17 +321,66 @@ export const getProjectBySlug = async (req, res) => {
     console.log('[DEBUG] getProjectBySlug called with:', req.params.slug);
     try {
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
+                    au1.full_name AS created_by_name, au2.full_name AS updated_by_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN departments d ON d.id = p.department_id
+             LEFT JOIN admin_users au1 ON p.created_by = au1.id
+             LEFT JOIN admin_users au2 ON p.updated_by = au2.id
              WHERE p.slug = ?`, [req.params.slug]
         );
         if (!rows.length) return errorResponse(res, 'Project not found.', 404);
 
         const p = rows[0];
+        p.created_by = p.created_by_name;
+        p.updated_by = p.updated_by_name;
         p.images = parseImages(p.images);
         p.videos = parseVideos(p.videos);
+        p.departments = typeof p.departments === 'string' ? JSON.parse(p.departments) : (p.departments || []);
+
+        const id = p.id;
+
+        // Hydrate related tables
+        const [[milestones], [updates], [attachments], [budget_entries], [budget_allocations], [contractors], [team], [activity_log]] = await Promise.all([
+            db.query('SELECT * FROM project_milestones WHERE project_id = ? ORDER BY display_order ASC, target_date ASC', [id]),
+            db.query(`SELECT u.*, au.full_name as author_name 
+                      FROM project_updates u 
+                      LEFT JOIN admin_users au ON u.created_by = au.id 
+                      WHERE project_id = ? ORDER BY u.created_at DESC`, [id]),
+            db.query('SELECT * FROM project_attachments WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query('SELECT * FROM project_budget_entries WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query('SELECT * FROM project_budget_allocations WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query('SELECT * FROM project_contractors WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query(`SELECT t.*, au.full_name as name, r.name as role, au.profile_image 
+                      FROM project_team_members t
+                      JOIN admin_users au ON t.admin_user_id = au.id
+                      LEFT JOIN admin_roles r ON au.role_id = r.id
+                      WHERE project_id = ? ORDER BY t.assigned_at DESC`, [id]),
+            db.query(`SELECT l.*, au.full_name as author_name 
+                      FROM project_activity_logs l
+                      LEFT JOIN admin_users au ON l.admin_user_id = au.id
+                      WHERE project_id = ? ORDER BY l.created_at DESC LIMIT 50`, [id])
+        ]);
+
+        // Attach media to updates
+        if (updates.length > 0) {
+            const updateIds = updates.map(u => u.id);
+            const [media] = await db.query('SELECT * FROM project_update_media WHERE update_id IN (?)', [updateIds]);
+            updates.forEach(u => {
+                u.media = media.filter(m => m.update_id === u.id);
+            });
+        }
+
+        p.milestones = milestones;
+        p.updates = updates;
+        p.attachments = attachments;
+        p.budget_entries = budget_entries;
+        p.budget_allocations = budget_allocations;
+        p.contractors = contractors;
+        p.team = team;
+        p.activity_log = activity_log;
 
         return successResponse(res, { data: p }, 'Project fetched.');
     } catch (err) {
@@ -345,17 +394,22 @@ export const getProjectById = async (req, res) => {
     try {
         const { id } = req.params;
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name, p.images, p.videos
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name, p.images, p.videos,
+                    au1.full_name AS created_by_name, au2.full_name AS updated_by_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              LEFT JOIN departments d ON d.id = p.department_id
+             LEFT JOIN admin_users au1 ON p.created_by = au1.id
+             LEFT JOIN admin_users au2 ON p.updated_by = au2.id
              WHERE p.id = ?`,
             [id]
         );
         if (!rows.length) return errorResponse(res, 'Project not found.', 404);
 
         const p = rows[0];
+        p.created_by = p.created_by_name;
+        p.updated_by = p.updated_by_name;
         p.images = parseImages(p.images);
         p.videos = parseVideos(p.videos);
         p.departments = typeof p.departments === 'string' ? JSON.parse(p.departments) : (p.departments || []);
@@ -436,12 +490,14 @@ export const createProject = async (req, res) => {
         const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
         const depsJson = JSON.stringify(Array.isArray(departments) ? departments : []);
         
+        const adminId = req.admin ? req.admin.id : null;
+
         const [result] = await db.query(
-            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
             sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0,
-            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget]
+            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, adminId, adminId]
         );
 
         const [rows] = await db.query(
@@ -498,13 +554,15 @@ export const updateProject = async (req, res) => {
         const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
         const depsJson = JSON.stringify(Array.isArray(departments) ? departments : []);
         
+        const adminId = req.admin ? req.admin.id : null;
+
         const [result] = await db.query(
             `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, videos=?, tags=?, year=?,
-             sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(),
+             sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(), updated_by=?,
              status=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?
              WHERE id=?`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
-            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0,
+            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0, adminId,
             status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, id]
         );
 
