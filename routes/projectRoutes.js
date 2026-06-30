@@ -20,7 +20,7 @@ import {
 import { getMilestones, addMilestone, updateMilestone, deleteMilestone } from '../controllers/projectMilestonesController.js';
 import { getUpdates, addUpdate, deleteUpdate, deleteUpdateMedia, updateUpdate } from '../controllers/projectUpdatesController.js';
 import { getAttachments, addAttachment, deleteAttachment } from '../controllers/projectAttachmentsController.js';
-import { getBudgetEntries, addBudgetEntry, deleteBudgetEntry } from '../controllers/projectBudgetController.js';
+import { getBudgetEntries, addBudgetEntry, deleteBudgetEntry, addBudgetAllocation, deleteBudgetAllocation } from '../controllers/projectBudgetController.js';
 import { getContractors, addContractor, updateContractor, deleteContractor } from '../controllers/projectContractorsController.js';
 import { getTeamMembers, addTeamMember, removeTeamMember } from '../controllers/projectTeamController.js';
 import { getActivityLogs, addActivityLog } from '../controllers/projectActivityController.js';
@@ -75,6 +75,10 @@ router.delete('/:id/attachments/:aid', deleteAttachment);
 router.get('/:id/budget', getBudgetEntries);
 router.post('/:id/budget', addBudgetEntry);
 router.delete('/:id/budget/:bid', deleteBudgetEntry);
+
+// Budget Allocations
+router.post('/:id/budget/allocations', addBudgetAllocation);
+router.delete('/:id/budget/allocations/:aid', deleteBudgetAllocation);
 
 // Contractors
 router.get('/:id/contractors', getContractors);

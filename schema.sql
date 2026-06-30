@@ -488,6 +488,21 @@ CREATE TABLE IF NOT EXISTS projects (
     INDEX idx_year (year)
 );
 
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: project_budget_allocations
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS project_budget_allocations (
+    id           INT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
+    project_id   INT            NOT NULL,
+    fund_source  VARCHAR(150)   DEFAULT NULL,
+    category     VARCHAR(150)   NOT NULL,
+    amount       DECIMAL(15,2)  NOT NULL DEFAULT 0.00,
+    period       VARCHAR(50)    DEFAULT NULL,
+    created_at   DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    INDEX idx_proj_budget_alloc (project_id)
+);
+
 -- ============================================================
 --  MODULE: Constituent Auth
 -- ============================================================

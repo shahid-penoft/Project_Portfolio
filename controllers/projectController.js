@@ -361,7 +361,7 @@ export const getProjectById = async (req, res) => {
         p.departments = typeof p.departments === 'string' ? JSON.parse(p.departments) : (p.departments || []);
 
         // Hydrate related tables
-        const [[milestones], [updates], [attachments], [budget_entries], [contractors], [team], [activity_log]] = await Promise.all([
+        const [[milestones], [updates], [attachments], [budget_entries], [budget_allocations], [contractors], [team], [activity_log]] = await Promise.all([
             db.query('SELECT * FROM project_milestones WHERE project_id = ? ORDER BY display_order ASC, target_date ASC', [id]),
             db.query(`SELECT u.*, au.full_name as author_name 
                       FROM project_updates u 
@@ -369,6 +369,7 @@ export const getProjectById = async (req, res) => {
                       WHERE project_id = ? ORDER BY u.created_at DESC`, [id]),
             db.query('SELECT * FROM project_attachments WHERE project_id = ? ORDER BY created_at DESC', [id]),
             db.query('SELECT * FROM project_budget_entries WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query('SELECT * FROM project_budget_allocations WHERE project_id = ? ORDER BY created_at DESC', [id]),
             db.query('SELECT * FROM project_contractors WHERE project_id = ? ORDER BY created_at DESC', [id]),
             db.query(`SELECT t.*, au.full_name as name, r.name as role, au.profile_image 
                       FROM project_team_members t
@@ -394,6 +395,7 @@ export const getProjectById = async (req, res) => {
         p.updates = updates;
         p.attachments = attachments;
         p.budget_entries = budget_entries;
+        p.budget_allocations = budget_allocations;
         p.contractors = contractors;
         p.team = team;
         p.activity_log = activity_log;
