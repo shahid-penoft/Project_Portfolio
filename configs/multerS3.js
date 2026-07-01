@@ -175,6 +175,19 @@ export const uploadSuggestionAttachmentsS3 = multer({
     limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
 }).array('files', 5);
 
+// ─── Geo Location Uploads ────────────────────────────────────────
+export const uploadGeoLocationMedia = multer({
+    storage: multerS3(s3StorageOptions('geo-locations/media')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — photos & videos
+}).array('files', 10);
+
+export const uploadGeoLocationAttachments = multer({
+    storage: multerS3(s3StorageOptions('geo-locations/attachments')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+}).array('files', 5);
+
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>

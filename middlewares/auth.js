@@ -47,6 +47,34 @@ export const verifyToken = async (req, res, next) => {
 };
 
 /**
+ * Optional Protect routes — verifies JWT exclusively from HTTP-only cookie if it exists.
+ * Does not block if token is missing or invalid, just leaves req.admin undefined.
+ */
+export const optionalVerifyToken = async (req, res, next) => {
+    try {
+        const token = req.cookies?.admin_token;
+        if (!token) return next();
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const [rows] = await db.query(
+            `SELECT u.id, u.full_name, u.email, u.is_active, 
+                    r.name as role, r.permissions, r.is_system 
+             FROM admin_users u 
+             LEFT JOIN roles r ON u.role_id = r.id 
+             WHERE u.id = ?`,
+            [decoded.id]
+        );
+
+        if (rows.length && rows[0].is_active) {
+            req.admin = rows[0];
+        }
+        next();
+    } catch (err) {
+        next();
+    }
+};
+
+/**
  * Permission guard — usage: requirePermission('projects') or requirePermission(['projects', 'dashboard'])
  */
 export const requirePermission = (permissions) => (req, res, next) => {
