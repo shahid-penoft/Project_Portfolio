@@ -46,6 +46,8 @@ import adminUsersRoutes from './routes/adminUsersRoutes.js';
 import issuesRoutes from './routes/issuesRoutes.js';
 import geoLocationRoutes from './routes/geoLocationRoutes.js';
 import geoCategoryRoutes from './routes/geoCategoryRoutes.js';
+import mlaDropdownsRoutes from './routes/mlaDropdownsRoutes.js';
+import governingBodiesRoutes from './routes/governingBodiesRoutes.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
@@ -134,6 +136,8 @@ app.use('/api/admin-users', adminUsersRoutes);
 app.use('/api/issues', issuesRoutes);
 app.use('/api/geo-locations', geoLocationRoutes);
 app.use('/api/geo-categories', geoCategoryRoutes);
+app.use('/api/mla/dropdowns', mlaDropdownsRoutes);
+app.use('/api/admin/governing-bodies', governingBodiesRoutes);
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
     res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` })

@@ -116,6 +116,12 @@ export const uploadJobDocuments = multer({
     limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
 }).array('documents', 5);
 
+export const uploadGoverningBodyPhoto = multer({
+    storage: multerS3(s3StorageOptions('governing-bodies')),
+    fileFilter: iconFileFilter, // Only allow standard images for avatars
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+}).single('photo');
+
 // ─── Complaint Uploads ────────────────────────────────────────
 export const uploadComplaintMedia = multer({
     storage: multerS3(s3StorageOptions('complaints/media')),
