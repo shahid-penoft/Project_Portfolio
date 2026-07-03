@@ -1,7 +1,7 @@
 import express from 'express';
 import { dualAuth, adminOnly } from '../middlewares/dualAuthMiddleware.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
-import { uploadComplaintMedia, uploadComplaintAttachments } from '../configs/multerS3.js';
+import { uploadComplaintMedia, uploadComplaintAttachments , uploadComplaintUpdateFiles } from '../configs/multerS3.js';
 import {
     getComplaints,
     getComplaintStats,
@@ -50,7 +50,14 @@ router.patch('/:id/restore',  verifyToken, restoreComplaint);
 router.delete('/:id',         verifyToken, deleteComplaint); // requires ?force=true
 
 // ── Updates sub-resource ───────────────────────────────────────
-router.post('/:id/updates',               verifyToken, addComplaintUpdate);
+router.post('/:id/updates',
+    verifyToken,
+    (req, res, next) => uploadComplaintUpdateFiles(req, res, (err) => {
+        if (err) return res.status(400).json({ success: false, message: err.message });
+        next();
+    }),
+    addComplaintUpdate
+);
 router.delete('/:id/updates/:updateId',   verifyToken, deleteComplaintUpdate);
 
 // ── Media sub-resource (upload: admin or owner; delete: admin) ─

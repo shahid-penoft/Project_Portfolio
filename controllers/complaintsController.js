@@ -139,9 +139,32 @@ const fetchFullComplaint = async (id) => {
 
     if (!complaint) return null;
 
-    const [updates]     = await pool.query('SELECT * FROM complaint_updates     WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
-    const [media]       = await pool.query('SELECT * FROM complaint_media        WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
-    const [attachments] = await pool.query('SELECT * FROM complaint_attachments  WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [updates]        = await pool.query('SELECT * FROM complaint_updates     WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [allMedia]       = await pool.query('SELECT * FROM complaint_media       WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [allAttachments] = await pool.query('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+
+    const mappedUpdates = updates.map(u => ({
+        ...u,
+        gallery: allMedia
+            .filter(m => m.update_id === u.id)
+            .map(m => ({
+                id:   m.id,
+                url:  m.file_url,
+                type: m.media_type,
+                name: m.caption || m.file_url.split('/').pop(),
+            })),
+        attachments: allAttachments
+            .filter(a => a.update_id === u.id)
+            .map(a => ({
+                id:   a.id,
+                name: a.file_name,
+                size: a.file_size_kb ? `${(a.file_size_kb / 1024).toFixed(1)} MB` : 'Unknown',
+                type: a.file_type,
+                url:  a.file_url,
+            })),
+    }));
+    const media       = allMedia.filter(m => !m.update_id);
+    const attachments = allAttachments.filter(a => !a.update_id);
     const [team]        = await pool.query(`
         SELECT ct.id, ct.role_label, ct.created_at,
                au.id as admin_user_id, au.full_name as name, au.email
@@ -158,7 +181,7 @@ const fetchFullComplaint = async (id) => {
         ORDER BY ca.created_at DESC
     `, [id]);
 
-    return { ...complaint, updates, media, attachments, team, activity };
+    return { ...complaint, updates: mappedUpdates, media, attachments, team, activity };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -280,7 +303,7 @@ export const getComplaintById = async (req, res) => {
 export const createComplaint = async (req, res) => {
     try {
         const {
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed,
         } = req.body;
@@ -296,11 +319,11 @@ export const createComplaint = async (req, res) => {
 
         const [result] = await pool.query(`
             INSERT INTO complaints
-              (reference_no, title, category, priority, status, description, location, internal_note,
+              (reference_no, title, category, priority, status, description, location, latitude, longitude, internal_note,
                complainant_name, phone, alternative_phone, email,
                local_body_id, ward_id, department_id,
                constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -340,7 +363,7 @@ export const updateComplaint = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed,
         } = req.body;
@@ -364,7 +387,7 @@ export const updateComplaint = async (req, res) => {
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed, id,
         ]);
@@ -472,11 +495,34 @@ export const addComplaintUpdate = async (req, res) => {
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
-            'INSERT INTO complaint_updates (complaint_id, type, title, note) VALUES (?,?,?,?)',
+            'INSERT INTO complaint_updates (complaint_id, type, title, note) VALUES (?,?,?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
+        const updateId = result.insertId;
+
+        if (req.files && req.files['media'] && req.files['media'].length > 0) {
+            const rows = req.files['media'].map(f => {
+                const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
+                return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, updateId];
+            });
+            await pool.query(
+                'INSERT INTO complaint_media (complaint_id, media_type, file_url, caption, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
+        if (req.files && req.files['attachments'] && req.files['attachments'].length > 0) {
+            const rows = req.files['attachments'].map(f => [
+                id, f.originalname, f.location, f.mimetype, Math.round(f.size / 1024), updateId
+            ]);
+            await pool.query(
+                'INSERT INTO complaint_attachments (complaint_id, file_name, file_url, file_type, file_size_kb, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
-        const [[row]] = await pool.query('SELECT * FROM complaint_updates WHERE id = ?', [result.insertId]);
+        const [[row]] = await pool.query('SELECT * FROM complaint_updates WHERE id = ?', [updateId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
         console.error('[addComplaintUpdate]', err);
@@ -512,7 +558,7 @@ export const uploadComplaintMedia = async (req, res) => {
         if (!req.files?.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });
 
         const rows = req.files.map(f => {
-            const isVideo = f.mimetype.startsWith('video/');
+            const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
             return [id, isVideo ? 'video' : 'photo', f.location, f.originalname];
         });
 
@@ -611,7 +657,7 @@ export const addComplaintTeamMember = async (req, res) => {
 
         try {
             const [result] = await pool.query(
-                'INSERT INTO complaint_team (complaint_id, admin_user_id, role_label) VALUES (?,?,?)',
+                'INSERT INTO complaint_team (complaint_id, admin_user_id, role_label) VALUES (?,?,?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
             await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);

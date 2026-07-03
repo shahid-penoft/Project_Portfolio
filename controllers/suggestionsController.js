@@ -58,9 +58,32 @@ const fetchFullSuggestion = async (id) => {
 
     if (!suggestion) return null;
 
-    const [updates]     = await pool.query('SELECT * FROM suggestion_updates     WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
-    const [media]       = await pool.query('SELECT * FROM suggestion_media        WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
-    const [attachments] = await pool.query('SELECT * FROM suggestion_attachments  WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
+    const [updates]        = await pool.query('SELECT * FROM suggestion_updates     WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
+    const [allMedia]       = await pool.query('SELECT * FROM suggestion_media       WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
+    const [allAttachments] = await pool.query('SELECT * FROM suggestion_attachments WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
+
+    const mappedUpdates = updates.map(u => ({
+        ...u,
+        gallery: allMedia
+            .filter(m => m.update_id === u.id)
+            .map(m => ({
+                id:   m.id,
+                url:  m.file_url,
+                type: m.media_type,
+                name: m.caption || m.file_url.split('/').pop(),
+            })),
+        attachments: allAttachments
+            .filter(a => a.update_id === u.id)
+            .map(a => ({
+                id:   a.id,
+                name: a.file_name,
+                size: a.file_size_kb ? `${(a.file_size_kb / 1024).toFixed(1)} MB` : 'Unknown',
+                type: a.file_type,
+                url:  a.file_url,
+            })),
+    }));
+    const media       = allMedia.filter(m => !m.update_id);
+    const attachments = allAttachments.filter(a => !a.update_id);
     const [team]        = await pool.query(`
         SELECT it.id, it.role_label, it.created_at,
                au.id as admin_user_id, au.full_name as name, au.email
@@ -77,7 +100,7 @@ const fetchFullSuggestion = async (id) => {
         ORDER BY sa.created_at DESC
     `, [id]);
 
-    return { ...suggestion, updates, media, attachments, team, activity };
+    return { ...suggestion, updates: mappedUpdates, media, attachments, team, activity };
 };
 
 export const getSuggestions = async (req, res) => {
@@ -183,7 +206,7 @@ export const getSuggestionById = async (req, res) => {
 export const createSuggestion = async (req, res) => {
     try {
         const {
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed,
         } = req.body;
@@ -198,11 +221,11 @@ export const createSuggestion = async (req, res) => {
 
         const [result] = await pool.query(`
             INSERT INTO suggestions
-              (reference_no, title, category, priority, status, description, location, internal_note,
+              (reference_no, title, category, priority, status, description, location, latitude, longitude, internal_note,
                complainant_name, phone, alternative_phone, email,
                local_body_id, ward_id, department_id,
                constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -239,7 +262,7 @@ export const updateSuggestion = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed,
         } = req.body;
@@ -263,7 +286,7 @@ export const updateSuggestion = async (req, res) => {
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed, id,
         ]);
@@ -355,11 +378,34 @@ export const addSuggestionUpdate = async (req, res) => {
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
-            'INSERT INTO suggestion_updates (suggestion_id, type, title, note) VALUES (?,?,?,?)',
+            'INSERT INTO suggestion_updates (suggestion_id, type, title, note) VALUES (?,?,?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
+        const updateId = result.insertId;
+
+        if (req.files && req.files['media'] && req.files['media'].length > 0) {
+            const rows = req.files['media'].map(f => {
+                const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
+                return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, updateId];
+            });
+            await pool.query(
+                'INSERT INTO suggestion_media (suggestion_id, media_type, file_url, caption, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
+        if (req.files && req.files['attachments'] && req.files['attachments'].length > 0) {
+            const rows = req.files['attachments'].map(f => [
+                id, f.originalname, f.location, f.mimetype, Math.round(f.size / 1024), updateId
+            ]);
+            await pool.query(
+                'INSERT INTO suggestion_attachments (suggestion_id, file_name, file_url, file_type, file_size_kb, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
-        const [[row]] = await pool.query('SELECT * FROM suggestion_updates WHERE id = ?', [result.insertId]);
+        const [[row]] = await pool.query('SELECT * FROM suggestion_updates WHERE id = ?', [updateId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
         console.error('[addSuggestionUpdate]', err);
@@ -388,7 +434,7 @@ export const uploadSuggestionMedia = async (req, res) => {
         if (!req.files?.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });
 
         const rows = req.files.map(f => {
-            const isVideo = f.mimetype.startsWith('video/');
+            const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
             return [id, isVideo ? 'video' : 'photo', f.location, f.originalname];
         });
 
@@ -474,7 +520,7 @@ export const addSuggestionTeamMember = async (req, res) => {
 
         try {
             const [result] = await pool.query(
-                'INSERT INTO suggestion_team (suggestion_id, admin_user_id, role_label) VALUES (?,?,?)',
+                'INSERT INTO suggestion_team (suggestion_id, admin_user_id, role_label) VALUES (?,?,?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
             await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);

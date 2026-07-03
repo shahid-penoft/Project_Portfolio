@@ -139,9 +139,32 @@ const fetchFullIssue = async (id) => {
 
     if (!issue) return null;
 
-    const [updates]     = await pool.query('SELECT * FROM issue_updates     WHERE issue_id = ? ORDER BY created_at ASC', [id]);
-    const [media]       = await pool.query('SELECT * FROM issue_media        WHERE issue_id = ? ORDER BY created_at ASC', [id]);
-    const [attachments] = await pool.query('SELECT * FROM issue_attachments  WHERE issue_id = ? ORDER BY created_at ASC', [id]);
+    const [updates]        = await pool.query('SELECT * FROM issue_updates     WHERE issue_id = ? ORDER BY created_at ASC', [id]);
+    const [allMedia]       = await pool.query('SELECT * FROM issue_media       WHERE issue_id = ? ORDER BY created_at ASC', [id]);
+    const [allAttachments] = await pool.query('SELECT * FROM issue_attachments WHERE issue_id = ? ORDER BY created_at ASC', [id]);
+
+    const mappedUpdates = updates.map(u => ({
+        ...u,
+        gallery: allMedia
+            .filter(m => m.update_id === u.id)
+            .map(m => ({
+                id:   m.id,
+                url:  m.file_url,
+                type: m.media_type,
+                name: m.caption || m.file_url.split('/').pop(),
+            })),
+        attachments: allAttachments
+            .filter(a => a.update_id === u.id)
+            .map(a => ({
+                id:   a.id,
+                name: a.file_name,
+                size: a.file_size_kb ? `${(a.file_size_kb / 1024).toFixed(1)} MB` : 'Unknown',
+                type: a.file_type,
+                url:  a.file_url,
+            })),
+    }));
+    const media       = allMedia.filter(m => !m.update_id);
+    const attachments = allAttachments.filter(a => !a.update_id);
     const [team]        = await pool.query(`
         SELECT ct.id, ct.role_label, ct.created_at,
                au.id as admin_user_id, au.full_name as name, au.email
@@ -158,7 +181,7 @@ const fetchFullIssue = async (id) => {
         ORDER BY ca.created_at DESC
     `, [id]);
 
-    return { ...issue, updates, media, attachments, team, activity };
+    return { ...issue, updates: mappedUpdates, media, attachments, team, activity };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -280,7 +303,7 @@ export const getIssueById = async (req, res) => {
 export const createIssue = async (req, res) => {
     try {
         const {
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed,
         } = req.body;
@@ -296,11 +319,11 @@ export const createIssue = async (req, res) => {
 
         const [result] = await pool.query(`
             INSERT INTO issues
-              (reference_no, title, category, priority, status, description, location, internal_note,
+              (reference_no, title, category, priority, status, description, location, latitude, longitude, internal_note,
                submitter_name, phone, alternative_phone, email,
                local_body_id, ward_id, department_id,
                constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -309,6 +332,8 @@ export const createIssue = async (req, res) => {
             status || 'Pending',
             description || null,
             location || null,
+            latitude || null,
+            longitude || null,
             internal_note || null,
             submitter_name,
             phone,
@@ -340,7 +365,7 @@ export const updateIssue = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed,
         } = req.body;
@@ -353,6 +378,8 @@ export const updateIssue = async (req, res) => {
               status = COALESCE(?, status),
               description = COALESCE(?, description),
               location = COALESCE(?, location),
+              latitude = COALESCE(?, latitude),
+              longitude = COALESCE(?, longitude),
               internal_note = COALESCE(?, internal_note),
               submitter_name = COALESCE(?, submitter_name),
               phone = COALESCE(?, phone),
@@ -364,7 +391,7 @@ export const updateIssue = async (req, res) => {
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
-            title, category, priority, status, description, location, internal_note,
+            title, category, priority, status, description, location, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed, id,
         ]);
@@ -472,11 +499,34 @@ export const addIssueUpdate = async (req, res) => {
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
-            'INSERT INTO issue_updates (issue_id, type, title, note) VALUES (?,?,?,?)',
+            'INSERT INTO issue_updates (issue_id, type, title, note) VALUES (?,?,?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
+        const updateId = result.insertId;
+
+        if (req.files && req.files['media'] && req.files['media'].length > 0) {
+            const rows = req.files['media'].map(f => {
+                const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
+                return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, updateId];
+            });
+            await pool.query(
+                'INSERT INTO issue_media (issue_id, media_type, file_url, caption, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
+        if (req.files && req.files['attachments'] && req.files['attachments'].length > 0) {
+            const rows = req.files['attachments'].map(f => [
+                id, f.originalname, f.location, f.mimetype, Math.round(f.size / 1024), updateId
+            ]);
+            await pool.query(
+                'INSERT INTO issue_attachments (issue_id, file_name, file_url, file_type, file_size_kb, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
-        const [[row]] = await pool.query('SELECT * FROM issue_updates WHERE id = ?', [result.insertId]);
+        const [[row]] = await pool.query('SELECT * FROM issue_updates WHERE id = ?', [updateId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
         console.error('[addIssueUpdate]', err);
@@ -512,7 +562,7 @@ export const uploadIssueMedia = async (req, res) => {
         if (!req.files?.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });
 
         const rows = req.files.map(f => {
-            const isVideo = f.mimetype.startsWith('video/');
+            const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
             return [id, isVideo ? 'video' : 'photo', f.location, f.originalname];
         });
 
@@ -611,7 +661,7 @@ export const addIssueTeamMember = async (req, res) => {
 
         try {
             const [result] = await pool.query(
-                'INSERT INTO issue_team (issue_id, admin_user_id, role_label) VALUES (?,?,?)',
+                'INSERT INTO issue_team (issue_id, admin_user_id, role_label) VALUES (?,?,?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
             await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);

@@ -188,6 +188,44 @@ export const uploadGeoLocationAttachments = multer({
     limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
 }).array('files', 5);
 
+
+// ─── Updates Uploads (Combined Media & Attachments) ──────────
+export const uploadComplaintUpdateFiles = multer({
+    storage: multerS3(s3StorageOptions('complaints/updates')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 },
+}).fields([
+    { name: 'media', maxCount: 10 },
+    { name: 'attachments', maxCount: 5 }
+]);
+
+export const uploadIssueUpdateFiles = multer({
+    storage: multerS3(s3StorageOptions('issues/updates')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 },
+}).fields([
+    { name: 'media', maxCount: 10 },
+    { name: 'attachments', maxCount: 5 }
+]);
+
+export const uploadIdeaUpdateFiles = multer({
+    storage: multerS3(s3StorageOptions('ideas/updates')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 },
+}).fields([
+    { name: 'media', maxCount: 10 },
+    { name: 'attachments', maxCount: 5 }
+]);
+
+export const uploadSuggestionUpdateFiles = multer({
+    storage: multerS3(s3StorageOptions('suggestions/updates')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 },
+}).fields([
+    { name: 'media', maxCount: 10 },
+    { name: 'attachments', maxCount: 5 }
+]);
+
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>

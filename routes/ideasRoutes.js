@@ -1,7 +1,7 @@
 import express from 'express';
 import { dualAuth, adminOnly } from '../middlewares/dualAuthMiddleware.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
-import { uploadIdeaMediaS3, uploadIdeaAttachmentsS3 } from '../configs/multerS3.js';
+import { uploadIdeaMediaS3, uploadIdeaAttachmentsS3 , uploadIdeaUpdateFiles } from '../configs/multerS3.js';
 import {
     getIdeas,
     getIdeaStats,
@@ -44,7 +44,15 @@ router.patch('/:id/restore',  verifyToken, requirePermission('ideas'), restoreId
 router.delete('/:id',         verifyToken, requirePermission('ideas'), deleteIdea); // requires ?force=true
 
 // ── Updates sub-resource ───────────────────────────────────────
-router.post('/:id/updates',               verifyToken, requirePermission('ideas'), addIdeaUpdate);
+router.post('/:id/updates',
+    verifyToken,
+    requirePermission('ideas'),
+    (req, res, next) => uploadIdeaUpdateFiles(req, res, (err) => {
+        if (err) return res.status(400).json({ success: false, message: err.message });
+        next();
+    }),
+    addIdeaUpdate
+);
 router.delete('/:id/updates/:updateId',   verifyToken, requirePermission('ideas'), deleteIdeaUpdate);
 
 // ── Media sub-resource (upload: admin or owner; delete: admin) ─
