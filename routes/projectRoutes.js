@@ -24,6 +24,7 @@ import { getBudgetEntries, addBudgetEntry, deleteBudgetEntry, addBudgetAllocatio
 import { getContractors, addContractor, updateContractor, deleteContractor } from '../controllers/projectContractorsController.js';
 import { getTeamMembers, addTeamMember, removeTeamMember } from '../controllers/projectTeamController.js';
 import { getActivityLogs, addActivityLog } from '../controllers/projectActivityController.js';
+import { getProjectCSRFunders } from '../controllers/csrProjectsController.js';
 
 const router = express.Router();
 
@@ -94,5 +95,8 @@ router.delete('/:id/team/:uid', removeTeamMember);
 // Activity Logs
 router.get('/:id/activity', getActivityLogs);
 router.post('/:id/activity', addActivityLog);
+
+// CSR Funders (inverse view)
+router.get('/:id/csr-funders', getProjectCSRFunders);
 
 export default router;
