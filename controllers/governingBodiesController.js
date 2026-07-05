@@ -13,10 +13,21 @@ const parseJsonField = (field) => {
 };
 
 const validateBody = (body) => {
-    const { governing_body_type, local_body_id, name, role_id, phone } = body;
+    const { governing_body_type, local_body_id, name, role_id, phone, department, head_name } = body;
     if (!governing_body_type || !['GRAM_PANCHAYAT', 'MUNICIPALITY', 'BLOCK_PANCHAYAT', 'DISTRICT_PANCHAYAT', 'OTHER'].includes(governing_body_type)) {
         return 'Invalid or missing governing_body_type.';
     }
+    
+    if (governing_body_type === 'OTHER') {
+        if (!name) return 'name is required.';
+        if (!department) return 'department is required.';
+        if (!head_name) return 'head_name is required.';
+        if (!phone) return 'phone is required.';
+        // local_body_id is also required but we can handle it
+        if (!local_body_id) return 'local_body_id is required.';
+        return null;
+    }
+
     if (!local_body_id) return 'local_body_id is required.';
     if (!name) return 'name is required.';
     if (!role_id) return 'role_id is required.';
@@ -167,7 +178,8 @@ export const createGoverningBody = async (req, res) => {
             governing_body_type, local_body_id, ward_id, name, role_id, gender, age, 
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
-            additional_roles, achievements, notes, bookmarked
+            additional_roles, achievements, notes, bookmarked,
+            department, head_name, hours, avatar_color, officer_phone
         } = req.body;
 
         const photo_url = req.file ? req.file.location : null;
@@ -177,14 +189,15 @@ export const createGoverningBody = async (req, res) => {
                 governing_body_type, local_body_id, ward_id, name, role_id, gender, age,
                 phone, alternative_phone, email, house_name, home_address, location,
                 bio, office_name, office_phone, office_email, office_address, office_location,
-                additional_roles, achievements, notes, bookmarked, photo_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                additional_roles, achievements, notes, bookmarked, photo_url,
+                department, head_name, hours, avatar_color, officer_phone
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             governing_body_type, 
             local_body_id, 
             ward_id || null, 
             name, 
-            role_id, 
+            role_id || null, 
             gender || null, 
             age ? parseInt(age) : null,
             phone, 
@@ -203,7 +216,12 @@ export const createGoverningBody = async (req, res) => {
             achievements ? JSON.stringify(parseJsonField(achievements)) : null,
             notes ? JSON.stringify(parseJsonField(notes)) : null,
             bookmarked === 'true' || bookmarked === true,
-            photo_url
+            photo_url,
+            department || null,
+            head_name || null,
+            hours || null,
+            avatar_color || null,
+            officer_phone || null
         ]);
 
         const [rows] = await db.query('SELECT * FROM governing_representatives WHERE id = ?', [result.insertId]);
@@ -230,7 +248,8 @@ export const updateGoverningBody = async (req, res) => {
             governing_body_type, local_body_id, ward_id, name, role_id, gender, age, 
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
-            additional_roles, achievements, notes, bookmarked
+            additional_roles, achievements, notes, bookmarked,
+            department, head_name, hours, avatar_color, officer_phone
         } = req.body;
 
         const [[existing]] = await db.query('SELECT photo_url FROM governing_representatives WHERE id = ?', [id]);
@@ -245,14 +264,15 @@ export const updateGoverningBody = async (req, res) => {
                 governing_body_type = ?, local_body_id = ?, ward_id = ?, name = ?, role_id = ?, gender = ?, age = ?,
                 phone = ?, alternative_phone = ?, email = ?, house_name = ?, home_address = ?, location = ?,
                 bio = ?, office_name = ?, office_phone = ?, office_email = ?, office_address = ?, office_location = ?,
-                additional_roles = ?, achievements = ?, notes = ?, bookmarked = ?, photo_url = ?
+                additional_roles = ?, achievements = ?, notes = ?, bookmarked = ?, photo_url = ?,
+                department = ?, head_name = ?, hours = ?, avatar_color = ?, officer_phone = ?
             WHERE id = ?
         `, [
             governing_body_type, 
             local_body_id, 
             ward_id || null, 
             name, 
-            role_id, 
+            role_id || null, 
             gender || null, 
             age ? parseInt(age) : null,
             phone, 
@@ -272,6 +292,11 @@ export const updateGoverningBody = async (req, res) => {
             notes ? JSON.stringify(parseJsonField(notes)) : null,
             bookmarked === 'true' || bookmarked === true,
             photo_url,
+            department || null,
+            head_name || null,
+            hours || null,
+            avatar_color || null,
+            officer_phone || null,
             id
         ]);
 
