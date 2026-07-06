@@ -171,6 +171,8 @@ export const createGoverningBody = async (req, res) => {
     try {
         await runMulter(uploadGoverningBodyPhoto, req, res);
 
+        console.log("[createGoverningBody] req.body:", req.body);
+
         const errorMsg = validateBody(req.body);
         if (errorMsg) return errorResponse(res, errorMsg, 400);
 

@@ -1,0 +1,179 @@
+/**
+ * buildLetterHtmlTemplate(letter)
+ * Returns a complete <!DOCTYPE html> string that pixel-matches LetterPreview.jsx.
+ *
+ * Rules:
+ *  - All CSS is inline (email clients strip <style> blocks)
+ *  - All multi-column layouts use <table> (Gmail/Outlook strip flexbox)
+ */
+
+const MONTHS = ['January','February','March','April','May','June',
+                 'July','August','September','October','November','December'];
+const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+const buildLetterHtmlTemplate = (letter) => {
+  const now      = letter.prepared_on ? new Date(letter.prepared_on) : new Date();
+  const dateStr  = `${String(now.getDate()).padStart(2,'0')} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  const dayStr   = DAYS[now.getDay()];
+  const refNo    = letter.letter_id || 'KTML/----/----';
+
+  // Body paragraphs — split on double newline or single newline
+  const bodyParagraphs = letter.body
+    ? letter.body.split(/\n\n|\n/).map(line =>
+        `<p style="font-family:Georgia,'Palatino Linotype','Book Antiqua',serif;font-size:14px;color:#374151;margin:0 0 10px;line-height:1.9;text-align:justify;">${line || '&nbsp;'}</p>`
+      ).join('')
+    : '<p style="font-family:Georgia,serif;font-size:14px;color:#9ca3af;font-style:italic;">Letter content will appear here...</p>';
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>${refNo} — ${letter.subject || 'Letter'}</title>
+</head>
+<body style="margin:0;padding:20px 0;background:#f3f4f6;">
+
+  <!-- Outer wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f3f4f6;">
+    <tr>
+      <td align="center">
+        <table width="780" cellpadding="0" cellspacing="0" border="0"
+               style="max-width:780px;background:#ffffff;border:1px solid #e0e0e0;font-family:Georgia,'Palatino Linotype','Book Antiqua',serif;">
+
+          <!-- TOP TRICOLOR BAR -->
+          <tr>
+            <td style="height:7px;background:linear-gradient(to right,#ff9933 0%,#ff9933 10%,#ffffff 30%,#ffffff 70%,#138808 90%,#138808 100%);line-height:7px;font-size:1px;">&nbsp;</td>
+          </tr>
+
+          <!-- HEADER SECTION -->
+          <tr>
+            <td style="padding:28px 56px 0;border-bottom:2px solid #743fd5;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <!-- Photo cell -->
+                  <td valign="top" width="100"
+                      style="width:100px;height:126px;border:1.5px solid #d4d4d4;border-radius:3px;background:linear-gradient(160deg,#f5f5f5 0%,#e8e8e8 100%);text-align:center;vertical-align:middle;">
+                    <div style="width:54px;height:54px;border-radius:50%;background:#cccccc;margin:0 auto 6px;line-height:54px;font-size:28px;text-align:center;">&#128100;</div>
+                    <span style="font-family:'Segoe UI',Arial,sans-serif;font-size:8px;color:#aaaaaa;letter-spacing:0.5px;">MLA Photo</span>
+                  </td>
+                  <td width="16"></td>
+                  <!-- Info cell -->
+                  <td valign="top" style="padding-top:4px;">
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:22px;font-weight:800;color:#101828;margin:0 0 2px;letter-spacing:0.2px;line-height:1.15;">MLA Shibu Theckumpuram</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;font-weight:700;color:#743fd5;text-transform:uppercase;letter-spacing:1.5px;margin:0 0 10px;">MLA Office</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#374151;margin:0 0 2px;font-weight:600;">Kothamangalam Constituency</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:11.5px;color:#6b7282;margin:0 0 1px;">MLA Office, Near Town Hall, Kothamangalam,</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:11.5px;color:#6b7282;margin:0;">Ernakulam District, Kerala &ndash; 686 691</p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Ref / Date / Day row -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                     style="margin-top:20px;padding-top:12px;padding-bottom:12px;border-top:1px solid #ececec;">
+                <tr>
+                  <td style="padding-right:28px;white-space:nowrap;">
+                    <span style="font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;">Ref No: </span>
+                    <span style="font-family:'Courier New',Courier,monospace;font-size:12.5px;color:#101828;font-weight:700;letter-spacing:0.8px;">${refNo}</span>
+                  </td>
+                  <td style="padding-right:28px;white-space:nowrap;">
+                    <span style="font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;">Date: </span>
+                    <span style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#101828;font-weight:600;">${dateStr}</span>
+                  </td>
+                  <td style="white-space:nowrap;">
+                    <span style="font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;">Day: </span>
+                    <span style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#101828;font-weight:600;">${dayStr}</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- BODY -->
+          <tr>
+            <td style="padding:30px 56px 42px;">
+
+              <!-- To block -->
+              <p style="font-family:Georgia,serif;font-size:14px;color:#101828;margin:0 0 3px;font-weight:700;">To,</p>
+              <p style="font-family:Georgia,serif;font-size:14px;color:#101828;margin:0 0 2px;">${letter.recipient_name || 'Recipient Name'}</p>
+              ${letter.recipient_designation ? `<p style="font-family:Georgia,serif;font-size:14px;color:#101828;margin:0 0 2px;">${letter.recipient_designation}</p>` : ''}
+              ${letter.recipient_org ? `<p style="font-family:Georgia,serif;font-size:14px;color:#101828;margin:0 0 2px;">${letter.recipient_org}</p>` : ''}
+              ${letter.recipient_address ? `<p style="font-family:Georgia,serif;font-size:13.5px;color:#6b7282;margin:2px 0 0;line-height:1.6;">${letter.recipient_address.replace(/\n/g,'<br/>')}</p>` : ''}
+
+              <!-- Subject -->
+              <p style="font-family:Georgia,serif;font-size:14px;color:#101828;margin:22px 0 24px;line-height:1.5;">
+                <u><strong>Subject</strong></u>: <strong>${letter.subject || 'Letter Subject'}</strong>
+              </p>
+
+              <!-- Salutation -->
+              <p style="font-family:Georgia,serif;font-size:14px;color:#101828;margin:0 0 18px;">${letter.salutation || 'Respected Sir,'}</p>
+
+              <!-- Body -->
+              <div style="margin-bottom:32px;">${bodyParagraphs}</div>
+
+              <!-- Closing -->
+              <p style="font-family:Georgia,serif;font-size:14px;color:#101828;margin:0 0 60px;">${letter.closing || 'Yours faithfully,'}</p>
+
+              <!-- Signature block -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td valign="bottom">
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:13.5px;font-weight:700;color:#101828;margin:0 0 1px;">Shibu Theckumpuram</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#374151;margin:0 0 1px;">Member of Legislative Assembly</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#743fd5;font-weight:600;margin:0;">Kothamangalam Constituency, Kerala</p>
+                  </td>
+                  <td valign="bottom" align="right" width="80">
+                    <div style="width:68px;height:68px;border-radius:50%;border:1.5px dashed #d1d5db;background:rgba(116,63,213,0.02);text-align:center;line-height:1;padding-top:14px;box-sizing:border-box;">
+                      <div style="font-size:18px;color:#d1d5db;">&#128143;</div>
+                      <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:6.5px;color:#d1d5db;text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;">Official Seal</div>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- FOOTER -->
+          <tr>
+            <td style="background:#f7f7f8;border-top:1.5px solid #e5e7eb;padding:13px 56px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <!-- Address -->
+                  <td valign="middle">
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;color:#374151;font-weight:700;margin:0 0 2px;">MLA Office, Kothamangalam Constituency</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:9.5px;color:#6b7282;margin:0 0 1px;">Near Town Hall, Kothamangalam, Ernakulam District</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:9.5px;color:#6b7282;margin:0;">Kerala &ndash; 686 691</p>
+                  </td>
+                  <!-- Letter ID -->
+                  <td valign="middle" align="center">
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:8.5px;color:#b0b0b0;margin:0 0 1px;font-style:italic;">
+                      Letter ID: <span style="font-family:'Courier New',monospace;color:#9ca3af;">${refNo}</span>
+                    </p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:8px;color:#c4c4c4;margin:0;">Issued via MLA Connect</p>
+                  </td>
+                  <!-- Contact -->
+                  <td valign="middle" align="right">
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;color:#374151;font-weight:600;margin:0 0 2px;">+91 484 000 0000</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#743fd5;margin:0;">office@kothamangalammla.com</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- BOTTOM TRICOLOR BAR -->
+          <tr>
+            <td style="height:5px;background:linear-gradient(to right,#ff9933 0%,#ff9933 10%,#ffffff 30%,#ffffff 70%,#138808 90%,#138808 100%);line-height:5px;font-size:1px;">&nbsp;</td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>`;
+};
+
+export default buildLetterHtmlTemplate;
