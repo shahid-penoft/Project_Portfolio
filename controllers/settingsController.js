@@ -1,6 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { runMulter, uploadDocument } from '../configs/multerS3.js';
+import { runMulter, uploadDocument, uploadImage } from '../configs/multerS3.js';
 
 // Get all settings
 export const getAllSettings = async (req, res) => {
@@ -39,8 +39,8 @@ export const updateSettings = async (req, res) => {
 
             for (const key of keys) {
                 await connection.query(
-                    'UPDATE site_settings SET setting_value = ? WHERE setting_key = ?',
-                    [settings[key], key]
+                    'INSERT INTO site_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?',
+                    [key, settings[key], settings[key]]
                 );
             }
 
@@ -80,5 +80,23 @@ export const uploadManifestoPDF = async (req, res) => {
     } catch (err) {
         console.error('[uploadManifestoPDF]', err);
         return errorResponse(res, err.message || 'Server error uploading Manifesto PDF.');
+    }
+};
+
+// Upload Template Image
+export const uploadSettingImage = async (req, res) => {
+    try {
+        await runMulter(uploadImage, req, res);
+
+        if (!req.file) {
+            return errorResponse(res, 'No image file uploaded.', 400);
+        }
+
+        const imageUrl = req.file.location || `/uploads/${req.file.filename}`;
+        
+        return successResponse(res, { url: imageUrl }, 'Image uploaded successfully.');
+    } catch (err) {
+        console.error('[uploadSettingImage]', err);
+        return errorResponse(res, err.message || 'Server error uploading image.');
     }
 };

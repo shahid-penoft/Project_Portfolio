@@ -367,7 +367,13 @@ export const sendLetterEmail = async (req, res) => {
         if (letter.status === 'Draft')
             return res.status(400).json({ success: false, message: 'Cannot send a Draft letter via email. Please send it first.' });
 
-        const htmlBody  = buildLetterHtmlTemplate(letter);
+        const [[setting]] = await pool.query('SELECT setting_value FROM site_settings WHERE setting_key = ?', ['mla_letter_template']);
+        let templateConfig = null;
+        if (setting && setting.setting_value) {
+            try { templateConfig = JSON.parse(setting.setting_value); } catch(e) {}
+        }
+
+        const htmlBody  = buildLetterHtmlTemplate(letter, templateConfig);
         const mailOpts  = {
             from:    `"MLA Office Kothamangalam" <${process.env.MAIL_FROM_ADDRESS || process.env.SMTP_USER}>`,
             to:      recipient_email,
@@ -378,7 +384,7 @@ export const sendLetterEmail = async (req, res) => {
         };
 
         if (send_as_pdf_attachment) {
-            const pdfBuffer = await generateLetterPdf(letter);
+            const pdfBuffer = await generateLetterPdf(letter, templateConfig);
             mailOpts.attachments.push({
                 filename:    `${letter.letter_id}.pdf`,
                 content:     pdfBuffer,
@@ -404,7 +410,13 @@ export const downloadLetterPdf = async (req, res) => {
         const letter = await fetchFullLetter(req.params.id);
         if (!letter) return res.status(404).json({ success: false, message: 'Letter not found.' });
 
-        const pdfBuffer = await generateLetterPdf(letter);
+        const [[setting]] = await pool.query('SELECT setting_value FROM site_settings WHERE setting_key = ?', ['mla_letter_template']);
+        let templateConfig = null;
+        if (setting && setting.setting_value) {
+            try { templateConfig = JSON.parse(setting.setting_value); } catch(e) {}
+        }
+
+        const pdfBuffer = await generateLetterPdf(letter, templateConfig);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${letter.letter_id}.pdf"`);
         res.send(pdfBuffer);

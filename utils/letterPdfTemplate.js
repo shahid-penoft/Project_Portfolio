@@ -4,6 +4,7 @@
  * Returns a Buffer so the caller can pipe it or attach it.
  */
 import PDFDocument from 'pdfkit';
+import sharp from 'sharp';
 
 // ─── Colours (match LetterPreview.jsx) ────────────────────────
 const PURPLE    = '#743fd5';
@@ -31,9 +32,50 @@ const CONTENT_W = PAGE_W - MARGIN_X * 2;
 
 /**
  * @param {object} letter - letter row from DB
+ * @param {object} templateConfig - template configuration from DB
  * @returns {Promise<Buffer>}
  */
-const generateLetterPdf = (letter) => {
+const fetchImageAsBuffer = async (url) => {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    const originalBuffer = Buffer.from(arrayBuffer);
+    
+    // PDFKit only supports JPEG and PNG. Convert to PNG to maintain transparency and compatibility.
+    const convertedBuffer = await sharp(originalBuffer).png().toBuffer();
+    return convertedBuffer;
+  } catch(e) {
+    console.error('Failed to fetch/convert image:', e);
+    return null;
+  }
+};
+
+const generateLetterPdf = async (letter, templateConfig = null) => {
+  const t = templateConfig || {
+    mlaName: 'MLA Shibu Theckumpuram',
+    mlaTitle: 'MLA Office',
+    constituency: 'Kothamangalam Constituency',
+    addressLine1: 'MLA Office, Near Town Hall, Kothamangalam,',
+    addressLine2: 'Ernakulam District, Kerala \u2013 686 691',
+    phone: '+91 484 000 0000',
+    email: 'office@kothamangalammla.com',
+    showTricolor: true,
+    showSeal: true,
+    showPhoto: true,
+    sealUrl: null,
+    photoUrl: null,
+  };
+
+  let photoBuffer = null;
+  if (t.showPhoto && t.photoUrl) {
+      photoBuffer = await fetchImageAsBuffer(t.photoUrl);
+  }
+
+  let sealBuffer = null;
+  if (t.showSeal && t.sealUrl) {
+      sealBuffer = await fetchImageAsBuffer(t.sealUrl);
+  }
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 0, autoFirstPage: true });
@@ -50,13 +92,15 @@ const generateLetterPdf = (letter) => {
       let y = 0;
 
       // ── TOP TRICOLOR BAR (7pt) ────────────────────────────────
-      // Saffron section (10% of width)
-      doc.rect(0, y, PAGE_W * 0.10, 7).fill(SAFFRON);
-      // White section (60% of width)
-      doc.rect(PAGE_W * 0.10, y, PAGE_W * 0.80, 7).fill('#ffffff');
-      // Green section (10% of width)
-      doc.rect(PAGE_W * 0.90, y, PAGE_W * 0.10, 7).fill(GREEN_IN);
-      y += 7;
+      if (t.showTricolor) {
+        // Saffron section (10% of width)
+        doc.rect(0, y, PAGE_W * 0.10, 7).fill(SAFFRON);
+        // White section (60% of width)
+        doc.rect(PAGE_W * 0.10, y, PAGE_W * 0.80, 7).fill('#ffffff');
+        // Green section (10% of width)
+        doc.rect(PAGE_W * 0.90, y, PAGE_W * 0.10, 7).fill(GREEN_IN);
+        y += 7;
+      }
 
       // ── HEADER AREA ───────────────────────────────────────────
       const headerTop = y;
@@ -66,23 +110,29 @@ const generateLetterPdf = (letter) => {
       const photoX = MARGIN_X;
       const photoW = 75;
       const photoH = 95;
-      doc.rect(photoX, y, photoW, photoH).fill('#e8e8e8').stroke('#d4d4d4');
-      doc.font(SANS).fontSize(7).fillColor('#aaaaaa')
-         .text('MLA Photo', photoX, y + photoH / 2 - 4, { width: photoW, align: 'center' });
+      if (t.showPhoto) {
+        if (photoBuffer) {
+          doc.image(photoBuffer, photoX, y, { width: photoW, height: photoH, fit: [photoW, photoH], align: 'center', valign: 'center' });
+        } else {
+          doc.rect(photoX, y, photoW, photoH).fill('#e8e8e8').stroke('#d4d4d4');
+          doc.font(SANS).fontSize(7).fillColor('#aaaaaa')
+             .text('MLA Photo', photoX, y + photoH / 2 - 4, { width: photoW, align: 'center' });
+        }
+      }
 
       // Header text
-      const infoX = photoX + photoW + 18;
+      const infoX = t.showPhoto ? photoX + photoW + 18 : photoX;
       const infoW = PAGE_W - infoX - MARGIN_X;
       doc.font(SANS_BOLD).fontSize(18).fillColor(DARK)
-         .text('MLA Shibu Theckumpuram', infoX, y + 4, { width: infoW });
+         .text(t.mlaName, infoX, y + 4, { width: infoW });
       doc.font(SANS_BOLD).fontSize(9).fillColor(PURPLE)
-         .text('MLA OFFICE', infoX, y + 26, { width: infoW, characterSpacing: 1.2 });
+         .text(t.mlaTitle.toUpperCase(), infoX, y + 26, { width: infoW, characterSpacing: 1.2 });
       doc.font(SANS_BOLD).fontSize(9).fillColor(GREY)
-         .text('Kothamangalam Constituency', infoX, y + 44, { width: infoW });
+         .text(t.constituency, infoX, y + 44, { width: infoW });
       doc.font(SANS).fontSize(8.5).fillColor(LIGHTGREY)
-         .text('MLA Office, Near Town Hall, Kothamangalam,', infoX, y + 58, { width: infoW });
+         .text(t.addressLine1, infoX, y + 58, { width: infoW });
       doc.font(SANS).fontSize(8.5).fillColor(LIGHTGREY)
-         .text('Ernakulam District, Kerala \u2013 686 691', infoX, y + 70, { width: infoW });
+         .text(t.addressLine2, infoX, y + 70, { width: infoW });
 
       y += photoH + 14;
 
@@ -163,19 +213,25 @@ const generateLetterPdf = (letter) => {
       y += 55;
 
       // ── SIGNATURE ─────────────────────────────────────────────
-      doc.font(SANS_BOLD).fontSize(10.5).fillColor(DARK).text('Shibu Theckumpuram', MARGIN_X, y);
+      doc.font(SANS_BOLD).fontSize(10.5).fillColor(DARK).text(t.mlaName.replace('MLA ', ''), MARGIN_X, y);
       y += 14;
       doc.font(SANS).fontSize(9.5).fillColor(GREY).text('Member of Legislative Assembly', MARGIN_X, y);
       y += 13;
-      doc.font(SANS_BOLD).fontSize(9.5).fillColor(PURPLE).text('Kothamangalam Constituency, Kerala', MARGIN_X, y);
+      doc.font(SANS_BOLD).fontSize(9.5).fillColor(PURPLE).text(`${t.constituency}, Kerala`, MARGIN_X, y);
 
       // Seal circle (right side)
-      const sealX = PAGE_W - MARGIN_X - 50;
-      const sealY = y - 30;
-      doc.circle(sealX, sealY + 25, 28).lineWidth(1.5).dash(3, { space: 3 }).stroke('#d1d5db');
-      doc.font(SANS).fontSize(5).fillColor('#d1d5db')
-         .text('OFFICIAL SEAL', sealX - 18, sealY + 20, { width: 36, align: 'center', characterSpacing: 0.5 });
-      doc.undash();
+      if (t.showSeal) {
+        const sealX = PAGE_W - MARGIN_X - 50;
+        const sealY = y - 30;
+        if (sealBuffer) {
+          doc.image(sealBuffer, sealX - 25, sealY, { width: 50, height: 50, fit: [50, 50], align: 'center', valign: 'center' });
+        } else {
+          doc.circle(sealX, sealY + 25, 28).lineWidth(1.5).dash(3, { space: 3 }).stroke('#d1d5db');
+          doc.font(SANS).fontSize(5).fillColor('#d1d5db')
+             .text('OFFICIAL SEAL', sealX - 18, sealY + 20, { width: 36, align: 'center', characterSpacing: 0.5 });
+          doc.undash();
+        }
+      }
 
       y += 40;
 
@@ -186,11 +242,9 @@ const generateLetterPdf = (letter) => {
 
       // Left: address
       doc.font(SANS_BOLD).fontSize(7.5).fillColor(GREY)
-         .text('MLA Office, Kothamangalam Constituency', MARGIN_X, footerY + 10);
+         .text(t.addressLine1, MARGIN_X, footerY + 10);
       doc.font(SANS).fontSize(7).fillColor(LIGHTGREY)
-         .text('Near Town Hall, Kothamangalam, Ernakulam District', MARGIN_X, footerY + 21);
-      doc.font(SANS).fontSize(7).fillColor(LIGHTGREY)
-         .text('Kerala \u2013 686 691', MARGIN_X, footerY + 31);
+         .text(t.addressLine2, MARGIN_X, footerY + 21);
 
       // Centre: Letter ID
       doc.font(SANS).fontSize(6.5).fillColor('#b0b0b0')
@@ -200,14 +254,16 @@ const generateLetterPdf = (letter) => {
 
       // Right: phone + email
       doc.font(SANS_BOLD).fontSize(7.5).fillColor(GREY)
-         .text('+91 484 000 0000', PAGE_W - MARGIN_X - 90, footerY + 10, { width: 90, align: 'right' });
+         .text(t.phone, PAGE_W - MARGIN_X - 90, footerY + 10, { width: 90, align: 'right' });
       doc.font(SANS).fontSize(7).fillColor(PURPLE)
-         .text('office@kothamangalammla.com', PAGE_W - MARGIN_X - 90, footerY + 23, { width: 90, align: 'right' });
+         .text(t.email, PAGE_W - MARGIN_X - 90, footerY + 23, { width: 90, align: 'right' });
 
       // ── BOTTOM TRICOLOR BAR ───────────────────────────────────
-      doc.rect(0, 840 - 5, PAGE_W * 0.10, 5).fill(SAFFRON);
-      doc.rect(PAGE_W * 0.10, 840 - 5, PAGE_W * 0.80, 5).fill('#ffffff');
-      doc.rect(PAGE_W * 0.90, 840 - 5, PAGE_W * 0.10, 5).fill(GREEN_IN);
+      if (t.showTricolor) {
+        doc.rect(0, 840 - 5, PAGE_W * 0.10, 5).fill(SAFFRON);
+        doc.rect(PAGE_W * 0.10, 840 - 5, PAGE_W * 0.80, 5).fill('#ffffff');
+        doc.rect(PAGE_W * 0.90, 840 - 5, PAGE_W * 0.10, 5).fill(GREEN_IN);
+      }
 
       doc.end();
     } catch (err) {

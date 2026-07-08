@@ -60,7 +60,7 @@ export const optionalVerifyToken = async (req, res, next) => {
             `SELECT u.id, u.full_name, u.email, u.is_active, 
                     r.name as role, r.permissions, r.is_system 
              FROM admin_users u 
-             LEFT JOIN roles r ON u.role_id = r.id 
+             LEFT JOIN admin_roles r ON u.role_id = r.id 
              WHERE u.id = ?`,
             [decoded.id]
         );

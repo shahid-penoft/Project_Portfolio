@@ -191,7 +191,7 @@ export const uploadGeoLocationMedia = multer({
 export const uploadGeoLocationAttachments = multer({
     storage: multerS3(s3StorageOptions('geo-locations/attachments')),
     fileFilter,
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — PDFs & docs
 }).array('files', 5);
 
 

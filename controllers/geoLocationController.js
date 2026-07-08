@@ -11,7 +11,7 @@ export const getAllGeoLocations = async (req, res) => {
         const { 
             page = 1, limit = 12, search, 
             type, category, sub_category, ward, 
-            status = 'published', bookmarked_by_admin
+            status = 'published', bookmarked_by_admin, is_tourist_place
         } = req.query;
 
         const offset = (page - 1) * limit;
@@ -76,13 +76,17 @@ export const getAllGeoLocations = async (req, res) => {
             countParams.push(ward);
         }
 
-        // Only used by Admin if they want to filter bookmarks
         if (bookmarked_by_admin === 'true') {
             if (!req.admin) {
                 return errorResponse(res, 'Unauthorized to view admin bookmarks', 401);
             }
             baseQuery += ` AND EXISTS (SELECT 1 FROM admin_geo_location_bookmarks WHERE location_id = g.id AND admin_id = ${Number(req.admin.id)})`;
             countQuery += ` AND EXISTS (SELECT 1 FROM admin_geo_location_bookmarks WHERE location_id = g.id AND admin_id = ${Number(req.admin.id)})`;
+        }
+
+        if (is_tourist_place === 'true') {
+            baseQuery += ` AND g.is_tourist_place = 1`;
+            countQuery += ` AND g.is_tourist_place = 1`;
         }
 
         if (search) {
@@ -442,7 +446,7 @@ export const createGeoLocation = async (req, res) => {
             any_history, history_details, local_body_id, ward, landmark, full_address,
             coordinates, digipin, contact_person, contact_role, contact_number,
             alt_number, operating_hours, website, facilities, description,
-            is_operational, is_public_access, has_parking, has_wheelchair, status
+            is_operational, is_public_access, has_parking, has_wheelchair, is_tourist_place, status
         } = req.body;
 
         if (!name || !type) {
@@ -457,8 +461,8 @@ export const createGeoLocation = async (req, res) => {
                 any_history, history_details, local_body_id, ward, landmark, full_address,
                 coordinates, digipin, contact_person, contact_role, contact_number,
                 alt_number, operating_hours, website, facilities, description,
-                is_operational, is_public_access, has_parking, has_wheelchair, status, created_by, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                is_operational, is_public_access, has_parking, has_wheelchair, is_tourist_place, status, created_by, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 type, name, category || null, sub_category || null, established_year || null, phone || null,
                 any_history || 'No', history_details || null, local_body_id || null, ward || null, landmark || null, full_address || null,
@@ -468,6 +472,7 @@ export const createGeoLocation = async (req, res) => {
                 is_public_access !== undefined ? is_public_access : 1, 
                 has_parking !== undefined ? has_parking : 0, 
                 has_wheelchair !== undefined ? has_wheelchair : 0,
+                is_tourist_place !== undefined ? is_tourist_place : 0,
                 status || 'published', adminId, adminId
             ]
         );
@@ -492,7 +497,7 @@ export const updateGeoLocation = async (req, res) => {
             any_history, history_details, local_body_id, ward, landmark, full_address,
             coordinates, digipin, contact_person, contact_role, contact_number,
             alt_number, operating_hours, website, facilities, description,
-            is_operational, is_public_access, has_parking, has_wheelchair, status
+            is_operational, is_public_access, has_parking, has_wheelchair, is_tourist_place, status
         } = req.body;
 
         const adminId = req.admin ? req.admin.id : null;
@@ -503,7 +508,7 @@ export const updateGeoLocation = async (req, res) => {
                 any_history = ?, history_details = ?, local_body_id = ?, ward = ?, landmark = ?, full_address = ?,
                 coordinates = ?, digipin = ?, contact_person = ?, contact_role = ?, contact_number = ?,
                 alt_number = ?, operating_hours = ?, website = ?, facilities = ?, description = ?,
-                is_operational = ?, is_public_access = ?, has_parking = ?, has_wheelchair = ?, status = ?, updated_by = ?
+                is_operational = ?, is_public_access = ?, has_parking = ?, has_wheelchair = ?, is_tourist_place = ?, status = ?, updated_by = ?
             WHERE id = ?`,
             [
                 type, name, category || null, sub_category || null, established_year || null, phone || null,
@@ -514,6 +519,7 @@ export const updateGeoLocation = async (req, res) => {
                 is_public_access !== undefined ? is_public_access : 1, 
                 has_parking !== undefined ? has_parking : 0, 
                 has_wheelchair !== undefined ? has_wheelchair : 0,
+                is_tourist_place !== undefined ? is_tourist_place : 0,
                 status || 'published', adminId, id
             ]
         );
