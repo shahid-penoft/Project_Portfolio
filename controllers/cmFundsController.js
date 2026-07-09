@@ -214,6 +214,66 @@ export const createRequest = async (req, res) => {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/admin/cm-funds/draft
+// Lightweight quick-add — only 5 fields required; status forced to 'Draft'.
+// Does NOT affect the main createRequest validation.
+// ─────────────────────────────────────────────────────────────────────────────
+export const createDraftRequest = async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const b = req.body;
+    const applicantName    = b.applicant_name   || b.applicantName;
+    const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
+    const categoryId       = b.category_id      || b.category;
+    const amountRequested  = b.amount_requested || b.amountRequested;
+    const description      = b.description      || null;
+    const priority         = b.priority         || 'Normal';
+    const remarks          = b.remarks          || null;
+
+    if (!applicantName || !applicantPhone || !categoryId || !amountRequested) {
+      return res.status(400).json({
+        error: 'Missing required fields: applicant_name, phone, category_id, amount_requested',
+      });
+    }
+
+    await connection.beginTransaction();
+
+    const appId  = await generateAppId(connection);
+    const userId = req.user ? req.user.id : null;
+
+    await connection.query(`
+      INSERT INTO cm_fund_requests (
+        id, applicant_name, applicant_phone, category_id, priority,
+        amount_requested, description, remarks,
+        status, submitted_by_id,
+        address_line1, city, district, state, pincode,
+        bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
+                '', '', '', 'Kerala', '',
+                '', '', '', '', '', '')
+    `, [
+      appId, applicantName, applicantPhone, categoryId, priority,
+      amountRequested, description, remarks,
+      userId,
+    ]);
+
+    await connection.query(`
+      INSERT INTO cm_fund_timeline_events (request_id, event_type, to_status, actor_id, note)
+      VALUES (?, 'Draft Created', 'Draft', ?, 'Quick draft saved via sidebar')
+    `, [appId, userId]);
+
+    await connection.commit();
+    res.status(201).json({ message: 'Draft saved successfully', id: appId });
+  } catch (err) {
+    await connection.rollback();
+    console.error('[createDraftRequest]', err);
+    res.status(500).json({ error: 'Failed to save draft' });
+  } finally {
+    connection.release();
+  }
+};
+
 export const getRequest = async (req, res) => {
   try {
     const { id } = req.params;

@@ -5,6 +5,7 @@ import { uploadCMFundDocs } from '../configs/multer.js';
 import {
   listRequests,
   createRequest,
+  createDraftRequest,
   getRequest,
   updateRequest,
   updateStatus,
@@ -36,8 +37,10 @@ router.use(adminAuth);
 // ==========================================
 // Applications (Requests)
 // ==========================================
+router.post('/draft', createDraftRequest);         // ← Quick-add draft (minimal fields)
 router.get('/requests', listRequests);
 router.post('/requests', uploadCMFundDocs, createRequest);
+
 router.get('/requests/:id', getRequest);
 router.put('/requests/:id', uploadCMFundDocs, updateRequest);
 router.patch('/requests/:id/status', updateStatus);

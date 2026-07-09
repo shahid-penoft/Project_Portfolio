@@ -139,8 +139,8 @@ const fetchFullComplaint = async (id) => {
 
     if (!complaint) return null;
 
-    const [updates]        = await pool.query('SELECT * FROM complaint_updates     WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
-    const [allMedia]       = await pool.query('SELECT * FROM complaint_media       WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [updates] = await pool.query('SELECT * FROM complaint_updates     WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const [allMedia] = await pool.query('SELECT * FROM complaint_media       WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
     const [allAttachments] = await pool.query('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
 
     const mappedUpdates = updates.map(u => ({
@@ -148,24 +148,24 @@ const fetchFullComplaint = async (id) => {
         gallery: allMedia
             .filter(m => m.update_id === u.id)
             .map(m => ({
-                id:   m.id,
-                url:  m.file_url,
+                id: m.id,
+                url: m.file_url,
                 type: m.media_type,
                 name: m.caption || m.file_url.split('/').pop(),
             })),
         attachments: allAttachments
             .filter(a => a.update_id === u.id)
             .map(a => ({
-                id:   a.id,
+                id: a.id,
                 name: a.file_name,
                 size: a.file_size_kb ? `${(a.file_size_kb / 1024).toFixed(1)} MB` : 'Unknown',
                 type: a.file_type,
-                url:  a.file_url,
+                url: a.file_url,
             })),
     }));
-    const media       = allMedia.filter(m => !m.update_id);
+    const media = allMedia.filter(m => !m.update_id);
     const attachments = allAttachments.filter(a => !a.update_id);
-    const [team]        = await pool.query(`
+    const [team] = await pool.query(`
         SELECT ct.id, ct.role_label, ct.created_at,
                au.id as admin_user_id, au.full_name as name, au.email
         FROM complaint_team ct
@@ -173,7 +173,7 @@ const fetchFullComplaint = async (id) => {
         WHERE ct.complaint_id = ?
         ORDER BY ct.created_at ASC
     `, [id]);
-    const [activity]    = await pool.query(`
+    const [activity] = await pool.query(`
         SELECT ca.*, au.full_name as author_name 
         FROM complaint_activity ca
         LEFT JOIN admin_users au ON ca.admin_user_id = au.id
@@ -209,7 +209,7 @@ export const getComplaints = async (req, res) => {
             params.push(req.constituent.id);
         }
 
-        if (status)   { conditions.push('c.status = ?');   params.push(status); }
+        if (status) { conditions.push('c.status = ?'); params.push(status); }
         if (category) { conditions.push('c.category = ?'); params.push(category); }
         if (priority) { conditions.push('c.priority = ?'); params.push(priority); }
         if (search) {
@@ -259,7 +259,8 @@ export const getComplaintStats = async (req, res) => {
     try {
         const [[stats]] = await pool.query(`
             SELECT
-                COUNT(*)                                          AS total,
+                COUNT(*)                                         AS total,
+                SUM(status = 'Draft')                            AS draft,
                 SUM(status = 'Pending')                          AS pending,
                 SUM(status = 'Under Process')                    AS underProcess,
                 SUM(status = 'Not Attended')                     AS notAttended,
@@ -315,7 +316,7 @@ export const createComplaint = async (req, res) => {
         const reference_no = await generateReferenceNo();
 
         const constituentId = req.constituent?.id || null;
-        const adminId       = req.admin?.id       || null;
+        const adminId = req.admin?.id || null;
 
         const [result] = await pool.query(`
             INSERT INTO complaints
@@ -332,6 +333,8 @@ export const createComplaint = async (req, res) => {
             status || 'Pending',
             description || null,
             location || null,
+            latitude || null,
+            longitude || null,
             internal_note || null,
             complainant_name,
             phone,
@@ -376,6 +379,8 @@ export const updateComplaint = async (req, res) => {
               status = COALESCE(?, status),
               description = COALESCE(?, description),
               location = COALESCE(?, location),
+              latitude = COALESCE(?, latitude),
+              longitude = COALESCE(?, longitude),
               internal_note = COALESCE(?, internal_note),
               complainant_name = COALESCE(?, complainant_name),
               phone = COALESCE(?, phone),
@@ -471,7 +476,7 @@ export const deleteComplaint = async (req, res) => {
         }
 
         // Delete all S3 files first
-        const [media]       = await pool.query('SELECT file_url FROM complaint_media       WHERE complaint_id = ?', [id]);
+        const [media] = await pool.query('SELECT file_url FROM complaint_media       WHERE complaint_id = ?', [id]);
         const [attachments] = await pool.query('SELECT file_url FROM complaint_attachments WHERE complaint_id = ?', [id]);
         await Promise.all([...media, ...attachments].map(r => deleteS3Object(r.file_url)));
 

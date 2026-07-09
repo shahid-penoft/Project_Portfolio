@@ -17,7 +17,11 @@ export const dualAuth = async (req, res, next) => {
         try {
             const decoded = jwt.verify(adminToken, process.env.JWT_SECRET);
             const [rows] = await db.query(
-                'SELECT id, full_name, email, role, is_active FROM admin_users WHERE id = ?',
+                `SELECT u.id, u.full_name, u.email, u.is_active, 
+                        r.name as role, r.permissions, r.is_system 
+                 FROM admin_users u 
+                 LEFT JOIN admin_roles r ON u.role_id = r.id 
+                 WHERE u.id = ?`,
                 [decoded.id]
             );
             if (rows.length && rows[0].is_active) {

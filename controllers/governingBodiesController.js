@@ -13,9 +13,17 @@ const parseJsonField = (field) => {
 };
 
 const validateBody = (body) => {
-    const { governing_body_type, local_body_id, name, role_id, phone, department, head_name } = body;
+    const { governing_body_type, local_body_id, name, role_id, phone, department, head_name, status } = body;
     if (!governing_body_type || !['GRAM_PANCHAYAT', 'MUNICIPALITY', 'BLOCK_PANCHAYAT', 'DISTRICT_PANCHAYAT', 'OTHER'].includes(governing_body_type)) {
         return 'Invalid or missing governing_body_type.';
+    }
+
+    // Skip strict validation for drafts
+    if (status === 'Draft') {
+        if (!name) return 'name is required.';
+        if (!phone) return 'phone is required.';
+        if (governing_body_type !== 'OTHER' && !local_body_id) return 'local_body_id is required.';
+        return null;
     }
     
     if (governing_body_type === 'OTHER') {
@@ -23,8 +31,6 @@ const validateBody = (body) => {
         if (!department) return 'department is required.';
         if (!head_name) return 'head_name is required.';
         if (!phone) return 'phone is required.';
-        // local_body_id is also required but we can handle it
-        if (!local_body_id) return 'local_body_id is required.';
         return null;
     }
 
@@ -38,7 +44,7 @@ const validateBody = (body) => {
 // GET /api/admin/governing-bodies
 export const getGoverningBodies = async (req, res) => {
     try {
-        const { type, localBodyId, wardId, roleId, search, bookmarked, sortBy, page, limit } = req.query;
+        const { type, localBodyId, wardId, roleId, search, bookmarked, sortBy, page, limit, trash } = req.query;
 
         let query = `
             SELECT 
@@ -63,6 +69,19 @@ export const getGoverningBodies = async (req, res) => {
         `;
         
         const params = [];
+
+        // Trash filter — only show trashed or active records
+        const isTrash = trash === 'true';
+        query += isTrash ? ' AND gr.is_deleted = 1' : ' AND (gr.is_deleted = 0 OR gr.is_deleted IS NULL)';
+        countQuery += isTrash ? ' AND gr.is_deleted = 1' : ' AND (gr.is_deleted = 0 OR gr.is_deleted IS NULL)';
+
+        // Status filter (e.g. status=Draft)
+        const { status } = req.query;
+        if (status) {
+            query += ' AND gr.status = ?';
+            countQuery += ' AND gr.status = ?';
+            params.push(status);
+        }
 
         if (type) {
             query += ' AND gr.governing_body_type = ?';
@@ -181,7 +200,7 @@ export const createGoverningBody = async (req, res) => {
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
-            department, head_name, hours, avatar_color, officer_phone
+            department, head_name, hours, avatar_color, officer_phone, status
         } = req.body;
 
         const photo_url = req.file ? req.file.location : null;
@@ -192,8 +211,8 @@ export const createGoverningBody = async (req, res) => {
                 phone, alternative_phone, email, house_name, home_address, location,
                 bio, office_name, office_phone, office_email, office_address, office_location,
                 additional_roles, achievements, notes, bookmarked, photo_url,
-                department, head_name, hours, avatar_color, officer_phone
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                department, head_name, hours, avatar_color, officer_phone, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             governing_body_type, 
             local_body_id, 
@@ -223,7 +242,8 @@ export const createGoverningBody = async (req, res) => {
             head_name || null,
             hours || null,
             avatar_color || null,
-            officer_phone || null
+            officer_phone || null,
+            status || 'Active'
         ]);
 
         const [rows] = await db.query('SELECT * FROM governing_representatives WHERE id = ?', [result.insertId]);
@@ -251,7 +271,7 @@ export const updateGoverningBody = async (req, res) => {
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
-            department, head_name, hours, avatar_color, officer_phone
+            department, head_name, hours, avatar_color, officer_phone, status
         } = req.body;
 
         const [[existing]] = await db.query('SELECT photo_url FROM governing_representatives WHERE id = ?', [id]);
@@ -267,7 +287,7 @@ export const updateGoverningBody = async (req, res) => {
                 phone = ?, alternative_phone = ?, email = ?, house_name = ?, home_address = ?, location = ?,
                 bio = ?, office_name = ?, office_phone = ?, office_email = ?, office_address = ?, office_location = ?,
                 additional_roles = ?, achievements = ?, notes = ?, bookmarked = ?, photo_url = ?,
-                department = ?, head_name = ?, hours = ?, avatar_color = ?, officer_phone = ?
+                department = ?, head_name = ?, hours = ?, avatar_color = ?, officer_phone = ?, status = COALESCE(?, status)
             WHERE id = ?
         `, [
             governing_body_type, 
@@ -299,6 +319,7 @@ export const updateGoverningBody = async (req, res) => {
             hours || null,
             avatar_color || null,
             officer_phone || null,
+            status || null,
             id
         ]);
 
@@ -313,24 +334,66 @@ export const updateGoverningBody = async (req, res) => {
     }
 };
 
-// DELETE /api/admin/governing-bodies/:id
+// DELETE /api/admin/governing-bodies/:id  (permanent delete — requires ?force=true)
 export const deleteGoverningBody = async (req, res) => {
     try {
         const { id } = req.params;
+        const { force } = req.query;
+
+        if (force !== 'true') {
+            return errorResponse(res, 'Permanent deletion requires ?force=true. Use PATCH /trash to soft-delete.', 400);
+        }
+
         const [result] = await db.query('DELETE FROM governing_representatives WHERE id = ?', [id]);
         
         if (!result.affectedRows) {
             return errorResponse(res, 'Governing body representative not found.', 404);
         }
 
-        return successResponse(res, null, 'Governing body representative deleted successfully.');
+        return successResponse(res, null, 'Governing body representative permanently deleted.');
     } catch (error) {
         console.error('[deleteGoverningBody]', error);
         return errorResponse(res, 'Server error deleting representative.');
     }
 };
 
-// PATCH /api/admin/governing-bodies/:id/bookmark
+// PATCH /api/admin/governing-bodies/:id/trash  (soft delete)
+export const trashGoverningBody = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await db.query(
+            'UPDATE governing_representatives SET is_deleted = 1, deleted_at = NOW() WHERE id = ? AND (is_deleted = 0 OR is_deleted IS NULL)',
+            [id]
+        );
+        if (!result.affectedRows) {
+            return errorResponse(res, 'Representative not found or already trashed.', 404);
+        }
+        return successResponse(res, null, 'Representative moved to trash.');
+    } catch (error) {
+        console.error('[trashGoverningBody]', error);
+        return errorResponse(res, 'Server error trashing representative.');
+    }
+};
+
+// PATCH /api/admin/governing-bodies/:id/restore  (restore from trash)
+export const restoreGoverningBody = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await db.query(
+            'UPDATE governing_representatives SET is_deleted = 0, deleted_at = NULL WHERE id = ? AND is_deleted = 1',
+            [id]
+        );
+        if (!result.affectedRows) {
+            return errorResponse(res, 'Representative not found in trash.', 404);
+        }
+        return successResponse(res, null, 'Representative restored successfully.');
+    } catch (error) {
+        console.error('[restoreGoverningBody]', error);
+        return errorResponse(res, 'Server error restoring representative.');
+    }
+};
+
+// PATCH toggle bookmark status
 export const toggleBookmark = async (req, res) => {
     try {
         const { id } = req.params;
@@ -353,3 +416,4 @@ export const toggleBookmark = async (req, res) => {
         return errorResponse(res, 'Server error updating bookmark status.');
     }
 };
+

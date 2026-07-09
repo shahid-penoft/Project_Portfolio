@@ -126,26 +126,26 @@ export const uploadGoverningBodyPhoto = multer({
 export const uploadComplaintMedia = multer({
     storage: multerS3(s3StorageOptions('complaints/media')),
     fileFilter,
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — photos & videos
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB — photos & videos
 }).array('files', 10);
 
 export const uploadComplaintAttachments = multer({
     storage: multerS3(s3StorageOptions('complaints/attachments')),
     fileFilter,
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — PDFs & docs
 }).array('files', 5);
 
 // ─── Issue Uploads ────────────────────────────────────────
 export const uploadIssueMedia = multer({
     storage: multerS3(s3StorageOptions('issues/media')),
     fileFilter,
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — photos & videos
+    limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB — photos & videos
 }).array('files', 10);
 
 export const uploadIssueAttachments = multer({
     storage: multerS3(s3StorageOptions('issues/attachments')),
     fileFilter,
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB — PDFs & docs
 }).array('files', 5);
 
 // ─── Scheme Uploads ───────────────────────────────────────

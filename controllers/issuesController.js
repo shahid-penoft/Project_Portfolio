@@ -259,7 +259,8 @@ export const getIssueStats = async (req, res) => {
     try {
         const [[stats]] = await pool.query(`
             SELECT
-                COUNT(*)                                          AS total,
+                COUNT(*)                                         AS total,
+                SUM(status = 'Draft')                            AS draft,
                 SUM(status = 'Pending')                          AS pending,
                 SUM(status = 'Under Process')                    AS underProcess,
                 SUM(status = 'Not Attended')                     AS notAttended,

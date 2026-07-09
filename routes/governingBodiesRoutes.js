@@ -5,7 +5,9 @@ import {
     createGoverningBody,
     updateGoverningBody,
     deleteGoverningBody,
-    toggleBookmark
+    toggleBookmark,
+    trashGoverningBody,
+    restoreGoverningBody,
 } from '../controllers/governingBodiesController.js';
 import {
     getStaffsByOffice,
@@ -17,7 +19,7 @@ import { verifyToken as checkAdmin } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-// GET all governing bodies
+// GET all governing bodies (supports ?trash=true for trash view)
 router.get('/', checkAdmin, getGoverningBodies);
 
 // GET a specific governing body by ID
@@ -29,11 +31,17 @@ router.post('/', checkAdmin, createGoverningBody);
 // PUT (update) an existing governing body
 router.put('/:id', checkAdmin, updateGoverningBody);
 
-// DELETE a governing body
+// DELETE a governing body (permanent — requires ?force=true)
 router.delete('/:id', checkAdmin, deleteGoverningBody);
 
 // PATCH toggle bookmark status
 router.patch('/:id/bookmark', checkAdmin, toggleBookmark);
+
+// PATCH soft-delete (move to trash)
+router.patch('/:id/trash', checkAdmin, trashGoverningBody);
+
+// PATCH restore from trash
+router.patch('/:id/restore', checkAdmin, restoreGoverningBody);
 
 // Staffs Routes
 router.get('/:officeId/staffs', checkAdmin, getStaffsByOffice);
