@@ -1,5 +1,6 @@
 import pool from '../configs/db.js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -350,6 +351,7 @@ export const createComplaint = async (req, res) => {
 
         const newId = result.insertId;
         await logActivity(newId, `Complaint "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
+        auditLog(req, { action: 'Created', module: 'Complaints', details: `Complaint filed — "${title}" (${reference_no})`, resource: `complaints/${newId}`, severity: 'info' });
 
         const complaint = await fetchFullComplaint(newId);
         res.status(201).json({ success: true, message: 'Complaint created successfully.', data: complaint });
@@ -399,6 +401,7 @@ export const updateComplaint = async (req, res) => {
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
         await logActivity(id, `Complaint details updated by admin.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Complaint ID ${id} details updated`, resource: `complaints/${id}`, severity: 'success' });
         const complaint = await fetchFullComplaint(id);
         res.json({ success: true, message: 'Complaint updated.', data: complaint });
     } catch (err) {
@@ -420,6 +423,7 @@ export const updateComplaintStatus = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
 
         await logActivity(id, `Status changed to "${status}".`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Complaint ID ${id} status changed to "${status}"`, resource: `complaints/${id}`, severity: 'info' });
         res.json({ success: true, message: `Status updated to ${status}.` });
     } catch (err) {
         console.error('[updateComplaintStatus]', err);
@@ -438,6 +442,7 @@ export const trashComplaint = async (req, res) => {
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found or already trashed.' });
         await logActivity(id, 'Complaint moved to trash.', req.admin?.id);
+        auditLog(req, { action: 'Archived', module: 'Complaints', details: `Complaint ID ${id} moved to trash`, resource: `complaints/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Complaint moved to trash.' });
     } catch (err) {
         console.error('[trashComplaint]', err);
@@ -483,6 +488,7 @@ export const deleteComplaint = async (req, res) => {
         const [result] = await pool.query('DELETE FROM complaints WHERE id = ?', [id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
 
+        auditLog(req, { action: 'Deleted', module: 'Complaints', details: `Complaint ID ${id} permanently deleted`, resource: `complaints/${id}`, severity: 'error' });
         res.json({ success: true, message: 'Complaint permanently deleted.' });
     } catch (err) {
         console.error('[deleteComplaint]', err);
@@ -500,7 +506,7 @@ export const addComplaintUpdate = async (req, res) => {
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
-            'INSERT INTO complaint_updates (complaint_id, type, title, note) VALUES (?,?,?,?,?,?)',
+            'INSERT INTO complaint_updates (complaint_id, type, title, note) VALUES (?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
         const updateId = result.insertId;
@@ -527,6 +533,7 @@ export const addComplaintUpdate = async (req, res) => {
         }
 
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Added update to Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'info' });
         const [[row]] = await pool.query('SELECT * FROM complaint_updates WHERE id = ?', [updateId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
@@ -546,6 +553,7 @@ export const deleteComplaintUpdate = async (req, res) => {
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Update not found.' });
         await logActivity(id, `An update entry was removed.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Removed update from Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Update deleted.' });
     } catch (err) {
         console.error('[deleteComplaintUpdate]', err);
@@ -572,6 +580,7 @@ export const uploadComplaintMedia = async (req, res) => {
             [rows]
         );
         await logActivity(id, `${req.files.length} media file(s) uploaded.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Uploaded ${req.files.length} media file(s) to Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'info' });
 
         const [media] = await pool.query('SELECT * FROM complaint_media WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: media });
@@ -593,6 +602,7 @@ export const deleteComplaintMedia = async (req, res) => {
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM complaint_media WHERE id = ?', [mediaId]);
         await logActivity(id, 'A media file was removed.', req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Removed media from Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Media deleted.' });
     } catch (err) {
         console.error('[deleteComplaintMedia]', err);
@@ -619,6 +629,7 @@ export const uploadComplaintAttachment = async (req, res) => {
             [rows]
         );
         await logActivity(id, `${req.files.length} attachment(s) uploaded.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Uploaded ${req.files.length} attachment(s) to Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'info' });
 
         const [attachments] = await pool.query('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: attachments });
@@ -640,6 +651,7 @@ export const deleteComplaintAttachment = async (req, res) => {
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM complaint_attachments WHERE id = ?', [attachId]);
         await logActivity(id, 'An attachment was removed.', req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Removed attachment from Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Attachment deleted.' });
     } catch (err) {
         console.error('[deleteComplaintAttachment]', err);
@@ -662,10 +674,11 @@ export const addComplaintTeamMember = async (req, res) => {
 
         try {
             const [result] = await pool.query(
-                'INSERT INTO complaint_team (complaint_id, admin_user_id, role_label) VALUES (?,?,?,?,?)',
+                'INSERT INTO complaint_team (complaint_id, admin_user_id, role_label) VALUES (?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
             await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);
+            auditLog(req, { action: 'Updated', module: 'Complaints', details: `Added team member "${adminUser.full_name}" to Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'info' });
             const [[row]] = await pool.query(`
                 SELECT ct.id, ct.role_label, ct.created_at,
                        au.id as admin_user_id, au.full_name as name, au.email
@@ -701,6 +714,7 @@ export const removeComplaintTeamMember = async (req, res) => {
 
         await pool.query('DELETE FROM complaint_team WHERE id = ?', [memberId]);
         await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Complaints', details: `Removed team member "${row.full_name}" from Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Team member removed.' });
     } catch (err) {
         console.error('[removeComplaintTeamMember]', err);

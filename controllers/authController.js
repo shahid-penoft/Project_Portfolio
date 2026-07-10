@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import db from '../configs/db.js';
 import { sendPasswordResetEmail, sendWelcomeEmail, sendAdminChangePasswordOtpEmail } from '../utils/email.js';
 import { generateToken, minutesFromNow, successResponse, errorResponse } from '../utils/helpers.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 // ─────────────────────────────────────────────────────────────
 //  Helper: sign JWT
@@ -96,6 +97,9 @@ export const login = async (req, res) => {
         });
 
         const { password: _, ...adminData } = admin;
+        // Patch req.admin so auditLog can read admin id
+        req.admin = { id: admin.id, full_name: admin.full_name };
+        auditLog(req, { action: 'Logged In', module: 'Authentication', details: `Admin login successful — ${admin.full_name} (${admin.email})`, resource: 'auth/login', severity: 'neutral' });
         // Token is NOT returned in body — it lives only in the HTTP-only cookie
         return successResponse(res, { data: adminData }, 'Login successful.');
     } catch (err) {
@@ -208,7 +212,8 @@ export const changePassword = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 //  POST /api/auth/logout   (Authenticated)
 // ─────────────────────────────────────────────────────────────
-export const logout = (req, res) => {
+export const logout = async (req, res) => {
+    auditLog(req, { action: 'Logged Out', module: 'Authentication', details: `Admin logout — ${req.admin?.full_name ?? 'Unknown'}`, resource: 'auth/logout', severity: 'neutral' });
     res.clearCookie('admin_token', { path: '/' });
     return successResponse(res, {}, 'Logged out successfully.');
 };

@@ -1,5 +1,6 @@
 import pool from '../configs/db.js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -234,6 +235,8 @@ export const createIdea = async (req, res) => {
             status || 'Pending',
             description || null,
             location || null,
+            latitude || null,
+            longitude || null,
             internal_note || null,
             complainant_name,
             phone,
@@ -249,6 +252,7 @@ export const createIdea = async (req, res) => {
 
         const newId = result.insertId;
         await logActivity(newId, `Idea "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
+        auditLog(req, { action: 'Created', module: 'Ideas', details: `Idea filed — "${title}" (${reference_no})`, resource: `ideas/${newId}`, severity: 'info' });
 
         const idea = await fetchFullIdea(newId);
         res.status(201).json({ success: true, message: 'Idea created successfully.', data: idea });
@@ -286,13 +290,14 @@ export const updateIdea = async (req, res) => {
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
-            title, category, priority, status, description, location, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department_id, date_filed, id,
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found.' });
         await logActivity(id, `Idea details updated by admin.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Idea ID ${id} updated`, resource: `ideas/${id}`, severity: 'success' });
         const idea = await fetchFullIdea(id);
         res.json({ success: true, message: 'Idea updated.', data: idea });
     } catch (err) {
@@ -326,6 +331,7 @@ export const trashIdea = async (req, res) => {
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found or already trashed.' });
         await logActivity(id, 'Idea moved to trash.', req.admin?.id);
+        auditLog(req, { action: 'Archived', module: 'Ideas', details: `Idea ID ${id} moved to trash`, resource: `ideas/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Idea moved to trash.' });
     } catch (err) {
         console.error('[trashIdea]', err);
@@ -364,6 +370,7 @@ export const deleteIdea = async (req, res) => {
         const [result] = await pool.query('DELETE FROM ideas WHERE id = ?', [id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found.' });
 
+        auditLog(req, { action: 'Deleted', module: 'Ideas', details: `Idea ID ${id} permanently deleted`, resource: `ideas/${id}`, severity: 'error' });
         res.json({ success: true, message: 'Idea permanently deleted.' });
     } catch (err) {
         console.error('[deleteIdea]', err);
@@ -378,7 +385,7 @@ export const addIdeaUpdate = async (req, res) => {
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
-            'INSERT INTO idea_updates (idea_id, type, title, note) VALUES (?,?,?,?,?,?)',
+            'INSERT INTO idea_updates (idea_id, type, title, note) VALUES (?,?,?,?)',
             [id, type || 'Status Update', title, note || null]
         );
         const updateId = result.insertId;
@@ -405,6 +412,7 @@ export const addIdeaUpdate = async (req, res) => {
         }
 
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Added update to Idea ID ${id}`, resource: `ideas/${id}`, severity: 'info' });
         const [[row]] = await pool.query('SELECT * FROM idea_updates WHERE id = ?', [updateId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
@@ -421,6 +429,7 @@ export const deleteIdeaUpdate = async (req, res) => {
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Update not found.' });
         await logActivity(id, `An update entry was removed.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Removed update from Idea ID ${id}`, resource: `ideas/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Update deleted.' });
     } catch (err) {
         console.error('[deleteIdeaUpdate]', err);
@@ -443,6 +452,7 @@ export const uploadIdeaMedia = async (req, res) => {
             [rows]
         );
         await logActivity(id, `${req.files.length} media file(s) uploaded.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Uploaded ${req.files.length} media file(s) to Idea ID ${id}`, resource: `ideas/${id}`, severity: 'info' });
 
         const [media] = await pool.query('SELECT * FROM idea_media WHERE idea_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: media });
@@ -461,6 +471,7 @@ export const deleteIdeaMedia = async (req, res) => {
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM idea_media WHERE id = ?', [mediaId]);
         await logActivity(id, 'A media file was removed.', req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Removed media from Idea ID ${id}`, resource: `ideas/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Media deleted.' });
     } catch (err) {
         console.error('[deleteIdeaMedia]', err);
@@ -484,6 +495,7 @@ export const uploadIdeaAttachment = async (req, res) => {
             [rows]
         );
         await logActivity(id, `${req.files.length} attachment(s) uploaded.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Uploaded ${req.files.length} attachment(s) to Idea ID ${id}`, resource: `ideas/${id}`, severity: 'info' });
 
         const [attachments] = await pool.query('SELECT * FROM idea_attachments WHERE idea_id = ? ORDER BY created_at ASC', [id]);
         res.status(201).json({ success: true, data: attachments });
@@ -502,6 +514,7 @@ export const deleteIdeaAttachment = async (req, res) => {
         await deleteS3Object(row.file_url);
         await pool.query('DELETE FROM idea_attachments WHERE id = ?', [attachId]);
         await logActivity(id, 'An attachment was removed.', req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Removed attachment from Idea ID ${id}`, resource: `ideas/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Attachment deleted.' });
     } catch (err) {
         console.error('[deleteIdeaAttachment]', err);
@@ -520,10 +533,11 @@ export const addIdeaTeamMember = async (req, res) => {
 
         try {
             const [result] = await pool.query(
-                'INSERT INTO idea_team (idea_id, admin_user_id, role_label) VALUES (?,?,?,?,?)',
+                'INSERT INTO idea_team (idea_id, admin_user_id, role_label) VALUES (?,?,?)',
                 [id, admin_user_id, role_label || null]
             );
             await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);
+            auditLog(req, { action: 'Updated', module: 'Ideas', details: `Added team member "${adminUser.full_name}" to Idea ID ${id}`, resource: `ideas/${id}`, severity: 'info' });
             const [[row]] = await pool.query(`
                 SELECT it.id, it.role_label, it.created_at,
                        au.id as admin_user_id, au.full_name as name, au.email
@@ -556,6 +570,7 @@ export const removeIdeaTeamMember = async (req, res) => {
 
         await pool.query('DELETE FROM idea_team WHERE id = ?', [memberId]);
         await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Ideas', details: `Removed team member "${row.full_name}" from Idea ID ${id}`, resource: `ideas/${id}`, severity: 'warning' });
         res.json({ success: true, message: 'Team member removed.' });
     } catch (err) {
         console.error('[removeIdeaTeamMember]', err);

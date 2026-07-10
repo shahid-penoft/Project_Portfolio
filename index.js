@@ -51,6 +51,7 @@ import governingBodiesRoutes from './routes/governingBodiesRoutes.js';
 import csrRoutes from './routes/csrRoutes.js';
 import lettersRoutes from './routes/lettersRoutes.js';
 import cmFundsRoutes from './routes/cmFundsRoutes.js';
+import teamsLogRoutes from './routes/teamsLogRoutes.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
@@ -144,6 +145,7 @@ app.use('/api/admin/governing-bodies', governingBodiesRoutes);
 app.use('/api/csr', csrRoutes);
 app.use('/api/admin/letters', lettersRoutes);
 app.use('/api/admin/cm-funds', cmFundsRoutes);
+app.use('/api/admin/teams-log', teamsLogRoutes);
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
     res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` })

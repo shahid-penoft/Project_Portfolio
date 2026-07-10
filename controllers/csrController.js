@@ -1,5 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 // ── Internal helper ────────────────────────────────────────────
 const logActivity = async (connection, user_name, action, initials = 'MC') => {
@@ -143,6 +144,7 @@ export const createCSROrganisation = async (req, res) => {
         await logActivity(conn, req.admin?.full_name, `added new partner '${name.trim()}'`);
         await conn.commit();
 
+        auditLog(req, { action: 'Created', module: 'CSR', details: `CSR Organisation created — "${name.trim()}"`, resource: `csr/organisations/${orgId}`, severity: 'info' });
         const [newRows] = await db.query('SELECT * FROM csr_organisations WHERE id = ?', [orgId]);
         const org = newRows[0];
         try { org.domains = JSON.parse(org.domains || '[]'); } catch { org.domains = []; }
@@ -210,6 +212,7 @@ export const updateCSROrganisation = async (req, res) => {
         await logActivity(conn, req.admin?.full_name, `updated details for '${name.trim()}'`);
         await conn.commit();
 
+        auditLog(req, { action: 'Updated', module: 'CSR', details: `CSR Organisation ID ${id} updated — "${name.trim()}"`, resource: `csr/organisations/${id}`, severity: 'success' });
         const [updRows] = await db.query('SELECT * FROM csr_organisations WHERE id = ?', [id]);
         const org = updRows[0];
         try { org.domains = JSON.parse(org.domains || '[]'); } catch { org.domains = []; }
@@ -241,6 +244,7 @@ export const softDeleteCSROrganisation = async (req, res) => {
         );
         await logActivity(conn, req.admin?.full_name, `moved '${rows[0].name}' to trash`);
         await conn.commit();
+        auditLog(req, { action: 'Archived', module: 'CSR', details: `CSR Organisation ID ${id} moved to trash — "${rows[0].name}"`, resource: `csr/organisations/${id}`, severity: 'warning' });
         return successResponse(res, { data: { success: true } }, 'Organisation moved to trash.');
     } catch (err) {
         await conn.rollback();
@@ -283,6 +287,7 @@ export const restoreCSROrganisation = async (req, res) => {
         );
         await logActivity(conn, req.admin?.full_name, `restored '${rows[0].name}' from trash`);
         await conn.commit();
+        auditLog(req, { action: 'Updated', module: 'CSR', details: `CSR Organisation ID ${id} restored from trash`, resource: `csr/organisations/${id}`, severity: 'info' });
         return successResponse(res, { data: { success: true } }, 'Organisation restored.');
     } catch (err) {
         await conn.rollback();
@@ -305,6 +310,7 @@ export const permanentDeleteCSROrganisation = async (req, res) => {
         await conn.query('DELETE FROM csr_organisations WHERE id = ?', [id]);
         await logActivity(conn, req.admin?.full_name, `permanently deleted '${rows[0].name}'`);
         await conn.commit();
+        auditLog(req, { action: 'Deleted', module: 'CSR', details: `CSR Organisation ID ${id} permanently deleted — "${rows[0].name}"`, resource: `csr/organisations/${id}`, severity: 'error' });
         return successResponse(res, { data: { success: true } }, 'Organisation permanently deleted.');
     } catch (err) {
         await conn.rollback();

@@ -1,4 +1,5 @@
 import db from '../configs/db.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 // Get all roles
 export const getRoles = async (req, res) => {
@@ -57,6 +58,7 @@ export const createRole = async (req, res) => {
             [name, permsString]
         );
 
+        auditLog(req, { action: 'Permission Changed', module: 'Roles', details: `New role created: "${name}"`, resource: `settings/roles/${result.insertId}`, severity: 'info' });
         res.status(201).json({ success: true, message: 'Role created successfully', id: result.insertId });
     } catch (error) {
         console.error('Error creating role:', error);
@@ -97,6 +99,8 @@ export const updateRole = async (req, res) => {
 
         await db.query(query, params);
 
+        const roleName = name || roles[0].name;
+        auditLog(req, { action: 'Permission Changed', module: 'Roles', details: `Role "${roleName}" permissions updated`, resource: `settings/roles/${roleId}`, severity: 'warning' });
         res.json({ success: true, message: 'Role updated successfully' });
     } catch (error) {
         console.error('Error updating role:', error);
@@ -126,6 +130,7 @@ export const deleteRole = async (req, res) => {
 
         await db.query('DELETE FROM admin_roles WHERE id = ?', [roleId]);
 
+        auditLog(req, { action: 'Deleted', module: 'Roles', details: `Role ID ${roleId} permanently deleted`, resource: `settings/roles/${roleId}`, severity: 'error' });
         res.json({ success: true, message: 'Role deleted successfully' });
     } catch (error) {
         console.error('Error deleting role:', error);

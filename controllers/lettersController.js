@@ -2,6 +2,7 @@ import pool              from '../configs/db.js';
 import transporter       from '../configs/mailer.js';
 import buildLetterHtmlTemplate from '../utils/letterHtmlTemplate.js';
 import generateLetterPdf       from '../utils/letterPdfTemplate.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -223,6 +224,7 @@ export const createLetter = async (req, res) => {
         ]);
 
         await logActivity(result.insertId, `Letter "${letterId}" created.`, req.admin?.id, req.admin?.full_name);
+        auditLog(req, { action: 'Created', module: 'Letters', details: `Letter "${letterId}" created — ${subject?.trim()}`, resource: `letters/${result.insertId}`, severity: 'info' });
         const letter = await fetchFullLetter(result.insertId);
         res.status(201).json({ success: true, data: letter });
     } catch (err) {
@@ -276,6 +278,7 @@ export const updateLetter = async (req, res) => {
         params.push(id);
         await pool.query(`UPDATE mla_letters SET ${setClauses.join(', ')} WHERE id = ?`, params);
         await logActivity(id, `Letter updated by ${req.admin?.full_name || 'admin'}.`, req.admin?.id, req.admin?.full_name);
+        auditLog(req, { action: 'Updated', module: 'Letters', details: `Letter ID ${id} updated by ${req.admin?.full_name || 'admin'}`, resource: `letters/${id}`, severity: 'success' });
 
         const letter = await fetchFullLetter(id);
         res.json({ success: true, data: letter });
@@ -293,6 +296,7 @@ export const deleteLetter = async (req, res) => {
         const { id } = req.params;
         const [result] = await pool.query('DELETE FROM mla_letters WHERE id = ?', [id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Letter not found.' });
+        auditLog(req, { action: 'Deleted', module: 'Letters', details: `Letter ID ${id} permanently deleted`, resource: `letters/${id}`, severity: 'error' });
         res.json({ success: true, message: 'Letter deleted successfully.' });
     } catch (err) {
         console.error('[deleteLetter]', err);
@@ -318,6 +322,8 @@ export const patchLetterStatus = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Letter not found.' });
 
         await logActivity(id, `Status changed to "${status}" by ${req.admin?.full_name || 'admin'}.`, req.admin?.id, req.admin?.full_name);
+        const auditAction = status === 'Archived' ? 'Archived' : 'Updated';
+        auditLog(req, { action: auditAction, module: 'Letters', details: `Letter ID ${id} status changed to "${status}"`, resource: `letters/${id}`, severity: status === 'Archived' ? 'neutral' : 'info' });
         res.json({ success: true, message: `Status updated to ${status}.` });
     } catch (err) {
         console.error('[patchLetterStatus]', err);

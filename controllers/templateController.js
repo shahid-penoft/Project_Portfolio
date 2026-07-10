@@ -1,5 +1,6 @@
 import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 // Get all templates
 export const getAllTemplates = async (req, res) => {
@@ -48,6 +49,7 @@ export const createTemplate = async (req, res) => {
                 is_active !== undefined ? is_active : 1
             ]
         );
+        auditLog(req, { action: 'Created', module: 'Templates', details: `Template "${name}" created (type: ${type})`, resource: `settings/templates/${result.insertId}`, severity: 'info' });
         return successResponse(res, { id: result.insertId }, 'Template created successfully.', 201);
     } catch (err) {
         console.error('[createTemplate]', err);
@@ -78,6 +80,7 @@ export const updateTemplate = async (req, res) => {
         );
 
         if (result.affectedRows === 0) return errorResponse(res, 'Template not found.', 404);
+        auditLog(req, { action: 'Updated', module: 'Templates', details: `Template ID ${req.params.id} updated ("${name}")`, resource: `settings/templates/${req.params.id}`, severity: 'success' });
         return successResponse(res, null, 'Template updated successfully.');
     } catch (err) {
         console.error('[updateTemplate]', err);
@@ -90,6 +93,7 @@ export const deleteTemplate = async (req, res) => {
     try {
         const [result] = await pool.query('DELETE FROM message_templates WHERE id = ?', [req.params.id]);
         if (result.affectedRows === 0) return errorResponse(res, 'Template not found.', 404);
+        auditLog(req, { action: 'Deleted', module: 'Templates', details: `Template ID ${req.params.id} deleted`, resource: `settings/templates/${req.params.id}`, severity: 'error' });
         return successResponse(res, null, 'Template deleted successfully.');
     } catch (err) {
         console.error('[deleteTemplate]', err);

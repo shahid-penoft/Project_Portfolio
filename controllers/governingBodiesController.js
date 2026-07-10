@@ -1,14 +1,15 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 import { uploadGoverningBodyPhoto, runMulter } from '../configs/multerS3.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 const parseJsonField = (field) => {
-    if (!field) return [];
+    if (!field) return null;
     try {
         if (typeof field === 'string') return JSON.parse(field);
         return field;
     } catch (e) {
-        return [];
+        return field;
     }
 };
 
@@ -49,10 +50,19 @@ export const getGoverningBodies = async (req, res) => {
         let query = `
             SELECT 
                 gr.*,
-                lb.name AS localBodyName,
-                w.place_name AS wardName,
-                w.ward_no AS wardNumber,
-                r.label AS roleName
+                gr.head_name       AS headName,
+                gr.avatar_color    AS avatarColor,
+                gr.officer_phone   AS officerPhone,
+                gr.office_email    AS officeEmail,
+                gr.officer_email   AS officerEmail,
+                gr.office_location AS officeLocation,
+                gr.notes           AS otherDetails,
+                lb.name            AS localBodyName,
+                lb.name            AS localBody,
+                w.place_name       AS wardName,
+                w.ward_no          AS wardNumber,
+                r.label            AS headDesignation,
+                r.label            AS roleName
             FROM governing_representatives gr
             LEFT JOIN local_bodies lb ON gr.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON gr.ward_id = w.id
@@ -110,9 +120,9 @@ export const getGoverningBodies = async (req, res) => {
             params.push(isBookmarked);
         }
         if (search) {
-            query += ' AND (gr.name LIKE ? OR gr.phone LIKE ? OR lb.name LIKE ?)';
-            countQuery += ' AND (gr.name LIKE ? OR gr.phone LIKE ? OR lb.name LIKE ?)';
-            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+            query += ' AND (gr.name LIKE ? OR gr.phone LIKE ? OR lb.name LIKE ? OR r.label LIKE ? OR w.place_name LIKE ?)';
+            countQuery += ' AND (gr.name LIKE ? OR gr.phone LIKE ? OR lb.name LIKE ? OR r.label LIKE ? OR w.place_name LIKE ?)';
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
         }
 
         // Sorting
@@ -162,10 +172,21 @@ export const getGoverningBodyById = async (req, res) => {
         const query = `
             SELECT 
                 gr.*,
-                lb.name AS localBodyName,
-                w.place_name AS wardName,
-                w.ward_no AS wardNumber,
-                r.label AS roleName
+                gr.created_at      AS createdAt,
+                gr.updated_at      AS updatedAt,
+                gr.head_name       AS headName,
+                gr.avatar_color    AS avatarColor,
+                gr.officer_phone   AS officerPhone,
+                gr.office_email    AS officeEmail,
+                gr.officer_email   AS officerEmail,
+                gr.office_location AS officeLocation,
+                gr.notes           AS otherDetails,
+                lb.name            AS localBodyName,
+                lb.name            AS localBody,
+                w.place_name       AS wardName,
+                w.ward_no          AS wardNumber,
+                r.label            AS headDesignation,
+                r.label            AS roleName
             FROM governing_representatives gr
             LEFT JOIN local_bodies lb ON gr.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON gr.ward_id = w.id
@@ -178,7 +199,28 @@ export const getGoverningBodyById = async (req, res) => {
             return errorResponse(res, 'Governing body representative not found.', 404);
         }
 
-        return successResponse(res, { data: rows[0] }, 'Governing body representative fetched successfully.');
+        const rep = rows[0];
+
+        const [activityRows] = await db.query(`
+            SELECT 
+                al.id, 
+                al.text, 
+                al.created_at AS createdAt,
+                au.full_name AS author_name
+            FROM governing_body_activity_logs al
+            LEFT JOIN admin_users au ON al.admin_user_id = au.id
+            WHERE al.governing_body_id = ?
+            ORDER BY al.created_at DESC
+        `, [id]);
+
+        rep.activity = activityRows;
+        
+        if (activityRows.length > 0) {
+            rep.createdBy = activityRows[activityRows.length - 1].author_name || "Admin";
+            rep.updatedBy = activityRows[0].author_name || "Admin";
+        }
+
+        return successResponse(res, { data: rep }, 'Governing body representative fetched successfully.');
     } catch (error) {
         console.error('[getGoverningBodyById]', error);
         return errorResponse(res, 'Server error fetching representative.');
@@ -200,7 +242,7 @@ export const createGoverningBody = async (req, res) => {
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
-            department, head_name, hours, avatar_color, officer_phone, status
+            department, head_name, hours, avatar_color, officer_phone, officer_email, status
         } = req.body;
 
         const photo_url = req.file ? req.file.location : null;
@@ -211,8 +253,8 @@ export const createGoverningBody = async (req, res) => {
                 phone, alternative_phone, email, house_name, home_address, location,
                 bio, office_name, office_phone, office_email, office_address, office_location,
                 additional_roles, achievements, notes, bookmarked, photo_url,
-                department, head_name, hours, avatar_color, officer_phone, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                department, head_name, hours, avatar_color, officer_phone, officer_email, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             governing_body_type, 
             local_body_id, 
@@ -235,7 +277,7 @@ export const createGoverningBody = async (req, res) => {
             office_location ? JSON.stringify(parseJsonField(office_location)) : null,
             additional_roles ? JSON.stringify(parseJsonField(additional_roles)) : null,
             achievements ? JSON.stringify(parseJsonField(achievements)) : null,
-            notes ? JSON.stringify(parseJsonField(notes)) : null,
+            notes || null,
             bookmarked === 'true' || bookmarked === true,
             photo_url,
             department || null,
@@ -243,9 +285,16 @@ export const createGoverningBody = async (req, res) => {
             hours || null,
             avatar_color || null,
             officer_phone || null,
+            officer_email || null,
             status || 'Active'
         ]);
 
+        await db.query(
+            'INSERT INTO governing_body_activity_logs (governing_body_id, admin_user_id, text) VALUES (?, ?, ?)',
+            [result.insertId, req.admin?.id || null, 'Created the governing body representative.']
+        );
+
+        auditLog(req, { action: 'Created', module: 'Governing Body', details: `Governing body representative "${name}" created`, resource: `governing-bodies/${result.insertId}`, severity: 'info' });
         const [rows] = await db.query('SELECT * FROM governing_representatives WHERE id = ?', [result.insertId]);
         return successResponse(res, { data: rows[0] }, 'Governing body representative created successfully.', 201);
     } catch (error) {
@@ -271,7 +320,7 @@ export const updateGoverningBody = async (req, res) => {
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
-            department, head_name, hours, avatar_color, officer_phone, status
+            department, head_name, hours, avatar_color, officer_phone, officer_email, status
         } = req.body;
 
         const [[existing]] = await db.query('SELECT photo_url FROM governing_representatives WHERE id = ?', [id]);
@@ -287,7 +336,7 @@ export const updateGoverningBody = async (req, res) => {
                 phone = ?, alternative_phone = ?, email = ?, house_name = ?, home_address = ?, location = ?,
                 bio = ?, office_name = ?, office_phone = ?, office_email = ?, office_address = ?, office_location = ?,
                 additional_roles = ?, achievements = ?, notes = ?, bookmarked = ?, photo_url = ?,
-                department = ?, head_name = ?, hours = ?, avatar_color = ?, officer_phone = ?, status = COALESCE(?, status)
+                department = ?, head_name = ?, hours = ?, avatar_color = ?, officer_phone = ?, officer_email = ?, status = COALESCE(?, status)
             WHERE id = ?
         `, [
             governing_body_type, 
@@ -311,7 +360,7 @@ export const updateGoverningBody = async (req, res) => {
             office_location ? JSON.stringify(parseJsonField(office_location)) : null,
             additional_roles ? JSON.stringify(parseJsonField(additional_roles)) : null,
             achievements ? JSON.stringify(parseJsonField(achievements)) : null,
-            notes ? JSON.stringify(parseJsonField(notes)) : null,
+            notes || null,
             bookmarked === 'true' || bookmarked === true,
             photo_url,
             department || null,
@@ -319,10 +368,17 @@ export const updateGoverningBody = async (req, res) => {
             hours || null,
             avatar_color || null,
             officer_phone || null,
+            officer_email || null,
             status || null,
             id
         ]);
 
+        await db.query(
+            'INSERT INTO governing_body_activity_logs (governing_body_id, admin_user_id, text) VALUES (?, ?, ?)',
+            [id, req.admin?.id || null, 'Updated the governing body representative details.']
+        );
+
+        auditLog(req, { action: 'Updated', module: 'Governing Body', details: `Governing body representative ID ${id} updated`, resource: `governing-bodies/${id}`, severity: 'success' });
         const [rows] = await db.query('SELECT * FROM governing_representatives WHERE id = ?', [id]);
         return successResponse(res, { data: rows[0] }, 'Governing body representative updated successfully.');
     } catch (error) {
@@ -350,6 +406,7 @@ export const deleteGoverningBody = async (req, res) => {
             return errorResponse(res, 'Governing body representative not found.', 404);
         }
 
+        auditLog(req, { action: 'Deleted', module: 'Governing Body', details: `Governing body representative ID ${id} permanently deleted`, resource: `governing-bodies/${id}`, severity: 'error' });
         return successResponse(res, null, 'Governing body representative permanently deleted.');
     } catch (error) {
         console.error('[deleteGoverningBody]', error);
@@ -368,6 +425,7 @@ export const trashGoverningBody = async (req, res) => {
         if (!result.affectedRows) {
             return errorResponse(res, 'Representative not found or already trashed.', 404);
         }
+        auditLog(req, { action: 'Archived', module: 'Governing Body', details: `Governing body representative ID ${id} moved to trash`, resource: `governing-bodies/${id}`, severity: 'warning' });
         return successResponse(res, null, 'Representative moved to trash.');
     } catch (error) {
         console.error('[trashGoverningBody]', error);
@@ -386,6 +444,7 @@ export const restoreGoverningBody = async (req, res) => {
         if (!result.affectedRows) {
             return errorResponse(res, 'Representative not found in trash.', 404);
         }
+        auditLog(req, { action: 'Updated', module: 'Governing Body', details: `Governing body representative ID ${id} restored from trash`, resource: `governing-bodies/${id}`, severity: 'info' });
         return successResponse(res, null, 'Representative restored successfully.');
     } catch (error) {
         console.error('[restoreGoverningBody]', error);

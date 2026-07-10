@@ -1,5 +1,6 @@
 import pool from '../configs/db.js';
 import generateCMFundsPdf from '../utils/cmFundsPdfTemplate.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 
 const generateAppId = async (connection) => {
   const year = new Date().getFullYear();
@@ -204,6 +205,7 @@ export const createRequest = async (req, res) => {
     `, [appId, userId]);
 
     await connection.commit();
+    auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds application submitted — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
     res.status(201).json({ message: 'Application submitted successfully', id: appId });
   } catch (err) {
     await connection.rollback();
@@ -264,6 +266,7 @@ export const createDraftRequest = async (req, res) => {
     `, [appId, userId]);
 
     await connection.commit();
+    auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds draft saved — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
     res.status(201).json({ message: 'Draft saved successfully', id: appId });
   } catch (err) {
     await connection.rollback();
@@ -400,6 +403,7 @@ export const updateRequest = async (req, res) => {
     `, [id, userId]);
 
     await connection.commit();
+    auditLog(req, { action: 'Updated', module: 'CM Funds', details: `CM Funds application updated — ID ${id}`, resource: `cm-funds/${id}`, severity: 'success' });
     res.json({ message: 'Application updated successfully' });
   } catch (err) {
     await connection.rollback();
@@ -451,6 +455,8 @@ export const updateStatus = async (req, res) => {
     `, [id, eventType, oldStatus, status, userId, `Status updated to ${status}`]);
 
     await connection.commit();
+    const auditSeverity = status === 'Disbursed' ? 'success' : (status === 'Rejected' ? 'error' : 'info');
+    auditLog(req, { action: 'Updated', module: 'CM Funds', details: `CM Funds application ${id} status changed: ${oldStatus} → ${status}`, resource: `cm-funds/${id}`, severity: auditSeverity });
     res.json({ message: 'Status updated successfully' });
   } catch (err) {
     await connection.rollback();
@@ -467,7 +473,8 @@ export const deleteRequest = async (req, res) => {
     
     // Configs are cascade deleted by FK constraint.
     await pool.query(`DELETE FROM cm_fund_requests WHERE id = ?`, [id]);
-    
+
+    auditLog(req, { action: 'Deleted', module: 'CM Funds', details: `CM Funds application ${id} permanently deleted`, resource: `cm-funds/${id}`, severity: 'error' });
     res.json({ message: 'Application deleted successfully' });
   } catch (err) {
     console.error('Error in deleteRequest:', err);

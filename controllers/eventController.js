@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import db from '../configs/db.js';
 import transporter from '../configs/mailer.js';
 import { uploadMedia, uploadMediaFields, uploadImage, uploadThumbnail, runMulter } from '../configs/multerS3.js';
+import { logActivity as auditLog } from './teamsLogController.js';
 import { successResponse, errorResponse, slugify, renameMediaToSeoFriendly } from '../utils/helpers.js';
 
 
@@ -453,6 +454,7 @@ export const createEvent = async (req, res) => {
 
 
         const [rows] = await db.query('SELECT * FROM events WHERE id = ?', [result.insertId]);
+        auditLog(req, { action: 'Created', module: 'Events', details: `Event created — "${event_name}" (${status})`, resource: `events/${result.insertId}`, severity: 'info' });
         return successResponse(res, { data: rows[0] }, 'Event created successfully.', 201);
     } catch (err) {
         console.error('[createEvent]', err);
@@ -510,6 +512,7 @@ export const updateEvent = async (req, res) => {
         );
         if (!result.affectedRows) return errorResponse(res, 'Event not found.', 404);
         const [rows] = await db.query('SELECT * FROM events WHERE id = ?', [id]);
+        auditLog(req, { action: 'Updated', module: 'Events', details: `Event ID ${id} updated — "${event_name}"`, resource: `events/${id}`, severity: 'success' });
         return successResponse(res, { data: rows[0] }, 'Event updated successfully.');
     } catch (err) {
         console.error('[updateEvent]', err);
@@ -533,6 +536,7 @@ export const deleteEvent = async (req, res) => {
 
         const [result] = await db.query('DELETE FROM events WHERE id = ?', [id]);
         if (!result.affectedRows) return errorResponse(res, 'Event not found.', 404);
+        auditLog(req, { action: 'Deleted', module: 'Events', details: `Event ID ${id} permanently deleted`, resource: `events/${id}`, severity: 'error' });
         return successResponse(res, {}, 'Event deleted successfully.');
     } catch (err) {
         console.error('[deleteEvent]', err);
