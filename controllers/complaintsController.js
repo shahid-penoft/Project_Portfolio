@@ -125,13 +125,12 @@ const generateReferenceNo = async () => {
 const fetchFullComplaint = async (id) => {
     const [[complaint]] = await pool.query(`
         SELECT c.*,
-               d.name  AS department_name,
+               c.department AS department_name,
                lb.name AS local_body_name,
                lbw.ward_no,
                lbw.place_name AS ward_place_name,
                au.full_name   AS filed_by_admin_name
         FROM complaints c
-        LEFT JOIN departments      d   ON c.department_id     = d.id
         LEFT JOIN local_bodies     lb  ON c.local_body_id     = lb.id
         LEFT JOIN local_body_wards lbw ON c.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
@@ -228,11 +227,10 @@ export const getComplaints = async (req, res) => {
         const [rows] = await pool.query(`
             SELECT c.id, c.reference_no, c.title, c.category, c.priority, c.status,
                    c.complainant_name, c.phone, c.date_filed, c.created_at, c.is_deleted,
-                   d.name AS department_name,
+                   c.department AS department_name,
                    lb.name AS local_body_name,
                    lbw.ward_no
             FROM complaints c
-            LEFT JOIN departments      d   ON c.department_id = d.id
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id
             ${where}
@@ -307,7 +305,7 @@ export const createComplaint = async (req, res) => {
         const {
             title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department_id, date_filed,
+            local_body_id, ward_id, department, date_filed,
         } = req.body;
 
         if (!title || !complainant_name || !phone) {
@@ -323,7 +321,7 @@ export const createComplaint = async (req, res) => {
             INSERT INTO complaints
               (reference_no, title, category, priority, status, description, location, latitude, longitude, internal_note,
                complainant_name, phone, alternative_phone, email,
-               local_body_id, ward_id, department_id,
+               local_body_id, ward_id, department,
                constituent_user_id, filed_by_admin_id, date_filed)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
@@ -343,7 +341,7 @@ export const createComplaint = async (req, res) => {
             email || null,
             local_body_id || null,
             ward_id || null,
-            department_id || null,
+            department || null,
             constituentId,
             adminId,
             date_filed || new Date().toISOString().split('T')[0],
@@ -370,7 +368,7 @@ export const updateComplaint = async (req, res) => {
         const {
             title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department_id, date_filed,
+            local_body_id, ward_id, department, date_filed,
         } = req.body;
 
         const [result] = await pool.query(`
@@ -390,13 +388,13 @@ export const updateComplaint = async (req, res) => {
               email = COALESCE(?, email),
               local_body_id = COALESCE(?, local_body_id),
               ward_id = COALESCE(?, ward_id),
-              department_id = COALESCE(?, department_id),
+              department = COALESCE(?, department),
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
             title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department_id, date_filed, id,
+            local_body_id, ward_id, department, date_filed, id,
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });

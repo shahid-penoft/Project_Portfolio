@@ -44,13 +44,12 @@ const generateReferenceNo = async () => {
 const fetchFullIdea = async (id) => {
     const [[idea]] = await pool.query(`
         SELECT i.*,
-               d.name  AS department_name,
+               i.department AS department_name,
                lb.name AS local_body_name,
                lbw.ward_no,
                lbw.place_name AS ward_place_name,
                au.full_name   AS filed_by_admin_name
         FROM ideas i
-        LEFT JOIN departments      d   ON i.department_id     = d.id
         LEFT JOIN local_bodies     lb  ON i.local_body_id     = lb.id
         LEFT JOIN local_body_wards lbw ON i.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON i.filed_by_admin_id = au.id
@@ -141,11 +140,10 @@ export const getIdeas = async (req, res) => {
         const [rows] = await pool.query(`
             SELECT i.id, i.reference_no, i.title, i.category, i.priority, i.status,
                    i.complainant_name, i.phone, i.date_filed, i.created_at, i.is_deleted,
-                   d.name AS department_name,
+                   i.department AS department_name,
                    lb.name AS local_body_name,
                    lbw.ward_no
             FROM ideas i
-            LEFT JOIN departments      d   ON i.department_id = d.id
             LEFT JOIN local_bodies     lb  ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON i.ward_id = lbw.id
             ${where}
@@ -209,7 +207,7 @@ export const createIdea = async (req, res) => {
         const {
             title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department_id, date_filed,
+            local_body_id, ward_id, department, date_filed,
         } = req.body;
 
         if (!title || !complainant_name || !phone) {
@@ -224,7 +222,7 @@ export const createIdea = async (req, res) => {
             INSERT INTO ideas
               (reference_no, title, category, priority, status, description, location, latitude, longitude, internal_note,
                complainant_name, phone, alternative_phone, email,
-               local_body_id, ward_id, department_id,
+               local_body_id, ward_id, department,
                constituent_user_id, filed_by_admin_id, date_filed)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
@@ -244,7 +242,7 @@ export const createIdea = async (req, res) => {
             email || null,
             local_body_id || null,
             ward_id || null,
-            department_id || null,
+            department || null,
             constituentId,
             adminId,
             date_filed || new Date().toISOString().split('T')[0],
@@ -268,7 +266,7 @@ export const updateIdea = async (req, res) => {
         const {
             title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department_id, date_filed,
+            local_body_id, ward_id, department, date_filed,
         } = req.body;
 
         const [result] = await pool.query(`
@@ -286,13 +284,13 @@ export const updateIdea = async (req, res) => {
               email = COALESCE(?, email),
               local_body_id = COALESCE(?, local_body_id),
               ward_id = COALESCE(?, ward_id),
-              department_id = COALESCE(?, department_id),
+              department = COALESCE(?, department),
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
             title, category, priority, status, description, location, internal_note,
             complainant_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department_id, date_filed, id,
+            local_body_id, ward_id, department, date_filed, id,
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found.' });
