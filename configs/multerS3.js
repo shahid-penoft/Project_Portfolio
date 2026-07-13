@@ -195,6 +195,14 @@ export const uploadGeoLocationAttachments = multer({
 }).array('files', 5);
 
 
+// ─── CM Funds Uploads ────────────────────────────────────────
+export const uploadCMFundDocsS3 = multer({
+    storage: multerS3(s3StorageOptions('cm_fund_documents')),
+    fileFilter,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB per file
+}).any();
+
+
 // ─── Updates Uploads (Combined Media & Attachments) ──────────
 export const uploadComplaintUpdateFiles = multer({
     storage: multerS3(s3StorageOptions('complaints/updates')),

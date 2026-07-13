@@ -122,6 +122,7 @@ export const createRequest = async (req, res) => {
     // Accept both snake_case (FormData from frontend) and camelCase
     const b = req.body;
     const applicantName       = b.applicant_name      || b.applicantName;
+    const applicationType     = b.application_type    || b.applicationType || 'CMDRF';
     const applicantPhone      = b.applicant_phone     || b.applicantPhone;
     const alternatePhone      = b.alternate_phone     || b.alternatePhone     || null;
     const aadhaarNumber       = b.aadhaar_number      || b.aadhaarNumber      || null;
@@ -158,7 +159,7 @@ export const createRequest = async (req, res) => {
     await connection.beginTransaction();
 
     const appId = await generateAppId(connection);
-    const userId = req.user ? req.user.id : null;
+    const userId = req.admin ? req.admin.id : null;
 
     let assignedOfficerId = b.assigned_officer_id || b.officer || null;
     if (assignedOfficerId === "Unassigned") assignedOfficerId = null;
@@ -167,15 +168,15 @@ export const createRequest = async (req, res) => {
     await connection.query(`
       INSERT INTO cm_fund_requests (
         id, applicant_name, applicant_phone, alternate_phone, aadhaar_number, ration_card_number,
-        local_body_id, ward_id, address_line1, address_line2, city, district, state, pincode,
+        local_body_id, ward_id, address_line1, address_line2, city, district, state, pincode, application_type,
         category_id, sub_category, priority, amount_requested, description,
         bank_name, account_number, ifsc_code, branch, account_holder_name,
         recommended_by, recommender_name, recommender_contact, remarks,
         status, assigned_officer_id, submitted_by_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       appId, applicantName, applicantPhone, alternatePhone, aadhaarNumber, rationCardNumber,
-      localBody, ward, addressLine1, addressLine2, city, district, state, pincode,
+      localBody, ward, addressLine1, addressLine2, city, district, state, pincode, applicationType,
       categoryId, subCategory, priority, amountRequested, description,
       bankName, accountNumber, ifscCode, branch, accountHolderName,
       recommendedBy, recommenderName, recommenderContact, remarks,
@@ -189,7 +190,7 @@ export const createRequest = async (req, res) => {
         const match = docId.match(/documents\[(.*?)\]/);
         if (match) docId = match[1];
 
-        const fileUrl = `/uploads/cm_fund_documents/${file.filename}`;
+        const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
         
         await connection.query(`
           INSERT INTO cm_fund_request_documents (request_id, doc_type_id, file_url, original_filename)
@@ -226,6 +227,7 @@ export const createDraftRequest = async (req, res) => {
   try {
     const b = req.body;
     const applicantName    = b.applicant_name   || b.applicantName;
+    const applicationType  = b.application_type || b.applicationType || 'CMDRF';
     const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
     const categoryId       = b.category_id      || b.category;
     const amountRequested  = b.amount_requested || b.amountRequested;
@@ -242,22 +244,22 @@ export const createDraftRequest = async (req, res) => {
     await connection.beginTransaction();
 
     const appId  = await generateAppId(connection);
-    const userId = req.user ? req.user.id : null;
+    const userId = req.admin ? req.admin.id : null;
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
         id, applicant_name, applicant_phone, category_id, priority,
         amount_requested, description, remarks,
         status, submitted_by_id,
-        address_line1, city, district, state, pincode,
+        address_line1, city, district, state, pincode, application_type,
         bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
-                '', '', '', 'Kerala', '',
+                '', '', '', 'Kerala', '', ?,
                 '', '', '', '', '', '')
     `, [
       appId, applicantName, applicantPhone, categoryId, priority,
       amountRequested, description, remarks,
-      userId,
+      userId, applicationType,
     ]);
 
     await connection.query(`
@@ -329,7 +331,7 @@ export const updateRequest = async (req, res) => {
     // Partial update allowed
     const updatableFields = [
       'applicant_name', 'applicant_phone', 'alternate_phone', 'aadhaar_number', 'ration_card_number',
-      'local_body_id', 'ward_id', 'address_line1', 'address_line2', 'city', 'district', 'state', 'pincode',
+      'local_body_id', 'ward_id', 'address_line1', 'address_line2', 'city', 'district', 'state', 'pincode', 'application_type',
       'category_id', 'sub_category', 'priority', 'amount_requested', 'description',
       'bank_name', 'account_number', 'ifsc_code', 'branch', 'account_holder_name',
       'recommended_by', 'recommender_name', 'recommender_contact', 'remarks'
@@ -343,7 +345,7 @@ export const updateRequest = async (req, res) => {
       applicantName: 'applicant_name', applicantPhone: 'applicant_phone', alternatePhone: 'alternate_phone', 
       aadhaarNumber: 'aadhaar_number', rationCardNumber: 'ration_card_number',
       localBody: 'local_body_id', ward: 'ward_id', addressLine1: 'address_line1', addressLine2: 'address_line2', 
-      city: 'city', district: 'district', state: 'state', pincode: 'pincode',
+      city: 'city', district: 'district', state: 'state', pincode: 'pincode', applicationType: 'application_type',
       category: 'category_id', subCategory: 'sub_category', priority: 'priority', 
       amountRequested: 'amount_requested', description: 'description',
       bankName: 'bank_name', accountNumber: 'account_number', ifscCode: 'ifsc_code', 
@@ -383,7 +385,7 @@ export const updateRequest = async (req, res) => {
         const match = docId.match(/documents\[(.*?)\]/);
         if (match) docId = match[1];
 
-        const fileUrl = `/uploads/cm_fund_documents/${file.filename}`;
+        const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
         
         // Upsert strategy for documents (remove old one first if exists)
         await connection.query(`DELETE FROM cm_fund_request_documents WHERE request_id = ? AND doc_type_id = ?`, [id, docId]);
@@ -396,7 +398,7 @@ export const updateRequest = async (req, res) => {
     }
     
     // Add timeline event
-    const userId = req.user ? req.user.id : null;
+    const userId = req.admin ? req.admin.id : null;
     await connection.query(`
       INSERT INTO cm_fund_timeline_events (request_id, event_type, actor_id, note)
       VALUES (?, 'Application Updated', ?, 'Application details/documents were modified')
@@ -448,7 +450,7 @@ export const updateStatus = async (req, res) => {
     else if (status === 'Disbursed') eventType = 'Funds Disbursed';
     else if (status === 'Rejected') eventType = 'Application Rejected';
 
-    const userId = req.user ? req.user.id : null;
+    const userId = req.admin ? req.admin.id : null;
     await connection.query(`
       INSERT INTO cm_fund_timeline_events (request_id, event_type, from_status, to_status, actor_id, note)
       VALUES (?, ?, ?, ?, ?, ?)

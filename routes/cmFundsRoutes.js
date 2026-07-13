@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifyToken as adminAuth } from '../middlewares/auth.js';
-import { uploadCMFundDocs } from '../configs/multer.js';
+import { uploadCMFundDocsS3 } from '../configs/multerS3.js';
 
 import {
   listRequests,
@@ -39,10 +39,10 @@ router.use(adminAuth);
 // ==========================================
 router.post('/draft', createDraftRequest);         // ← Quick-add draft (minimal fields)
 router.get('/requests', listRequests);
-router.post('/requests', uploadCMFundDocs, createRequest);
+router.post('/requests', uploadCMFundDocsS3, createRequest);
 
 router.get('/requests/:id', getRequest);
-router.put('/requests/:id', uploadCMFundDocs, updateRequest);
+router.put('/requests/:id', uploadCMFundDocsS3, updateRequest);
 router.patch('/requests/:id/status', updateStatus);
 router.delete('/requests/:id', deleteRequest);
 router.get('/requests/:id/pdf', downloadPdf);
