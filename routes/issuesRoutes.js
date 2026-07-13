@@ -24,6 +24,7 @@ import {
     createCategory,
     updateCategory,
     deleteCategory,
+    getNextId,
 } from '../controllers/issuesController.js';
 
 const router = express.Router();
@@ -38,6 +39,7 @@ router.put('/categories/:id', verifyToken, updateCategory);
 router.delete('/categories/:id', verifyToken, deleteCategory);
 
 // ── List & Create (admin or authenticated constituent) ─────────
+router.get('/next-id', dualAuth, getNextId);
 router.get('/',    dualAuth, getIssues);
 router.get('/:id', dualAuth, getIssueById);
 router.post('/',   dualAuth, createIssue);

@@ -1,7 +1,7 @@
 import express from 'express';
 import { dualAuth, adminOnly } from '../middlewares/dualAuthMiddleware.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
-import { uploadIdeaMediaS3, uploadIdeaAttachmentsS3 , uploadIdeaUpdateFiles } from '../configs/multerS3.js';
+import { uploadIdeaMediaS3 as uploadIdeaMedia, uploadIdeaAttachmentsS3 as uploadIdeaAttachments, uploadIdeaUpdateFiles } from '../configs/multerS3.js';
 import {
     getIdeas,
     getIdeaStats,
@@ -14,73 +14,70 @@ import {
     deleteIdea,
     addIdeaUpdate,
     deleteIdeaUpdate,
-    uploadIdeaMedia,
+    uploadIdeaMedia as uploadMedia,
     deleteIdeaMedia,
     uploadIdeaAttachment,
     deleteIdeaAttachment,
     addIdeaTeamMember,
     removeIdeaTeamMember,
-    getIdeaCategories,
+    getNextId,
 } from '../controllers/ideasController.js';
 
 const router = express.Router();
 
 // ── Stats (admin only) ─────────────────────────────────────────
-router.get('/stats', verifyToken, requirePermission('ideas'), getIdeaStats);
+router.get('/stats', verifyToken, getIdeaStats);
 
-// ── Categories ─────────────────────────────────────────────────
-router.get('/categories', getIdeaCategories);
-
-// ── List & Create (admin or authenticated constituent) ─────────
+// ── List & Create ──────────────────────────────────────────────
+router.get('/next-id', dualAuth, getNextId);
 router.get('/',    dualAuth, getIdeas);
 router.get('/:id', dualAuth, getIdeaById);
 router.post('/',   dualAuth, createIdea);
 
 // ── Admin-only mutations ───────────────────────────────────────
-router.patch('/:id',          verifyToken, requirePermission('ideas'), updateIdea);
-router.patch('/:id/status',   verifyToken, requirePermission('ideas'), updateIdeaStatus);
-router.patch('/:id/trash',    verifyToken, requirePermission('ideas'), trashIdea);
-router.patch('/:id/restore',  verifyToken, requirePermission('ideas'), restoreIdea);
-router.delete('/:id',         verifyToken, requirePermission('ideas'), deleteIdea); // requires ?force=true
+router.patch('/:id',          verifyToken, updateIdea);
+router.patch('/:id/status',   verifyToken, updateIdeaStatus);
+router.patch('/:id/trash',    verifyToken, trashIdea);
+router.patch('/:id/restore',  verifyToken, restoreIdea);
+router.delete('/:id',         verifyToken, deleteIdea);
 
 // ── Updates sub-resource ───────────────────────────────────────
 router.post('/:id/updates',
     verifyToken,
-    requirePermission('ideas'),
     (req, res, next) => uploadIdeaUpdateFiles(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();
     }),
     addIdeaUpdate
 );
-router.delete('/:id/updates/:updateId',   verifyToken, requirePermission('ideas'), deleteIdeaUpdate);
+router.delete('/:id/updates/:updateId', verifyToken, deleteIdeaUpdate);
 
-// ── Media sub-resource (upload: admin or owner; delete: admin) ─
+// ── Media ──────────────────────────────────────────────────────
 router.post(
     '/:id/media',
     dualAuth,
-    (req, res, next) => uploadIdeaMediaS3(req, res, (err) => {
+    (req, res, next) => uploadIdeaMedia(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();
     }),
-    uploadIdeaMedia
+    uploadMedia
 );
-router.delete('/:id/media/:mediaId', verifyToken, requirePermission('ideas'), deleteIdeaMedia);
+router.delete('/:id/media/:mediaId', verifyToken, deleteIdeaMedia);
 
-// ── Attachments sub-resource ───────────────────────────────────
+// ── Attachments ────────────────────────────────────────────────
 router.post(
     '/:id/attachments',
     dualAuth,
-    (req, res, next) => uploadIdeaAttachmentsS3(req, res, (err) => {
+    (req, res, next) => uploadIdeaAttachments(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();
     }),
     uploadIdeaAttachment
 );
-router.delete('/:id/attachments/:attachId', verifyToken, requirePermission('ideas'), deleteIdeaAttachment);
+router.delete('/:id/attachments/:attachId', verifyToken, deleteIdeaAttachment);
 
-// ── Team sub-resource (admin only) ────────────────────────────
-router.post('/:id/team',              verifyToken, requirePermission('ideas'), addIdeaTeamMember);
-router.delete('/:id/team/:memberId',  verifyToken, requirePermission('ideas'), removeIdeaTeamMember);
+// ── Team ───────────────────────────────────────────────────────
+router.post('/:id/team',             verifyToken, addIdeaTeamMember);
+router.delete('/:id/team/:memberId', verifyToken, removeIdeaTeamMember);
 
 export default router;

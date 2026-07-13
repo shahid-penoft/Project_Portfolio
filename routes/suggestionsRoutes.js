@@ -1,7 +1,7 @@
 import express from 'express';
 import { dualAuth, adminOnly } from '../middlewares/dualAuthMiddleware.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
-import { uploadSuggestionMediaS3, uploadSuggestionAttachmentsS3 , uploadSuggestionUpdateFiles } from '../configs/multerS3.js';
+import { uploadSuggestionMediaS3 as uploadSuggestionMedia, uploadSuggestionAttachmentsS3 as uploadSuggestionAttachments, uploadSuggestionUpdateFiles } from '../configs/multerS3.js';
 import {
     getSuggestions,
     getSuggestionStats,
@@ -14,73 +14,70 @@ import {
     deleteSuggestion,
     addSuggestionUpdate,
     deleteSuggestionUpdate,
-    uploadSuggestionMedia,
+    uploadSuggestionMedia as uploadMedia,
     deleteSuggestionMedia,
     uploadSuggestionAttachment,
     deleteSuggestionAttachment,
     addSuggestionTeamMember,
     removeSuggestionTeamMember,
-    getSuggestionCategories,
+    getNextId,
 } from '../controllers/suggestionsController.js';
 
 const router = express.Router();
 
 // ── Stats (admin only) ─────────────────────────────────────────
-router.get('/stats', verifyToken, requirePermission('suggestions'), getSuggestionStats);
+router.get('/stats', verifyToken, getSuggestionStats);
 
-// ── Categories ─────────────────────────────────────────────────
-router.get('/categories', getSuggestionCategories);
-
-// ── List & Create (admin or authenticated constituent) ─────────
+// ── List & Create ──────────────────────────────────────────────
+router.get('/next-id', dualAuth, getNextId);
 router.get('/',    dualAuth, getSuggestions);
 router.get('/:id', dualAuth, getSuggestionById);
 router.post('/',   dualAuth, createSuggestion);
 
 // ── Admin-only mutations ───────────────────────────────────────
-router.patch('/:id',          verifyToken, requirePermission('suggestions'), updateSuggestion);
-router.patch('/:id/status',   verifyToken, requirePermission('suggestions'), updateSuggestionStatus);
-router.patch('/:id/trash',    verifyToken, requirePermission('suggestions'), trashSuggestion);
-router.patch('/:id/restore',  verifyToken, requirePermission('suggestions'), restoreSuggestion);
-router.delete('/:id',         verifyToken, requirePermission('suggestions'), deleteSuggestion); // requires ?force=true
+router.patch('/:id',          verifyToken, updateSuggestion);
+router.patch('/:id/status',   verifyToken, updateSuggestionStatus);
+router.patch('/:id/trash',    verifyToken, trashSuggestion);
+router.patch('/:id/restore',  verifyToken, restoreSuggestion);
+router.delete('/:id',         verifyToken, deleteSuggestion);
 
 // ── Updates sub-resource ───────────────────────────────────────
 router.post('/:id/updates',
     verifyToken,
-    requirePermission('suggestions'),
     (req, res, next) => uploadSuggestionUpdateFiles(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();
     }),
     addSuggestionUpdate
 );
-router.delete('/:id/updates/:updateId',   verifyToken, requirePermission('suggestions'), deleteSuggestionUpdate);
+router.delete('/:id/updates/:updateId', verifyToken, deleteSuggestionUpdate);
 
-// ── Media sub-resource (upload: admin or owner; delete: admin) ─
+// ── Media ──────────────────────────────────────────────────────
 router.post(
     '/:id/media',
     dualAuth,
-    (req, res, next) => uploadSuggestionMediaS3(req, res, (err) => {
+    (req, res, next) => uploadSuggestionMedia(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();
     }),
-    uploadSuggestionMedia
+    uploadMedia
 );
-router.delete('/:id/media/:mediaId', verifyToken, requirePermission('suggestions'), deleteSuggestionMedia);
+router.delete('/:id/media/:mediaId', verifyToken, deleteSuggestionMedia);
 
-// ── Attachments sub-resource ───────────────────────────────────
+// ── Attachments ────────────────────────────────────────────────
 router.post(
     '/:id/attachments',
     dualAuth,
-    (req, res, next) => uploadSuggestionAttachmentsS3(req, res, (err) => {
+    (req, res, next) => uploadSuggestionAttachments(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();
     }),
     uploadSuggestionAttachment
 );
-router.delete('/:id/attachments/:attachId', verifyToken, requirePermission('suggestions'), deleteSuggestionAttachment);
+router.delete('/:id/attachments/:attachId', verifyToken, deleteSuggestionAttachment);
 
-// ── Team sub-resource (admin only) ────────────────────────────
-router.post('/:id/team',              verifyToken, requirePermission('suggestions'), addSuggestionTeamMember);
-router.delete('/:id/team/:memberId',  verifyToken, requirePermission('suggestions'), removeSuggestionTeamMember);
+// ── Team ───────────────────────────────────────────────────────
+router.post('/:id/team',             verifyToken, addSuggestionTeamMember);
+router.delete('/:id/team/:memberId', verifyToken, removeSuggestionTeamMember);
 
 export default router;

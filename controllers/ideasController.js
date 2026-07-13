@@ -1,6 +1,8 @@
 import pool from '../configs/db.js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { logActivity as auditLog } from './teamsLogController.js';
+import { sendSMSSafe } from '../services/smsService.js';
+import { submissionConfirmationSMS, followUpUpdateSMS } from '../services/smsTemplates.js';
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -32,13 +34,21 @@ const logActivity = async (ideaId, text, adminUserId = null) => {
     );
 };
 
+// Helper: generate reference number  I-NNN
 const generateReferenceNo = async () => {
-    const year = new Date().getFullYear();
-    const [[{ cnt }]] = await pool.query(
-        'SELECT COUNT(*) as cnt FROM ideas WHERE YEAR(created_at) = ?', [year]
-    );
-    const seq = String(cnt + 1).padStart(4, '0');
-    return `IDEA-${year}-${seq}`;
+    const [[{ cnt }]] = await pool.query('SELECT COUNT(*) as cnt FROM ideas');
+    const seq = String(cnt + 1).padStart(3, '0');
+    return `I-${seq}`;
+};
+
+export const getNextId = async (req, res) => {
+    try {
+        const nextId = await generateReferenceNo();
+        res.json({ success: true, data: nextId });
+    } catch (err) {
+        console.error('[getNextId]', err);
+        res.status(500).json({ success: false, message: 'Failed to generate next ID.' });
+    }
 };
 
 const fetchFullIdea = async (id) => {
@@ -208,6 +218,7 @@ export const createIdea = async (req, res) => {
             title, category, priority, status, description, location, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
+            custom_sms_message,
         } = req.body;
 
         if (!title || !complainant_name || !phone) {
@@ -251,6 +262,15 @@ export const createIdea = async (req, res) => {
         const newId = result.insertId;
         await logActivity(newId, `Idea "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
         auditLog(req, { action: 'Created', module: 'Ideas', details: `Idea filed — "${title}" (${reference_no})`, resource: `ideas/${newId}`, severity: 'info' });
+
+        // Fire-and-forget: SMS confirmation to complainant
+        // Admin may supply a custom message via the notification drawer — prefer that if present.
+        const smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
+            name: complainant_name,
+            referenceNo: reference_no,
+            moduleLabel: 'Idea',
+        });
+        sendSMSSafe(phone, smsBody);
 
         const idea = await fetchFullIdea(newId);
         res.status(201).json({ success: true, message: 'Idea created successfully.', data: idea });
@@ -379,7 +399,7 @@ export const deleteIdea = async (req, res) => {
 export const addIdeaUpdate = async (req, res) => {
     try {
         const { id } = req.params;
-        const { type, title, note } = req.body;
+        const { type, title, note, notify_complainant } = req.body;
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
@@ -411,6 +431,22 @@ export const addIdeaUpdate = async (req, res) => {
 
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Ideas', details: `Added update to Idea ID ${id}`, resource: `ideas/${id}`, severity: 'info' });
+
+        // Fire-and-forget: SMS follow-up if admin chose to notify complainant
+        if (notify_complainant === 'true' || notify_complainant === true) {
+            const [[rec]] = await pool.query(
+                'SELECT complainant_name, phone, department, status, reference_no FROM ideas WHERE id = ?', [id]
+            );
+            if (rec?.phone) {
+                sendSMSSafe(rec.phone, followUpUpdateSMS({
+                    name: rec.complainant_name,
+                    referenceNo: rec.reference_no,
+                    status: rec.status,
+                    department: rec.department,
+                }));
+            }
+        }
+
         const [[row]] = await pool.query('SELECT * FROM idea_updates WHERE id = ?', [updateId]);
         res.status(201).json({ success: true, data: row });
     } catch (err) {
