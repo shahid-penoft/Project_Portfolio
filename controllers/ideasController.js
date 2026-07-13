@@ -399,7 +399,7 @@ export const deleteIdea = async (req, res) => {
 export const addIdeaUpdate = async (req, res) => {
     try {
         const { id } = req.params;
-        const { type, title, note, notify_complainant } = req.body;
+        const { type, title, note, notify_complainant, custom_sms_message } = req.body;
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
@@ -438,12 +438,13 @@ export const addIdeaUpdate = async (req, res) => {
                 'SELECT complainant_name, phone, department, status, reference_no FROM ideas WHERE id = ?', [id]
             );
             if (rec?.phone) {
-                sendSMSSafe(rec.phone, followUpUpdateSMS({
+                const finalSms = custom_sms_message?.trim() || followUpUpdateSMS({
                     name: rec.complainant_name,
                     referenceNo: rec.reference_no,
                     status: rec.status,
                     department: rec.department,
-                }));
+                });
+                sendSMSSafe(rec.phone, finalSms);
             }
         }
 
