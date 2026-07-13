@@ -111,25 +111,6 @@ export const uploadIcon = multer({
     limits: { fileSize: 2 * 1024 * 1024 }, // 2 MB for icons
 }).single('icon');
 
-// ─── CM Funds documents uploads ───────────────────────────────
-const cmFundsStorage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const docDir = path.join(uploadDir, 'cm_fund_documents');
-        if (!fs.existsSync(docDir)) fs.mkdirSync(docDir, { recursive: true });
-        cb(null, docDir);
-    },
-    filename: (req, file, cb) => {
-        const name = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '-');
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + '-' + name);
-    },
-});
-
-export const uploadCMFundDocs = multer({
-    storage: cmFundsStorage,
-    fileFilter,
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB per file
-}).any();
 
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>

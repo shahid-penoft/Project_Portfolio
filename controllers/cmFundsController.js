@@ -56,7 +56,7 @@ export const listRequests = async (req, res) => {
       queryParams.push(priorities);
     }
     if (search) {
-      baseQuery += ` AND (r.applicant_name LIKE ? OR r.id LIKE ? OR c.name LIKE ? OR o.full_name LIKE ?)`;
+      baseQuery += ` AND (r.applicant_name LIKE ? OR r.id LIKE ? OR c.label LIKE ? OR o.full_name LIKE ?)`;
       queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
@@ -284,13 +284,13 @@ export const getRequest = async (req, res) => {
     const { id } = req.params;
     const [rows] = await pool.query(`
       SELECT r.*, 
-             c.name as category_name,
+             c.label as category_name,
              u.full_name as submitted_by_name,
              o.full_name as assigned_officer_name,
              lb.name as local_body_name,
              w.name as ward_name
       FROM cm_fund_requests r
-      LEFT JOIN cm_fund_categories c ON r.category_id = c.id
+      LEFT JOIN mla_dropdown_lists c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
       LEFT JOIN admin_users o ON r.assigned_officer_id = o.id
       LEFT JOIN local_bodies lb ON r.local_body_id = lb.id

@@ -103,19 +103,19 @@ export const listCategories = async (req, res) => {
 
 export const addCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, applicationType = 'General' } = req.body;
     if (!name) return res.status(400).json({ error: 'Category name is required' });
 
     const [result] = await pool.query(
-      `INSERT INTO cm_fund_categories (name) VALUES (?)`,
-      [name]
+      `INSERT INTO cm_fund_categories (name, application_type) VALUES (?, ?)`,
+      [name, applicationType]
     );
 
     res.status(201).json({ message: 'Category added successfully', id: result.insertId });
   } catch (err) {
     console.error('Error in addCategory:', err);
     if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(400).json({ error: 'Category name already exists' });
+      return res.status(400).json({ error: 'Category name already exists for this type' });
     }
     res.status(500).json({ error: 'Failed to add category' });
   }
