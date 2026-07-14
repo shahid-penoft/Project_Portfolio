@@ -234,11 +234,11 @@ export const getComplaints = async (req, res) => {
         );
 
         const [rows] = await pool.query(`
-            SELECT c.id, c.reference_no, c.title, c.category, c.priority, c.status,
+            SELECT c.id, c.reference_no, c.title, c.category, c.priority, c.status, c.description,
                    c.complainant_name, c.phone, c.date_filed, c.created_at, c.is_deleted,
                    c.department AS department_name,
                    lb.name AS local_body_name,
-                   lbw.ward_no
+                   lbw.ward_no, lbw.place_name AS ward_name
             FROM complaints c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id

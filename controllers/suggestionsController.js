@@ -148,11 +148,11 @@ export const getSuggestions = async (req, res) => {
         );
 
         const [rows] = await pool.query(`
-            SELECT i.id, i.reference_no, i.title, i.category, i.priority, i.status,
+            SELECT i.id, i.reference_no, i.title, i.category, i.priority, i.status, i.description,
                    i.complainant_name, i.phone, i.date_filed, i.created_at, i.is_deleted,
                    i.department AS department_name,
                    lb.name AS local_body_name,
-                   lbw.ward_no
+                   lbw.ward_no, lbw.place_name AS ward_name
             FROM suggestions i
             LEFT JOIN local_bodies     lb  ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON i.ward_id = lbw.id
