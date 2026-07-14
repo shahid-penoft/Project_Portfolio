@@ -92,8 +92,8 @@ const fetchFullSuggestion = async (id) => {
                 url:  a.file_url,
             })),
     }));
-    const media       = allMedia.filter(m => !m.update_id);
-    const attachments = allAttachments.filter(a => !a.update_id);
+    const media       = allMedia;
+    const attachments = allAttachments;
     const [team] = await pool.query(`
         SELECT it.id, it.role_label, it.created_at,
                au.id as admin_user_id, au.full_name as name, au.email
