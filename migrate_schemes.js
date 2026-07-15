@@ -4,27 +4,39 @@ const runMigration = async () => {
     try {
         console.log('Starting migration for welfare schemes...');
 
+        await pool.query(`DROP TABLE IF EXISTS scheme_applications;`);
+        console.log('Dropped scheme_applications table if existed.');
+
+        await pool.query(`DROP TABLE IF EXISTS welfare_schemes;`);
+        console.log('Dropped welfare_schemes table if existed.');
+
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS welfare_schemes (
+            CREATE TABLE welfare_schemes (
                 id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 scheme_ref VARCHAR(20) UNIQUE,
                 title VARCHAR(255) NOT NULL,
-                description TEXT,
+                scheme_status ENUM('Active', 'Expired', 'On Hold') DEFAULT 'Active',
+                category VARCHAR(100),
+                domain VARCHAR(100),
                 deadline DATE NULL,
-                status ENUM('active','expired') DEFAULT 'active',
-                user_benefits JSON,
-                eligibilities JSON,
-                supporting_documents JSON,
-                attachments JSON,
+                status ENUM('Draft', 'Scheduled', 'Published') DEFAULT 'Draft',
+                cover_image VARCHAR(500),
+                description TEXT,
                 features JSON,
+                show_action_button BOOLEAN DEFAULT FALSE,
+                action_button_label VARCHAR(100),
+                action_button_url VARCHAR(500),
+                eligibilities JSON,
+                attachments JSON,
+                show_on_website BOOLEAN DEFAULT FALSE,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             );
         `);
-        console.log('welfare_schemes table created or exists.');
+        console.log('welfare_schemes table created.');
 
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS scheme_applications (
+            CREATE TABLE scheme_applications (
                 id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
                 reference_id VARCHAR(20) UNIQUE,
                 scheme_id INT UNSIGNED NOT NULL,
@@ -42,7 +54,7 @@ const runMigration = async () => {
                 FOREIGN KEY (constituent_id) REFERENCES constituent_users(id) ON DELETE SET NULL
             );
         `);
-        console.log('scheme_applications table created or exists.');
+        console.log('scheme_applications table created.');
 
         console.log('Migration completed successfully.');
         process.exit(0);

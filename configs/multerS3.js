@@ -150,10 +150,19 @@ export const uploadIssueAttachments = multer({
 
 // ─── Scheme Uploads ───────────────────────────────────────
 export const uploadSchemeAttachments = multer({
-    storage: multerS3(s3StorageOptions('schemes/attachments')),
+    storage: multerS3(s3StorageOptions('schemes')),
     fileFilter,
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB — PDFs & docs
-}).array('files', 5);
+    limits: { fileSize: 20 * 1024 * 1024 },
+}).fields([
+    { name: 'coverImage', maxCount: 1 },
+    { name: 'files', maxCount: 5 }
+]);
+
+export const uploadSchemeApplicationDocs = multer({
+    storage: multerS3(s3StorageOptions('schemes/applications')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB max
+}).array('files', 10);
 
 // ─── Idea Uploads ────────────────────────────────────────
 export const uploadIdeaMediaS3 = multer({

@@ -1,6 +1,7 @@
 import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
-import { runMulter, uploadJobDocuments, uploadSchemeAttachments } from '../configs/multerS3.js'; 
+import { runMulter, uploadSchemeApplicationDocs, uploadSchemeAttachments } from '../configs/multerS3.js';
+import { logActivity } from './teamsLogController.js';
 
 // ─── HELPER: Auto-expire schemes ──────────────────────────────
 const updateExpiredSchemes = async () => {
@@ -16,11 +17,18 @@ const formatScheme = (row) => ({
     ...row,
     id: row.scheme_ref, // UI expects string ID 'SCH-001'
     numeric_id: row.id, // Internal ID
-    userBenefits: typeof row.user_benefits === 'string' ? JSON.parse(row.user_benefits || '[]') : row.user_benefits || [],
-    eligibilities: typeof row.eligibilities === 'string' ? JSON.parse(row.eligibilities || '[]') : row.eligibilities || [],
-    supportingDocuments: typeof row.supporting_documents === 'string' ? JSON.parse(row.supporting_documents || '[]') : row.supporting_documents || [],
+    schemeStatus: row.scheme_status,
+    category: row.category,
+    domain: row.domain,
+    publish_status: row.status,
     features: typeof row.features === 'string' ? JSON.parse(row.features || '[]') : row.features || [],
+    eligibilities: typeof row.eligibilities === 'string' ? JSON.parse(row.eligibilities || '[]') : row.eligibilities || [],
     attachments: typeof row.attachments === 'string' ? JSON.parse(row.attachments || '[]') : row.attachments || [],
+    showActionButton: !!row.show_action_button,
+    actionButtonLabel: row.action_button_label || '',
+    actionButtonUrl: row.action_button_url || '',
+    showOnWebsite: !!row.show_on_website,
+    coverImage: row.cover_image || '',
     deadline: row.deadline ? new Date(row.deadline).toISOString().split('T')[0] : null,
 });
 
@@ -101,7 +109,11 @@ export const createScheme = async (req, res) => {
     try {
         await runMulter(uploadSchemeAttachments, req, res);
 
-        let { title, description, deadline, status, userBenefits, eligibilities, supportingDocuments, features } = req.body;
+        let { 
+            title, schemeStatus, category, domain, deadline, status, 
+            description, features, showActionButton, actionButtonLabel, 
+            actionButtonUrl, eligibilities, showOnWebsite 
+        } = req.body;
 
         if (!title) {
             return errorResponse(res, 'Title is required.', 400);
@@ -111,14 +123,18 @@ export const createScheme = async (req, res) => {
             try { return JSON.parse(str); } catch { return []; }
         };
 
-        userBenefits = typeof userBenefits === 'string' ? parseJSON(userBenefits) : (userBenefits || []);
-        eligibilities = typeof eligibilities === 'string' ? parseJSON(eligibilities) : (eligibilities || []);
-        supportingDocuments = typeof supportingDocuments === 'string' ? parseJSON(supportingDocuments) : (supportingDocuments || []);
         features = typeof features === 'string' ? parseJSON(features) : (features || []);
+        eligibilities = typeof eligibilities === 'string' ? parseJSON(eligibilities) : (eligibilities || []);
+        
+        const isShowActionButton = showActionButton === 'true' || showActionButton === true;
+        const isShowOnWebsite = showOnWebsite === 'true' || showOnWebsite === true;
+
+        const coverImageFile = req.files && req.files['coverImage'] ? req.files['coverImage'][0] : null;
+        const coverImageUrl = coverImageFile ? (coverImageFile.location || coverImageFile.path) : null;
 
         let attachments = [];
-        if (req.files && req.files.length > 0) {
-            attachments = req.files.map(f => ({
+        if (req.files && req.files['files'] && req.files['files'].length > 0) {
+            attachments = req.files['files'].map(f => ({
                 name: f.originalname,
                 url: f.location || f.path,
                 type: f.mimetype,
@@ -131,19 +147,27 @@ export const createScheme = async (req, res) => {
         const schemeRef = `SCH-${nextId.toString().padStart(3, '0')}`;
 
         const [result] = await pool.query(
-            `INSERT INTO welfare_schemes (scheme_ref, title, description, deadline, status, user_benefits, eligibilities, supporting_documents, features, attachments)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO welfare_schemes 
+             (scheme_ref, title, scheme_status, category, domain, deadline, status, cover_image, description, features, show_action_button, action_button_label, action_button_url, eligibilities, attachments, show_on_website)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
-                schemeRef, title, description || null, deadline || null, status || 'active',
-                JSON.stringify(userBenefits),
-                JSON.stringify(eligibilities),
-                JSON.stringify(supportingDocuments),
-                JSON.stringify(features),
-                JSON.stringify(attachments)
+                schemeRef, title, schemeStatus || 'Active', category || null, domain || null, 
+                deadline || null, status || 'Draft', coverImageUrl, description || null,
+                JSON.stringify(features), isShowActionButton, actionButtonLabel || null, 
+                actionButtonUrl || null, JSON.stringify(eligibilities),
+                JSON.stringify(attachments), isShowOnWebsite
             ]
         );
 
         const [[row]] = await pool.query('SELECT * FROM welfare_schemes WHERE id = ?', [result.insertId]);
+
+        await logActivity(req, {
+            action: 'Created',
+            module: 'Welfare Schemes',
+            details: `Created new scheme: ${title}`,
+            resource: schemeRef
+        });
+
         return successResponse(res, { data: formatScheme(row) }, 'Scheme created successfully.', 201);
     } catch (err) {
         console.error('[createScheme]', err);
@@ -160,13 +184,17 @@ export const updateScheme = async (req, res) => {
         await runMulter(uploadSchemeAttachments, req, res);
 
         const { id } = req.params; // scheme_ref or id
-        let { title, description, deadline, status, userBenefits, eligibilities, supportingDocuments, features, existingAttachments } = req.body;
+        let { 
+            title, schemeStatus, category, domain, deadline, status, 
+            description, features, showActionButton, actionButtonLabel, 
+            actionButtonUrl, eligibilities, showOnWebsite, existingAttachments 
+        } = req.body;
 
         if (!title) {
             return errorResponse(res, 'Title is required.', 400);
         }
 
-        const query = isNaN(id) ? 'SELECT id, attachments FROM welfare_schemes WHERE scheme_ref = ?' : 'SELECT id, attachments FROM welfare_schemes WHERE id = ?';
+        const query = isNaN(id) ? 'SELECT id, attachments, cover_image FROM welfare_schemes WHERE scheme_ref = ?' : 'SELECT id, attachments, cover_image FROM welfare_schemes WHERE id = ?';
         const [[existing]] = await pool.query(query, [id]);
         
         if (!existing) return errorResponse(res, 'Scheme not found.', 404);
@@ -175,15 +203,22 @@ export const updateScheme = async (req, res) => {
             try { return JSON.parse(str); } catch { return []; }
         };
 
-        userBenefits = typeof userBenefits === 'string' ? parseJSON(userBenefits) : (userBenefits || []);
-        eligibilities = typeof eligibilities === 'string' ? parseJSON(eligibilities) : (eligibilities || []);
-        supportingDocuments = typeof supportingDocuments === 'string' ? parseJSON(supportingDocuments) : (supportingDocuments || []);
         features = typeof features === 'string' ? parseJSON(features) : (features || []);
+        eligibilities = typeof eligibilities === 'string' ? parseJSON(eligibilities) : (eligibilities || []);
         existingAttachments = typeof existingAttachments === 'string' ? parseJSON(existingAttachments) : (existingAttachments || []);
+        
+        const isShowActionButton = showActionButton === 'true' || showActionButton === true;
+        const isShowOnWebsite = showOnWebsite === 'true' || showOnWebsite === true;
+
+        const coverImageFile = req.files && req.files['coverImage'] ? req.files['coverImage'][0] : null;
+        let coverImageUrl = existing.cover_image;
+        if (coverImageFile) {
+            coverImageUrl = coverImageFile.location || coverImageFile.path;
+        }
 
         let attachments = [...existingAttachments];
-        if (req.files && req.files.length > 0) {
-            const newAttachments = req.files.map(f => ({
+        if (req.files && req.files['files'] && req.files['files'].length > 0) {
+            const newAttachments = req.files['files'].map(f => ({
                 name: f.originalname,
                 url: f.location || f.path,
                 type: f.mimetype,
@@ -193,20 +228,30 @@ export const updateScheme = async (req, res) => {
         }
 
         await pool.query(
-            `UPDATE welfare_schemes SET title = ?, description = ?, deadline = ?, status = ?, user_benefits = ?, eligibilities = ?, supporting_documents = ?, features = ?, attachments = ?
+            `UPDATE welfare_schemes SET 
+                title = ?, scheme_status = ?, category = ?, domain = ?, deadline = ?, status = ?, 
+                cover_image = ?, description = ?, features = ?, show_action_button = ?, 
+                action_button_label = ?, action_button_url = ?, eligibilities = ?, attachments = ?, show_on_website = ?
              WHERE id = ?`,
             [
-                title, description || null, deadline || null, status || 'active',
-                JSON.stringify(userBenefits),
-                JSON.stringify(eligibilities),
-                JSON.stringify(supportingDocuments),
-                JSON.stringify(features),
-                JSON.stringify(attachments),
+                title, schemeStatus || 'Active', category || null, domain || null, 
+                deadline || null, status || 'Draft', coverImageUrl, description || null,
+                JSON.stringify(features), isShowActionButton, actionButtonLabel || null, 
+                actionButtonUrl || null, JSON.stringify(eligibilities),
+                JSON.stringify(attachments), isShowOnWebsite,
                 existing.id
             ]
         );
 
         const [[row]] = await pool.query('SELECT * FROM welfare_schemes WHERE id = ?', [existing.id]);
+        
+        await logActivity(req, {
+            action: 'Updated',
+            module: 'Welfare Schemes',
+            details: `Updated scheme: ${title}`,
+            resource: row.scheme_ref
+        });
+        
         return successResponse(res, { data: formatScheme(row) }, 'Scheme updated successfully.');
     } catch (err) {
         console.error('[updateScheme]', err);
@@ -224,6 +269,14 @@ export const deleteScheme = async (req, res) => {
         const query = isNaN(id) ? 'DELETE FROM welfare_schemes WHERE scheme_ref = ?' : 'DELETE FROM welfare_schemes WHERE id = ?';
         const [result] = await pool.query(query, [id]);
         if (!result.affectedRows) return errorResponse(res, 'Scheme not found.', 404);
+        
+        await logActivity(req, {
+            action: 'Deleted',
+            module: 'Welfare Schemes',
+            details: `Deleted scheme: ${id}`,
+            resource: String(id)
+        });
+
         return successResponse(res, {}, 'Scheme deleted successfully.');
     } catch (err) {
         console.error('[deleteScheme]', err);
@@ -237,7 +290,7 @@ export const deleteScheme = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const submitSchemeApplication = async (req, res) => {
     try {
-        await runMulter(uploadJobDocuments, req, res);
+        await runMulter(uploadSchemeApplicationDocs, req, res);
 
         const { id } = req.params; // scheme_ref
         const query = isNaN(id) ? 'SELECT id FROM welfare_schemes WHERE scheme_ref = ?' : 'SELECT id FROM welfare_schemes WHERE id = ?';
@@ -440,6 +493,13 @@ export const updateSchemeApplicationStatus = async (req, res) => {
         if (result.affectedRows === 0) {
             return errorResponse(res, 'Application not found.', 404);
         }
+
+        await logActivity(req, {
+            action: 'Updated',
+            module: 'Welfare Schemes',
+            details: `Updated application status to ${status}`,
+            resource: String(appId)
+        });
 
         return successResponse(res, {}, 'Application status updated successfully.');
     } catch (err) {

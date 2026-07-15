@@ -54,6 +54,8 @@ import cmFundsRoutes from './routes/cmFundsRoutes.js';
 import teamsLogRoutes from './routes/teamsLogRoutes.js';
 import notificationsRoutes from './routes/notificationsRoutes.js';
 
+import busTimingsRoutes from './routes/busTimingsRoutes.js';
+
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -148,6 +150,7 @@ app.use('/api/admin/letters', lettersRoutes);
 app.use('/api/admin/cm-funds', cmFundsRoutes);
 app.use('/api/admin/teams-log', teamsLogRoutes);
 app.use('/api/notifications',  notificationsRoutes);
+app.use('/api/bus-timings', busTimingsRoutes);
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
     res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` })
