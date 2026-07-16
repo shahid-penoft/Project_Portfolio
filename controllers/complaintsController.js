@@ -3,6 +3,8 @@ import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { logActivity as auditLog } from './teamsLogController.js';
 import { sendSMSSafe } from '../services/smsService.js';
 import { submissionConfirmationSMS, followUpUpdateSMS } from '../services/smsTemplates.js';
+import { createNotification, broadcastNotification } from '../utils/notificationHelper.js';
+import { notifyUser } from '../utils/userNotificationHelper.js';
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -361,6 +363,14 @@ export const createComplaint = async (req, res) => {
         const newId = result.insertId;
         await logActivity(newId, `Complaint "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
         auditLog(req, { action: 'Created', module: 'Complaints', details: `Complaint filed — "${title}" (${reference_no})`, resource: `complaints/${newId}`, severity: 'info' });
+        // Notify all admins about new complaint
+        broadcastNotification({
+          title: `New Complaint ${reference_no}`,
+          message: `"${title}" filed by ${complainant_name}.`,
+          type: 'alert', module: 'Complaints',
+          record_id: newId, record_ref: reference_no,
+          link_path: `/mlaconnect/complaints/${newId}`,
+        });
 
         // Fire-and-forget: SMS confirmation to complainant
         // Admin may supply a custom message via the notification drawer — prefer that if present.
@@ -443,6 +453,27 @@ export const updateComplaintStatus = async (req, res) => {
 
         await logActivity(id, `Status changed to "${status}".`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Complaints', details: `Complaint ID ${id} status changed to "${status}"`, resource: `complaints/${id}`, severity: 'info' });
+        // Notify team members of this complaint
+        const [teamMembers] = await pool.query('SELECT admin_user_id FROM complaint_team WHERE complaint_id = ?', [id]);
+        const [[rec]] = await pool.query('SELECT reference_no FROM complaints WHERE id = ?', [id]);
+        teamMembers.forEach(m => createNotification(m.admin_user_id, {
+          title: `Status updated on Complaint ${rec?.reference_no || `#${id}`}`,
+          message: `Status changed to "${status}".`,
+          type: 'info', module: 'Complaints',
+          record_id: Number(id), record_ref: rec?.reference_no || null,
+          link_path: `/mlaconnect/complaints/${id}`,
+        }));
+        // Notify the constituent who filed this complaint
+        const [[cFiler]] = await pool.query('SELECT constituent_user_id, reference_no FROM complaints WHERE id = ?', [id]);
+        if (cFiler?.constituent_user_id) {
+          notifyUser(cFiler.constituent_user_id, {
+            title: `Your Complaint ${cFiler.reference_no || `#${id}`} was updated`,
+            message: `Status changed to "${status}". Check your submissions for details.`,
+            type: 'info', module: 'Complaints',
+            record_ref: cFiler.reference_no || null,
+            link_path: `/mla-connect/submissions/${id}`,
+          });
+        }
         res.json({ success: true, message: `Status updated to ${status}.` });
     } catch (err) {
         console.error('[updateComplaintStatus]', err);
@@ -553,6 +584,27 @@ export const addComplaintUpdate = async (req, res) => {
 
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Complaints', details: `Added update to Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'info' });
+        // Notify team members of the new update
+        const [cTeam] = await pool.query('SELECT admin_user_id FROM complaint_team WHERE complaint_id = ?', [id]);
+        const [[cRec2]] = await pool.query('SELECT reference_no FROM complaints WHERE id = ?', [id]);
+        cTeam.forEach(m => createNotification(m.admin_user_id, {
+          title: `New update on Complaint ${cRec2?.reference_no || `#${id}`}`,
+          message: `"${title}" — a new update has been added.`,
+          type: 'message', module: 'Complaints',
+          record_id: Number(id), record_ref: cRec2?.reference_no || null,
+          link_path: `/mlaconnect/complaints/${id}`,
+        }));
+        // Notify the constituent who filed this complaint about the new update
+        const [[cFiler2]] = await pool.query('SELECT constituent_user_id, reference_no FROM complaints WHERE id = ?', [id]);
+        if (cFiler2?.constituent_user_id) {
+          notifyUser(cFiler2.constituent_user_id, {
+            title: `New update on your Complaint ${cFiler2.reference_no || `#${id}`}`,
+            message: `"${title}" — the team has added a new update to your complaint.`,
+            type: 'message', module: 'Complaints',
+            record_ref: cFiler2.reference_no || null,
+            link_path: `/mla-connect/submissions/${id}`,
+          });
+        }
 
         // Fire-and-forget: SMS follow-up if admin chose to notify complainant
         if (notify_complainant === 'true' || notify_complainant === true) {
@@ -715,6 +767,15 @@ export const addComplaintTeamMember = async (req, res) => {
             );
             await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);
             auditLog(req, { action: 'Updated', module: 'Complaints', details: `Added team member "${adminUser.full_name}" to Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'info' });
+            // Notify the assigned admin
+            const [[cRef]] = await pool.query('SELECT reference_no FROM complaints WHERE id = ?', [id]);
+            createNotification(admin_user_id, {
+              title: `You've been assigned to Complaint ${cRef?.reference_no || `#${id}`}`,
+              message: role_label ? `Role: ${role_label}` : 'You have been added to the complaint team.',
+              type: 'alert', module: 'Complaints',
+              record_id: Number(id), record_ref: cRef?.reference_no || null,
+              link_path: `/mlaconnect/complaints/${id}`,
+            });
             const [[row]] = await pool.query(`
                 SELECT ct.id, ct.role_label, ct.created_at,
                        au.id as admin_user_id, au.full_name as name, au.email
@@ -748,9 +809,17 @@ export const removeComplaintTeamMember = async (req, res) => {
         `, [memberId, id]);
         if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
 
+        const [[cRef2]] = await pool.query('SELECT reference_no, id as cid FROM complaint_team ct JOIN complaints c ON c.id=ct.complaint_id WHERE ct.id = ?', [memberId]);
+        const [[removedMember]] = await pool.query('SELECT admin_user_id FROM complaint_team WHERE id = ?', [memberId]);
         await pool.query('DELETE FROM complaint_team WHERE id = ?', [memberId]);
         await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Complaints', details: `Removed team member "${row.full_name}" from Complaint ID ${id}`, resource: `complaints/${id}`, severity: 'warning' });
+        if (removedMember) createNotification(removedMember.admin_user_id, {
+          title: `Removed from Complaint #${id}`,
+          message: `You have been removed from the complaint team.`,
+          type: 'info', module: 'Complaints', record_id: Number(id),
+          link_path: `/mlaconnect/complaints/${id}`,
+        });
         res.json({ success: true, message: 'Team member removed.' });
     } catch (err) {
         console.error('[removeComplaintTeamMember]', err);

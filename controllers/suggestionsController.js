@@ -3,6 +3,8 @@ import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { logActivity as auditLog } from './teamsLogController.js';
 import { sendSMSSafe } from '../services/smsService.js';
 import { submissionConfirmationSMS, followUpUpdateSMS } from '../services/smsTemplates.js';
+import { createNotification, broadcastNotification } from '../utils/notificationHelper.js';
+import { notifyUser } from '../utils/userNotificationHelper.js';
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -263,6 +265,13 @@ export const createSuggestion = async (req, res) => {
         const newId = result.insertId;
         await logActivity(newId, `Suggestion "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
         auditLog(req, { action: 'Created', module: 'Suggestions', details: `Suggestion filed — "${title}" (${reference_no})`, resource: `suggestions/${newId}`, severity: 'info' });
+        broadcastNotification({
+          title: `New Suggestion ${reference_no}`,
+          message: `"${title}" submitted by ${complainant_name}.`,
+          type: 'message', module: 'Suggestions',
+          record_id: newId, record_ref: reference_no,
+          link_path: `/mlaconnect/suggestions/${newId}`,
+        });
 
         // Fire-and-forget: SMS confirmation to complainant
         // Admin may supply a custom message via the notification drawer — prefer that if present.
@@ -337,6 +346,26 @@ export const updateSuggestionStatus = async (req, res) => {
 
         await logActivity(id, `Status changed to "${status}".`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Suggestions', details: `Suggestion ID ${id} status changed to "${status}"`, resource: `suggestions/${id}`, severity: 'info' });
+        const [sTeam] = await pool.query('SELECT admin_user_id FROM suggestion_team WHERE suggestion_id = ?', [id]);
+        const [[sRec]] = await pool.query('SELECT reference_no FROM suggestions WHERE id = ?', [id]);
+        sTeam.forEach(m => createNotification(m.admin_user_id, {
+          title: `Status updated on Suggestion ${sRec?.reference_no || `#${id}`}`,
+          message: `Status changed to "${status}".`,
+          type: 'info', module: 'Suggestions',
+          record_id: Number(id), record_ref: sRec?.reference_no || null,
+          link_path: `/mlaconnect/suggestions/${id}`,
+        }));
+        // Notify the constituent who filed this suggestion
+        const [[sFiler]] = await pool.query('SELECT constituent_user_id, reference_no FROM suggestions WHERE id = ?', [id]);
+        if (sFiler?.constituent_user_id) {
+          notifyUser(sFiler.constituent_user_id, {
+            title: `Your Suggestion ${sFiler.reference_no || `#${id}`} was updated`,
+            message: `Status changed to "${status}". Check your submissions for details.`,
+            type: 'info', module: 'Suggestions',
+            record_ref: sFiler.reference_no || null,
+            link_path: `/mla-connect/submissions/${id}`,
+          });
+        }
         res.json({ success: true, message: `Status updated to ${status}.` });
     } catch (err) {
         console.error('[updateSuggestionStatus]', err);
@@ -436,6 +465,27 @@ export const addSuggestionUpdate = async (req, res) => {
 
         await logActivity(id, `Update added: "${title}"`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Suggestions', details: `Added update to Suggestion ID ${id}`, resource: `suggestions/${id}`, severity: 'info' });
+
+        // Notify admin team members
+        const [sUpdateTeam] = await pool.query('SELECT admin_user_id FROM suggestion_team WHERE suggestion_id = ?', [id]);
+        const [[sRec2]] = await pool.query('SELECT reference_no, constituent_user_id FROM suggestions WHERE id = ?', [id]);
+        sUpdateTeam.forEach(m => createNotification(m.admin_user_id, {
+          title: `New update on Suggestion ${sRec2?.reference_no || `#${id}`}`,
+          message: `"${title}" — a new update has been added.`,
+          type: 'message', module: 'Suggestions',
+          record_id: Number(id), record_ref: sRec2?.reference_no || null,
+          link_path: `/mlaconnect/suggestions/${id}`,
+        }));
+        // Notify the constituent who filed this suggestion about the new update
+        if (sRec2?.constituent_user_id) {
+          notifyUser(sRec2.constituent_user_id, {
+            title: `New update on your Suggestion ${sRec2.reference_no || `#${id}`}`,
+            message: `"${title}" — the team has added a new update to your suggestion.`,
+            type: 'message', module: 'Suggestions',
+            record_ref: sRec2.reference_no || null,
+            link_path: `/mla-connect/submissions/${id}`,
+          });
+        }
 
         // Fire-and-forget: SMS follow-up if admin chose to notify complainant
         if (notify_complainant === 'true' || notify_complainant === true) {
@@ -579,6 +629,14 @@ export const addSuggestionTeamMember = async (req, res) => {
             );
             await logActivity(id, `Team member "${adminUser.full_name}" added${role_label ? ` as ${role_label}` : ''}.`, req.admin?.id);
             auditLog(req, { action: 'Updated', module: 'Suggestions', details: `Added team member "${adminUser.full_name}" to Suggestion ID ${id}`, resource: `suggestions/${id}`, severity: 'info' });
+            const [[sRef]] = await pool.query('SELECT reference_no FROM suggestions WHERE id = ?', [id]);
+            createNotification(admin_user_id, {
+              title: `You've been assigned to Suggestion ${sRef?.reference_no || `#${id}`}`,
+              message: role_label ? `Role: ${role_label}` : 'You have been added to the suggestion team.',
+              type: 'alert', module: 'Suggestions',
+              record_id: Number(id), record_ref: sRef?.reference_no || null,
+              link_path: `/mlaconnect/suggestions/${id}`,
+            });
             const [[row]] = await pool.query(`
                 SELECT it.id, it.role_label, it.created_at,
                        au.id as admin_user_id, au.full_name as name, au.email
@@ -609,9 +667,16 @@ export const removeSuggestionTeamMember = async (req, res) => {
         `, [memberId, id]);
         if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
 
+        const [[sRemovedMember]] = await pool.query('SELECT admin_user_id FROM suggestion_team WHERE id = ?', [memberId]);
         await pool.query('DELETE FROM suggestion_team WHERE id = ?', [memberId]);
         await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Suggestions', details: `Removed team member "${row.full_name}" from Suggestion ID ${id}`, resource: `suggestions/${id}`, severity: 'warning' });
+        if (sRemovedMember) createNotification(sRemovedMember.admin_user_id, {
+          title: `Removed from Suggestion #${id}`,
+          message: 'You have been removed from the suggestion team.',
+          type: 'info', module: 'Suggestions', record_id: Number(id),
+          link_path: `/mlaconnect/suggestions/${id}`,
+        });
         res.json({ success: true, message: 'Team member removed.' });
     } catch (err) {
         console.error('[removeSuggestionTeamMember]', err);

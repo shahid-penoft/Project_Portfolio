@@ -1,6 +1,7 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 import { logActivity as auditLog } from './teamsLogController.js';
+import { broadcastNotification } from '../utils/notificationHelper.js';
 
 // ── Internal helper ────────────────────────────────────────────
 const logActivity = async (connection, user_name, action, initials = 'MC') => {
@@ -145,6 +146,13 @@ export const createCSROrganisation = async (req, res) => {
         await conn.commit();
 
         auditLog(req, { action: 'Created', module: 'CSR', details: `CSR Organisation created — "${name.trim()}"`, resource: `csr/organisations/${orgId}`, severity: 'info' });
+        // Notify all admins
+        broadcastNotification({
+          title: `New CSR Partner: ${name.trim()}`,
+          message: `A new CSR organisation "${name.trim()}" has been added.`,
+          type: 'csr', module: 'CSR',
+          record_id: orgId, link_path: `/mlaconnect/csr/organisations/${orgId}`,
+        });
         const [newRows] = await db.query('SELECT * FROM csr_organisations WHERE id = ?', [orgId]);
         const org = newRows[0];
         try { org.domains = JSON.parse(org.domains || '[]'); } catch { org.domains = []; }
@@ -412,6 +420,13 @@ export const createCSRFollowup = async (req, res) => {
         await conn.commit();
 
         const [rows] = await db.query('SELECT * FROM csr_followups WHERE id = ?', [result.insertId]);
+        // Notify all admins of scheduled followup
+        broadcastNotification({
+          title: `CSR Follow-up Scheduled: ${org_name || 'Organisation'}`,
+          message: `A ${type} follow-up with "${org_name || 'a CSR partner'}" is scheduled for ${date}.`,
+          type: 'csr', module: 'CSR',
+          link_path: `/mlaconnect/csr`,
+        });
         return successResponse(res, { data: { data: rows[0] } }, 'Followup created.', 201);
     } catch (err) {
         await conn.rollback();

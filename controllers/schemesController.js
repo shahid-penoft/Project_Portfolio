@@ -2,6 +2,7 @@ import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 import { runMulter, uploadSchemeApplicationDocs, uploadSchemeAttachments } from '../configs/multerS3.js';
 import { logActivity } from './teamsLogController.js';
+import { broadcastNotification } from '../utils/notificationHelper.js';
 
 // ─── HELPER: Auto-expire schemes ──────────────────────────────
 const updateExpiredSchemes = async () => {
@@ -325,6 +326,14 @@ export const submitSchemeApplication = async (req, res) => {
             ]
         );
 
+        // Notify all admins about the new scheme application
+        const [[schemeRow]] = await pool.query('SELECT title, scheme_ref FROM welfare_schemes WHERE id = ?', [scheme.id]);
+        broadcastNotification({
+          title: `New Scheme Application — ${schemeRow?.title || ''}`,
+          message: `${applicantName} applied for ${schemeRow?.title || 'a welfare scheme'} (Ref: ${refId}).`,
+          type: 'scheme', module: 'Schemes',
+          record_ref: refId, link_path: `/mlaconnect/schemes/applications`,
+        });
         return successResponse(res, { reference_id: refId }, 'Application submitted successfully.', 201);
     } catch (err) {
         console.error('[submitSchemeApplication]', err);

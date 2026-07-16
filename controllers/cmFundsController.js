@@ -1,6 +1,7 @@
 import pool from '../configs/db.js';
 import generateCMFundsPdf from '../utils/cmFundsPdfTemplate.js';
 import { logActivity as auditLog } from './teamsLogController.js';
+import { broadcastNotification, createNotification } from '../utils/notificationHelper.js';
 
 const generateAppId = async (connection) => {
   const year = new Date().getFullYear();
@@ -207,6 +208,14 @@ export const createRequest = async (req, res) => {
 
     await connection.commit();
     auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds application submitted — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
+    // Notify all admins
+    broadcastNotification({
+      title: `New CM Fund Request ${appId}`,
+      message: `${applicantName} has submitted a new CM Fund application.`,
+      type: 'cmfund', module: 'CM Funds',
+      record_id: null, record_ref: appId,
+      link_path: `/mlaconnect/cm-funds/${appId}`,
+    });
     res.status(201).json({ message: 'Application submitted successfully', id: appId });
   } catch (err) {
     await connection.rollback();
@@ -459,6 +468,16 @@ export const updateStatus = async (req, res) => {
     await connection.commit();
     const auditSeverity = status === 'Disbursed' ? 'success' : (status === 'Rejected' ? 'error' : 'info');
     auditLog(req, { action: 'Updated', module: 'CM Funds', details: `CM Funds application ${id} status changed: ${oldStatus} → ${status}`, resource: `cm-funds/${id}`, severity: auditSeverity });
+    // Notify assigned officer if present
+    const [[cmReq]] = await pool.query('SELECT assigned_officer_id FROM cm_fund_requests WHERE id = ?', [id]);
+    if (cmReq?.assigned_officer_id) {
+      createNotification(cmReq.assigned_officer_id, {
+        title: `CM Fund ${id} status updated to ${status}`,
+        message: `Status changed from "${oldStatus}" to "${status}".`,
+        type: 'cmfund', module: 'CM Funds',
+        record_ref: id, link_path: `/mlaconnect/cm-funds/${id}`,
+      });
+    }
     res.json({ message: 'Status updated successfully' });
   } catch (err) {
     await connection.rollback();
