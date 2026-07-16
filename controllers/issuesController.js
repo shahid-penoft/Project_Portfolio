@@ -313,7 +313,7 @@ export const getIssueById = async (req, res) => {
 export const createIssue = async (req, res) => {
     try {
         const {
-            title, category, priority, status, description, location, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             custom_sms_message,
@@ -330,11 +330,11 @@ export const createIssue = async (req, res) => {
 
         const [result] = await pool.query(`
             INSERT INTO issues
-              (reference_no, title, category, priority, status, description, location, latitude, longitude, internal_note,
+              (reference_no, title, category, priority, status, description, location, address, latitude, longitude, internal_note,
                submitter_name, phone, alternative_phone, email,
                local_body_id, ward_id, department,
                constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -343,6 +343,7 @@ export const createIssue = async (req, res) => {
             status || 'Pending',
             description || null,
             location || null,
+            address || null,
             latitude || null,
             longitude || null,
             internal_note || null,
@@ -386,7 +387,7 @@ export const updateIssue = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, priority, status, description, location, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
         } = req.body;
@@ -399,6 +400,7 @@ export const updateIssue = async (req, res) => {
               status = COALESCE(?, status),
               description = COALESCE(?, description),
               location = COALESCE(?, location),
+              address = COALESCE(?, address),
               latitude = COALESCE(?, latitude),
               longitude = COALESCE(?, longitude),
               internal_note = COALESCE(?, internal_note),
@@ -412,7 +414,7 @@ export const updateIssue = async (req, res) => {
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
-            title, category, priority, status, description, location, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed, id,
         ]);
