@@ -18,12 +18,16 @@ const s3Bucket = process.env.AWS_S3_BUCKET || 'my-portfolio-bucket';
 
 // ─── File type filter ─────────────────────────────────────────
 const fileFilter = (req, file, cb) => {
+    // Decode latin1 to utf8 for international characters like Malayalam
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
     fs.appendFileSync('multer_debug.log', `fileFilter called for: ${file.originalname} mimetype: ${file.mimetype}\n`);
     // User requested to allow all file types
     cb(null, true);
 };
 
 const iconFileFilter = (req, file, cb) => {
+    // Decode latin1 to utf8 for international characters like Malayalam
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
     const allowed = [
         'image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'
     ];
@@ -44,10 +48,8 @@ const s3StorageOptions = (folder = 'uploads') => ({
     },
     key: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        // Express/Multer defaults to latin1 for filenames, breaking UTF-8 characters like Malayalam.
-        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
         // Replace spaces and invalid file system/URL characters with a hyphen, but preserve unicode letters.
-        const name = originalName.replace(/[\s\/\\:*?"<>|]/g, '-');
+        const name = file.originalname.replace(/[\s\/\\:*?"<>|]/g, '-');
         cb(null, `${folder}/${uniqueSuffix}-${name}`);
     },
 });

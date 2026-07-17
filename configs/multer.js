@@ -13,16 +13,16 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
-        // Decode latin1 to utf8 for international characters like Malayalam
-        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
         // Replace spaces and invalid file system characters, preserve unicode letters
-        const name = originalName.replace(/[\s\/\\:*?"<>|]/g, '-');
+        const name = file.originalname.replace(/[\s\/\\:*?"<>|]/g, '-');
         cb(null, name);
     },
 });
 
 // ─── File type filter ─────────────────────────────────────────
 const fileFilter = (req, file, cb) => {
+    // Decode latin1 to utf8 for international characters like Malayalam
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
     const allowed = [
         'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml',
         'video/mp4', 'video/webm', 'video/quicktime', 'application/pdf',
@@ -42,6 +42,8 @@ export const uploadDocument = multer({
 
 // ─── File type filter for icons (SVG, PNG, etc) ──────────────
 const iconFileFilter = (req, file, cb) => {
+    // Decode latin1 to utf8 for international characters like Malayalam
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
     const allowed = [
         'image/svg+xml', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'
     ];
@@ -103,10 +105,8 @@ const iconStorage = multer.diskStorage({
         cb(null, iconDir);
     },
     filename: (req, file, cb) => {
-        // Decode latin1 to utf8 for international characters like Malayalam
-        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
         // Replace spaces and invalid file system characters, preserve unicode letters
-        const name = originalName.replace(/[\s\/\\:*?"<>|]/g, '-');
+        const name = file.originalname.replace(/[\s\/\\:*?"<>|]/g, '-');
         cb(null, name);
     },
 });
