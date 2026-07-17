@@ -62,7 +62,13 @@ export const getGoverningBodies = async (req, res) => {
                 w.place_name       AS wardName,
                 w.ward_no          AS wardNumber,
                 r.label            AS headDesignation,
-                r.label            AS roleName
+                r.label            AS roleName,
+                (SELECT au.full_name 
+                 FROM governing_body_activity_logs al 
+                 LEFT JOIN admin_users au ON al.admin_user_id = au.id 
+                 WHERE al.governing_body_id = gr.id AND al.text LIKE 'Created%'
+                 ORDER BY al.created_at ASC LIMIT 1) AS createdBy,
+                (SELECT au2.full_name FROM governing_body_activity_logs al2 LEFT JOIN admin_users au2 ON al2.admin_user_id = au2.id WHERE al2.governing_body_id = gr.id AND al2.text LIKE '%trash%' ORDER BY al2.created_at DESC LIMIT 1) AS deleted_by_name
             FROM governing_representatives gr
             LEFT JOIN local_bodies lb ON gr.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON gr.ward_id = w.id

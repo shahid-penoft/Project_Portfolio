@@ -39,7 +39,7 @@ const logActivity = async (suggestionId, text, adminUserId = null) => {
 // Helper: generate reference number  S-NNN
 const generateReferenceNo = async () => {
     const [[{ maxSeq }]] = await pool.query('SELECT COALESCE(MAX(CAST(SUBSTRING(reference_no, 3) AS UNSIGNED)), 0) as maxSeq FROM suggestions WHERE reference_no LIKE "S-%"');
-    const seq = String(maxSeq + 1).padStart(3, '0');
+    const seq = String(parseInt(maxSeq, 10) + 1).padStart(3, '0');
     return `S-${seq}`;
 };
 

@@ -118,7 +118,7 @@ const logActivity = async (issueId, text, adminUserId = null) => {
 // Helper: generate reference number  P-NNN
 const generateReferenceNo = async () => {
     const [[{ maxSeq }]] = await pool.query('SELECT COALESCE(MAX(CAST(SUBSTRING(reference_no, 3) AS UNSIGNED)), 0) as maxSeq FROM issues WHERE reference_no LIKE "P-%"');
-    const seq = String(maxSeq + 1).padStart(3, '0');
+    const seq = String(parseInt(maxSeq, 10) + 1).padStart(3, '0');
     return `P-${seq}`;
 };
 
@@ -238,12 +238,13 @@ export const getIssues = async (req, res) => {
 
         const [rows] = await pool.query(`
             SELECT c.id, c.reference_no, c.title, c.category, c.issue_scope, c.priority, c.status, c.description,
-                   c.submitter_name, c.phone, c.date_filed, c.created_at, c.is_deleted,
+                   c.submitter_name, c.phone, c.date_filed, c.created_at, c.is_deleted, c.deleted_at,
                    c.department AS department_name,
                    lb.name AS local_body_name,
                    lbw.ward_no, lbw.place_name AS ward_name,
                    c.filed_by_admin_id,
-                   au.full_name AS filed_by_admin_name
+                   au.full_name AS filed_by_admin_name,
+                   (SELECT au2.full_name FROM issue_activity ia LEFT JOIN admin_users au2 ON ia.admin_user_id = au2.id WHERE ia.issue_id = c.id AND ia.text LIKE '%trash%' ORDER BY ia.created_at DESC LIMIT 1) AS deleted_by_name
             FROM issues c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id

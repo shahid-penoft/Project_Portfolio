@@ -128,9 +128,11 @@ export const getAllLetters = async (req, res) => {
             SELECT l.id, l.letter_id, l.subject, l.type, l.priority, l.status,
                    l.response_status, l.recipient_name, l.recipient_org,
                    l.reference, l.prepared_on, l.sent_on, l.trashed_at,
-                   au.full_name AS prepared_by_name
+                   au.full_name AS prepared_by_name,
+                   au2.full_name AS deleted_by_name
             FROM mla_letters l
             LEFT JOIN admin_users au ON l.prepared_by_user_id = au.id
+            LEFT JOIN admin_users au2 ON l.trashed_by_id = au2.id
             ${where}
             ORDER BY ${orderBy}
             LIMIT ? OFFSET ?
