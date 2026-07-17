@@ -23,12 +23,14 @@ const router = express.Router();
 // All routes require admin auth
 router.use(verifyToken);
 
+import { uploadLetterAttachmentsS3 } from '../configs/multerS3.js';
+
 // ── Letters ────────────────────────────────────────────────────
 router.get('/next-id',          getNextLetterId);   // must be before /:id
 router.get('/',                 getAllLetters);
-router.post('/',                createLetter);
+router.post('/',                uploadLetterAttachmentsS3, createLetter);
 router.get('/:id',              getLetterById);
-router.put('/:id',              updateLetter);
+router.put('/:id',              uploadLetterAttachmentsS3, updateLetter);
 router.delete('/:id',           deleteLetter);
 router.patch('/:id/status',     patchLetterStatus);
 router.patch('/:id/response-status', patchResponseStatus);

@@ -212,6 +212,14 @@ export const uploadCMFundDocsS3 = multer({
 }).any();
 
 
+// ─── Letters Uploads ─────────────────────────────────────────
+export const uploadLetterAttachmentsS3 = multer({
+    storage: multerS3(s3StorageOptions('letters/attachments')),
+    fileFilter,
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+}).any();
+
+
 // ─── Updates Uploads (Combined Media & Attachments) ──────────
 export const uploadComplaintUpdateFiles = multer({
     storage: multerS3(s3StorageOptions('complaints/updates')),

@@ -3,13 +3,13 @@ import generateCMFundsPdf from '../utils/cmFundsPdfTemplate.js';
 import { logActivity as auditLog } from './teamsLogController.js';
 import { broadcastNotification, createNotification } from '../utils/notificationHelper.js';
 
-const generateAppId = async (connection) => {
-  const year = new Date().getFullYear();
-  const prefix = `CMDRF-${year}-`;
+const generateAppId = async (connection, applicationType) => {
+  const isCmdrf = applicationType && applicationType.toUpperCase() === 'CMDRF';
+  const prefix = isCmdrf ? 'CM-' : 'G-';
   
   const [rows] = await connection.query(
-    `SELECT id FROM cm_fund_requests WHERE id LIKE ? ORDER BY id DESC LIMIT 1`,
-    [`${prefix}%`]
+    `SELECT id FROM cm_fund_requests WHERE id LIKE ? ORDER BY CAST(SUBSTR(id, ?) AS UNSIGNED) DESC LIMIT 1`,
+    [`${prefix}%`, prefix.length + 1]
   );
 
   let nextNum = 1;
@@ -22,7 +22,7 @@ const generateAppId = async (connection) => {
     }
   }
 
-  const paddedNum = nextNum.toString().padStart(4, '0');
+  const paddedNum = nextNum.toString().padStart(3, '0');
   return `${prefix}${paddedNum}`;
 };
 
@@ -159,7 +159,7 @@ export const createRequest = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const appId = await generateAppId(connection);
+    const appId = await generateAppId(connection, applicationType);
     const userId = req.admin ? req.admin.id : null;
 
     let assignedOfficerId = b.assigned_officer_id || b.officer || null;
@@ -188,8 +188,12 @@ export const createRequest = async (req, res) => {
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         let docId = file.fieldname;
-        const match = docId.match(/documents\[(.*?)\]/);
-        if (match) docId = match[1];
+        if (docId.startsWith('audioNotes')) {
+          docId = 'doc_audio_note';
+        } else {
+          const match = docId.match(/documents\[(.*?)\]/);
+          if (match) docId = match[1];
+        }
 
         const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
         
@@ -252,7 +256,7 @@ export const createDraftRequest = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const appId  = await generateAppId(connection);
+    const appId  = await generateAppId(connection, applicationType);
     const userId = req.admin ? req.admin.id : null;
 
     await connection.query(`
@@ -276,6 +280,28 @@ export const createDraftRequest = async (req, res) => {
       VALUES (?, 'Draft Created', 'Draft', ?, 'Quick draft saved via sidebar')
     `, [appId, userId]);
 
+    // Handle uploaded documents (including audioNotes which we will map to doc_audio_note)
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        let docId = file.fieldname;
+        // Check if it's audioNotes
+        if (docId.startsWith('audioNotes')) {
+          docId = 'doc_audio_note';
+        } else {
+          // Standard document array e.g. documents[doc_med_cert]
+          const match = docId.match(/documents\[(.*?)\]/);
+          if (match) docId = match[1];
+        }
+
+        const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
+        
+        await connection.query(`
+          INSERT INTO cm_fund_request_documents (request_id, doc_type_id, file_url, original_filename)
+          VALUES (?, ?, ?, ?)
+        `, [appId, docId, fileUrl, file.originalname]);
+      }
+    }
+
     await connection.commit();
     auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds draft saved — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
     res.status(201).json({ message: 'Draft saved successfully', id: appId });
@@ -292,12 +318,12 @@ export const getRequest = async (req, res) => {
   try {
     const { id } = req.params;
     const [rows] = await pool.query(`
-      SELECT r.*, 
+      SELECT r.*,
              c.label as category_name,
              u.full_name as submitted_by_name,
              o.full_name as assigned_officer_name,
              lb.name as local_body_name,
-             w.name as ward_name
+             CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name
       FROM cm_fund_requests r
       LEFT JOIN mla_dropdown_lists c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
@@ -313,7 +339,7 @@ export const getRequest = async (req, res) => {
     const [docs] = await pool.query(`
       SELECT d.*, t.name as doc_name, t.description as doc_description
       FROM cm_fund_request_documents d
-      JOIN cm_fund_document_types t ON d.doc_type_id = t.id
+      LEFT JOIN cm_fund_document_types t ON d.doc_type_id = t.id
       WHERE d.request_id = ?
     `, [id]);
 
@@ -391,8 +417,12 @@ export const updateRequest = async (req, res) => {
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         let docId = file.fieldname;
-        const match = docId.match(/documents\[(.*?)\]/);
-        if (match) docId = match[1];
+        if (docId.startsWith('audioNotes')) {
+          docId = 'doc_audio_note';
+        } else {
+          const match = docId.match(/documents\[(.*?)\]/);
+          if (match) docId = match[1];
+        }
 
         const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
         

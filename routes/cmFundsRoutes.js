@@ -37,7 +37,7 @@ router.use(adminAuth);
 // ==========================================
 // Applications (Requests)
 // ==========================================
-router.post('/draft', createDraftRequest);         // ← Quick-add draft (minimal fields)
+router.post('/draft', uploadCMFundDocsS3, createDraftRequest);         // ← Quick-add draft (minimal fields)
 router.get('/requests', listRequests);
 router.post('/requests', uploadCMFundDocsS3, createRequest);
 

@@ -55,7 +55,12 @@ const fetchFullLetter = async (id) => {
         [id]
     );
 
-    return { ...letter, followups, activity };
+    const [attachments] = await pool.query(
+        'SELECT * FROM mla_letter_attachments WHERE letter_id = ? ORDER BY uploaded_at ASC',
+        [id]
+    );
+
+    return { ...letter, followups, activity, attachments };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -225,6 +230,21 @@ export const createLetter = async (req, res) => {
 
         await logActivity(result.insertId, `Letter "${letterId}" created.`, req.admin?.id, req.admin?.full_name);
         auditLog(req, { action: 'Created', module: 'Letters', details: `Letter "${letterId}" created — ${subject?.trim()}`, resource: `letters/${result.insertId}`, severity: 'info' });
+
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                let fileType = 'attachment';
+                if (file.fieldname.startsWith('audioNotes')) {
+                    fileType = 'audio_note';
+                }
+                const fileUrl = file.location || `/uploads/letters/attachments/${file.filename}`;
+                await pool.query(
+                    'INSERT INTO mla_letter_attachments (letter_id, file_name, file_url, file_type) VALUES (?,?,?,?)',
+                    [result.insertId, file.originalname, fileUrl, fileType]
+                );
+            }
+        }
+
         const letter = await fetchFullLetter(result.insertId);
         res.status(201).json({ success: true, data: letter });
     } catch (err) {
@@ -279,6 +299,20 @@ export const updateLetter = async (req, res) => {
         await pool.query(`UPDATE mla_letters SET ${setClauses.join(', ')} WHERE id = ?`, params);
         await logActivity(id, `Letter updated by ${req.admin?.full_name || 'admin'}.`, req.admin?.id, req.admin?.full_name);
         auditLog(req, { action: 'Updated', module: 'Letters', details: `Letter ID ${id} updated by ${req.admin?.full_name || 'admin'}`, resource: `letters/${id}`, severity: 'success' });
+
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                let fileType = 'attachment';
+                if (file.fieldname.startsWith('audioNotes')) {
+                    fileType = 'audio_note';
+                }
+                const fileUrl = file.location || `/uploads/letters/attachments/${file.filename}`;
+                await pool.query(
+                    'INSERT INTO mla_letter_attachments (letter_id, file_name, file_url, file_type) VALUES (?,?,?,?)',
+                    [id, file.originalname, fileUrl, fileType]
+                );
+            }
+        }
 
         const letter = await fetchFullLetter(id);
         res.json({ success: true, data: letter });
