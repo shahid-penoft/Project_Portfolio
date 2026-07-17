@@ -241,10 +241,13 @@ export const getIssues = async (req, res) => {
                    c.submitter_name, c.phone, c.date_filed, c.created_at, c.is_deleted,
                    c.department AS department_name,
                    lb.name AS local_body_name,
-                   lbw.ward_no, lbw.place_name AS ward_name
+                   lbw.ward_no, lbw.place_name AS ward_name,
+                   c.filed_by_admin_id,
+                   au.full_name AS filed_by_admin_name
             FROM issues c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id
+            LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
             ${where}
             ORDER BY c.created_at DESC
             LIMIT ? OFFSET ?

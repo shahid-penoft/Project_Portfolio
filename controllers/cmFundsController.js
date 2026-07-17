@@ -5,7 +5,7 @@ import { broadcastNotification, createNotification } from '../utils/notification
 
 const generateAppId = async (connection, applicationType) => {
   const isCmdrf = applicationType && applicationType.toUpperCase() === 'CMDRF';
-  const prefix = isCmdrf ? 'CM-' : 'G-';
+  const prefix = isCmdrf ? 'CM-' : 'A-';
   
   const [rows] = await connection.query(
     `SELECT id FROM cm_fund_requests WHERE id LIKE ? ORDER BY CAST(SUBSTR(id, ?) AS UNSIGNED) DESC LIMIT 1`,
