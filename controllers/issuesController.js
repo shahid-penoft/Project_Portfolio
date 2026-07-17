@@ -117,8 +117,8 @@ const logActivity = async (issueId, text, adminUserId = null) => {
 
 // Helper: generate reference number  P-NNN
 const generateReferenceNo = async () => {
-    const [[{ cnt }]] = await pool.query('SELECT COUNT(*) as cnt FROM issues');
-    const seq = String(cnt + 1).padStart(3, '0');
+    const [[{ maxSeq }]] = await pool.query('SELECT COALESCE(MAX(CAST(SUBSTRING(reference_no, 3) AS UNSIGNED)), 0) as maxSeq FROM issues WHERE reference_no LIKE "P-%"');
+    const seq = String(maxSeq + 1).padStart(3, '0');
     return `P-${seq}`;
 };
 

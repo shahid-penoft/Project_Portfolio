@@ -44,7 +44,10 @@ const s3StorageOptions = (folder = 'uploads') => ({
     },
     key: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-        const name = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '-');
+        // Express/Multer defaults to latin1 for filenames, breaking UTF-8 characters like Malayalam.
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        // Replace spaces and invalid file system/URL characters with a hyphen, but preserve unicode letters.
+        const name = originalName.replace(/[\s\/\\:*?"<>|]/g, '-');
         cb(null, `${folder}/${uniqueSuffix}-${name}`);
     },
 });

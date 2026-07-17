@@ -13,7 +13,10 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
-        const name = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '-');
+        // Decode latin1 to utf8 for international characters like Malayalam
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        // Replace spaces and invalid file system characters, preserve unicode letters
+        const name = originalName.replace(/[\s\/\\:*?"<>|]/g, '-');
         cb(null, name);
     },
 });
@@ -100,7 +103,10 @@ const iconStorage = multer.diskStorage({
         cb(null, iconDir);
     },
     filename: (req, file, cb) => {
-        const name = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '-');
+        // Decode latin1 to utf8 for international characters like Malayalam
+        const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        // Replace spaces and invalid file system characters, preserve unicode letters
+        const name = originalName.replace(/[\s\/\\:*?"<>|]/g, '-');
         cb(null, name);
     },
 });
