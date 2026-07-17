@@ -163,6 +163,7 @@ const fetchFullIssue = async (id) => {
                 url:  m.file_url,
                 type: m.media_type,
                 name: m.caption || m.file_url.split('/').pop(),
+                size: m.file_size_kb != null ? Number(m.file_size_kb) * 1024 : null,
             })),
         attachments: allAttachments
             .filter(a => a.update_id === u.id)
@@ -570,10 +571,10 @@ export const addIssueUpdate = async (req, res) => {
         if (req.files && req.files['media'] && req.files['media'].length > 0) {
             const rows = req.files['media'].map(f => {
                 const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
-                return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, updateId];
+                return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, f.originalname, Math.round(f.size / 1024), updateId];
             });
             await pool.query(
-                'INSERT INTO issue_media (issue_id, media_type, file_url, caption, update_id) VALUES ?',
+                'INSERT INTO issue_media (issue_id, media_type, file_url, caption, file_name, file_size_kb, update_id) VALUES ?',
                 [rows]
             );
         }
