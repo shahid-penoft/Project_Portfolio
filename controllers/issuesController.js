@@ -662,11 +662,12 @@ export const uploadIssueMedia = async (req, res) => {
 
         const rows = req.files.map(f => {
             const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
-            return [id, isVideo ? 'video' : 'photo', f.location, f.originalname];
+            const sizeKb = Math.round(f.size / 1024);
+            return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, f.originalname, sizeKb];
         });
 
         await pool.query(
-            'INSERT INTO issue_media (issue_id, media_type, file_url, caption) VALUES ?',
+            'INSERT INTO issue_media (issue_id, media_type, file_url, caption, file_name, file_size_kb) VALUES ?',
             [rows]
         );
         await logActivity(id, `${req.files.length} media file(s) uploaded.`, req.admin?.id);
