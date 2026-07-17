@@ -143,7 +143,7 @@ export const createRequest = async (req, res) => {
     const categoryId          = b.category_id         || b.category;
     const subCategory         = b.sub_category        || b.subCategory        || null;
     const priority            = b.priority            || 'Normal';
-    const amountRequested     = b.amount_requested    || b.amountRequested;
+    const amountRequested     = b.amount_requested    || b.amountRequested || null;
     const description         = b.description;
     const bankName            = b.bank_name           || b.bankName;
     const accountNumber       = b.account_number      || b.accountNumber;
@@ -156,7 +156,7 @@ export const createRequest = async (req, res) => {
     const remarks             = b.remarks             || null;
 
     if (!applicantName || !applicantPhone || !addressLine1 || !city || !district || !pincode || 
-        !categoryId || !amountRequested || !description || !bankName || !accountNumber || !ifscCode || 
+        !categoryId || !description || !bankName || !accountNumber || !ifscCode || 
         !branch || !accountHolderName || !recommendedBy) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
