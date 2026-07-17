@@ -30,24 +30,28 @@ export const listRequests = async (req, res) => {
   try {
     const { status, priority, search, sort, order, page = 1, limit = 8 } = req.query;
     
+    const isTrash = req.query.is_deleted === '1' || req.query.trash === 'true';
+
     let baseQuery = `
-      SELECT r.*, 
+      SELECT r.*,
              c.name as category_name,
              u.full_name as submitted_by_name,
              o.full_name as assigned_officer_name,
+             d.full_name as deleted_by_name,
              lb.name as local_body_name,
              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name
       FROM cm_fund_requests r
       LEFT JOIN cm_fund_categories c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
       LEFT JOIN admin_users o ON r.assigned_officer_id = o.id
+      LEFT JOIN admin_users d ON r.deleted_by_id = d.id
       LEFT JOIN local_bodies lb ON r.local_body_id = lb.id
       LEFT JOIN local_body_wards w ON r.ward_id = w.id
-      WHERE 1=1
+      WHERE r.is_deleted = ?
     `;
-    const queryParams = [];
+    const queryParams = [isTrash ? 1 : 0];
 
-    if (status && status !== 'All') {
+    if (!isTrash && status && status !== 'All') {
       baseQuery += ` AND r.status = ?`;
       queryParams.push(status);
     }
@@ -243,14 +247,14 @@ export const createDraftRequest = async (req, res) => {
     const applicationType  = b.application_type || b.applicationType || 'CMDRF';
     const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
     const categoryId       = b.category_id      || b.category;
-    const amountRequested  = b.amount_requested || b.amountRequested;
+    const amountRequested  = b.amount_requested || b.amountRequested || null;
     const description      = b.description      || null;
     const priority         = b.priority         || 'Normal';
     const remarks          = b.remarks          || null;
 
-    if (!applicantName || !applicantPhone || !categoryId || !amountRequested) {
+    if (!applicantName || !applicantPhone || !categoryId) {
       return res.status(400).json({
-        error: 'Missing required fields: applicant_name, phone, category_id, amount_requested',
+        error: 'Missing required fields: applicant_name, phone, category_id',
       });
     }
 
@@ -322,15 +326,17 @@ export const getRequest = async (req, res) => {
              c.label as category_name,
              u.full_name as submitted_by_name,
              o.full_name as assigned_officer_name,
+             d.full_name as deleted_by_name,
              lb.name as local_body_name,
              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name
       FROM cm_fund_requests r
       LEFT JOIN mla_dropdown_lists c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
       LEFT JOIN admin_users o ON r.assigned_officer_id = o.id
+      LEFT JOIN admin_users d ON r.deleted_by_id = d.id
       LEFT JOIN local_bodies lb ON r.local_body_id = lb.id
       LEFT JOIN local_body_wards w ON r.ward_id = w.id
-      WHERE r.id = ?
+      WHERE r.id = ? AND r.is_deleted = 0
     `, [id]);
 
     if (rows.length === 0) return res.status(404).json({ error: 'Request not found' });
@@ -521,15 +527,54 @@ export const updateStatus = async (req, res) => {
 export const deleteRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    
-    // Configs are cascade deleted by FK constraint.
-    await pool.query(`DELETE FROM cm_fund_requests WHERE id = ?`, [id]);
+    const userId = req.admin ? req.admin.id : null;
 
-    auditLog(req, { action: 'Deleted', module: 'CM Funds', details: `CM Funds application ${id} permanently deleted`, resource: `cm-funds/${id}`, severity: 'error' });
-    res.json({ message: 'Application deleted successfully' });
+    // Soft-delete: mark as deleted, set timestamp and actor
+    await pool.query(
+      `UPDATE cm_fund_requests SET is_deleted = 1, deleted_at = NOW(), deleted_by_id = ? WHERE id = ?`,
+      [userId, id]
+    );
+
+    auditLog(req, { action: 'Deleted', module: 'CM Funds', details: `CM Funds application ${id} moved to trash`, resource: `cm-funds/${id}`, severity: 'warning' });
+    res.json({ message: 'Application moved to trash' });
   } catch (err) {
     console.error('Error in deleteRequest:', err);
     res.status(500).json({ error: 'Failed to delete application' });
+  }
+};
+
+export const restoreRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [rows] = await pool.query(`SELECT id FROM cm_fund_requests WHERE id = ? AND is_deleted = 1`, [id]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Trashed application not found' });
+
+    await pool.query(
+      `UPDATE cm_fund_requests SET is_deleted = 0, deleted_at = NULL, deleted_by_id = NULL WHERE id = ?`,
+      [id]
+    );
+
+    auditLog(req, { action: 'Restored', module: 'CM Funds', details: `CM Funds application ${id} restored from trash`, resource: `cm-funds/${id}`, severity: 'info' });
+    res.json({ message: 'Application restored successfully' });
+  } catch (err) {
+    console.error('Error in restoreRequest:', err);
+    res.status(500).json({ error: 'Failed to restore application' });
+  }
+};
+
+export const permanentDeleteRequest = async (req, res) => {
+  try {
+    const { id } = req.params;
+    // Hard-delete from DB (no is_deleted guard — permanent regardless of state)
+    const [result] = await pool.query(`DELETE FROM cm_fund_requests WHERE id = ?`, [id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+    auditLog(req, { action: 'Deleted', module: 'CM Funds', details: `CM Funds application ${id} permanently deleted`, resource: `cm-funds/${id}`, severity: 'error' });
+    res.json({ message: 'Application permanently deleted' });
+  } catch (err) {
+    console.error('Error in permanentDeleteRequest:', err);
+    res.status(500).json({ error: 'Failed to permanently delete application' });
   }
 };
 

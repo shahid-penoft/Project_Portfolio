@@ -16,6 +16,9 @@ import {
     createFollowup,
     updateFollowup,
     deleteFollowup,
+    trashLetter,
+    restoreLetter,
+    permanentDeleteLetter,
 } from '../controllers/lettersController.js';
 
 const router = express.Router();
@@ -31,6 +34,9 @@ router.get('/',                 getAllLetters);
 router.post('/',                uploadLetterAttachmentsS3, createLetter);
 router.get('/:id',              getLetterById);
 router.put('/:id',              uploadLetterAttachmentsS3, updateLetter);
+router.delete('/:id/permanent', permanentDeleteLetter);    // hard-delete from trash
+router.patch('/:id/trash',      trashLetter);              // soft-delete → trash
+router.patch('/:id/restore',    restoreLetter);            // restore from trash
 router.delete('/:id',           deleteLetter);
 router.patch('/:id/status',     patchLetterStatus);
 router.patch('/:id/response-status', patchResponseStatus);

@@ -77,6 +77,11 @@ export const getAllLetters = async (req, res) => {
 
         if (type)     { baseConditions.push('l.type = ?');     baseParams.push(type); }
         if (priority) { baseConditions.push('l.priority = ?'); baseParams.push(priority); }
+        if (req.query.trashed === 'true') {
+            baseConditions.push('l.trashed_at IS NOT NULL');
+        } else {
+            baseConditions.push('l.trashed_at IS NULL');
+        }
         if (search) {
             baseConditions.push('(l.subject LIKE ? OR l.letter_id LIKE ? OR l.recipient_name LIKE ? OR l.recipient_org LIKE ?)');
             const q = `%${search}%`;
@@ -122,7 +127,7 @@ export const getAllLetters = async (req, res) => {
         const [rows] = await pool.query(`
             SELECT l.id, l.letter_id, l.subject, l.type, l.priority, l.status,
                    l.response_status, l.recipient_name, l.recipient_org,
-                   l.reference, l.prepared_on, l.sent_on,
+                   l.reference, l.prepared_on, l.sent_on, l.trashed_at,
                    au.full_name AS prepared_by_name
             FROM mla_letters l
             LEFT JOIN admin_users au ON l.prepared_by_user_id = au.id
@@ -337,6 +342,65 @@ export const deleteLetter = async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to delete letter.' });
     }
 };
+
+// ─────────────────────────────────────────────────────────────
+// PATCH /api/admin/letters/:id/trash  (soft-delete)
+// ─────────────────────────────────────────────────────────────
+export const trashLetter = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const deletedById = req.admin?.id || null;
+        const [result] = await pool.query(
+            `UPDATE mla_letters SET status = 'Archived', trashed_at = NOW(), trashed_by_id = ? WHERE id = ?`,
+            [deletedById, id]
+        );
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Letter not found.' });
+        await logActivity(id, `Letter moved to trash by ${req.admin?.full_name || 'admin'}.`, req.admin?.id, req.admin?.full_name);
+        auditLog(req, { action: 'Trashed', module: 'Letters', details: `Letter ID ${id} moved to trash`, resource: `letters/${id}`, severity: 'neutral' });
+        res.json({ success: true, message: 'Letter moved to trash.' });
+    } catch (err) {
+        console.error('[trashLetter]', err);
+        res.status(500).json({ success: false, message: 'Failed to trash letter.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PATCH /api/admin/letters/:id/restore
+// ─────────────────────────────────────────────────────────────
+export const restoreLetter = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await pool.query(
+            `UPDATE mla_letters SET status = 'Draft', trashed_at = NULL, trashed_by_id = NULL WHERE id = ? AND trashed_at IS NOT NULL`,
+            [id]
+        );
+        if (result.affectedRows === 0)
+            return res.status(404).json({ success: false, message: 'Trashed letter not found.' });
+        await logActivity(id, `Letter restored from trash by ${req.admin?.full_name || 'admin'}.`, req.admin?.id, req.admin?.full_name);
+        auditLog(req, { action: 'Restored', module: 'Letters', details: `Letter ID ${id} restored from trash`, resource: `letters/${id}`, severity: 'info' });
+        res.json({ success: true, message: 'Letter restored successfully.' });
+    } catch (err) {
+        console.error('[restoreLetter]', err);
+        res.status(500).json({ success: false, message: 'Failed to restore letter.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE /api/admin/letters/:id/permanent  (force hard-delete from trash)
+// ─────────────────────────────────────────────────────────────
+export const permanentDeleteLetter = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await pool.query('DELETE FROM mla_letters WHERE id = ?', [id]);
+        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Letter not found.' });
+        auditLog(req, { action: 'Deleted', module: 'Letters', details: `Letter ID ${id} permanently deleted from trash`, resource: `letters/${id}`, severity: 'error' });
+        res.json({ success: true, message: 'Letter permanently deleted.' });
+    } catch (err) {
+        console.error('[permanentDeleteLetter]', err);
+        res.status(500).json({ success: false, message: 'Failed to permanently delete letter.' });
+    }
+};
+
 
 // ─────────────────────────────────────────────────────────────
 // PATCH /api/admin/letters/:id/status

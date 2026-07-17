@@ -55,6 +55,7 @@ import teamsLogRoutes from './routes/teamsLogRoutes.js';
 import notificationsRoutes from './routes/notificationsRoutes.js';
 
 import busTimingsRoutes from './routes/busTimingsRoutes.js';
+import { initTrashPurge } from './services/trashPurgeService.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
@@ -165,6 +166,7 @@ app.use((err, req, res, next) => {
 // ─── Start Server ─────────────────────────────────────────────
 app.listen(PORT, () => {
     console.log(`🚀  Server running on http://localhost:${PORT}`);
+    initTrashPurge();
 });
 
 export default app;

@@ -10,6 +10,8 @@ import {
   updateRequest,
   updateStatus,
   deleteRequest,
+  restoreRequest,
+  permanentDeleteRequest,
   downloadPdf
 } from '../controllers/cmFundsController.js';
 
@@ -44,7 +46,9 @@ router.post('/requests', uploadCMFundDocsS3, createRequest);
 router.get('/requests/:id', getRequest);
 router.put('/requests/:id', uploadCMFundDocsS3, updateRequest);
 router.patch('/requests/:id/status', updateStatus);
-router.delete('/requests/:id', deleteRequest);
+router.delete('/requests/:id', deleteRequest);                       // ← soft-delete (move to trash)
+router.patch('/requests/:id/restore', restoreRequest);               // ← restore from trash
+router.delete('/requests/:id/permanent', permanentDeleteRequest);    // ← hard-delete from trash
 router.get('/requests/:id/pdf', downloadPdf);
 
 // ==========================================
