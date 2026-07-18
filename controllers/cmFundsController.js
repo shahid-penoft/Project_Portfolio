@@ -499,9 +499,16 @@ export const updateRequest = async (req, res) => {
       dateFiled: 'date_filed', date_filed: 'date_filed'
     };
 
+    const sanitize = (val) => (val === 'undefined' || val === 'null') ? '' : val;
+
     for (const [camelKey, dbKey] of Object.entries(bodyToDb)) {
       // Check for either the snake_case key (from FormData) or the camelCase key
       let value = req.body[dbKey] !== undefined ? req.body[dbKey] : req.body[camelKey];
+      
+      if (typeof value === 'string') {
+        value = sanitize(value);
+      }
+      
       if (dbKey === 'assigned_officer_id' && value === 'Unassigned') {
         value = null;
       }
@@ -517,7 +524,6 @@ export const updateRequest = async (req, res) => {
 
     // Ensure required fields are not being nullified or are provided if updating
     const getVal = (snake, camel) => req.body[snake] !== undefined ? req.body[snake] : req.body[camel];
-    const sanitize = (val) => (val === 'undefined' || val === 'null') ? '' : val;
     
     const checkAppType = sanitize(getVal('application_type', 'applicationType'));
     const checkAppName = sanitize(getVal('applicant_name', 'applicantName'));
