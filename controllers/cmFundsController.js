@@ -381,14 +381,14 @@ export const getRequest = async (req, res) => {
     const { id } = req.params;
     const [rows] = await pool.query(`
       SELECT r.*,
-             c.label as category_name,
+             c.name as category_name,
              u.full_name as submitted_by_name,
              o.full_name as assigned_officer_name,
              d.full_name as deleted_by_name,
              lb.name as local_body_name,
              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name
       FROM cm_fund_requests r
-      LEFT JOIN mla_dropdown_lists c ON r.category_id = c.id
+      LEFT JOIN cm_fund_categories c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
       LEFT JOIN admin_users o ON r.assigned_officer_id = o.id
       LEFT JOIN admin_users d ON r.deleted_by_id = d.id
