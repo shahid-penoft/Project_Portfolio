@@ -224,7 +224,7 @@ export const createSuggestion = async (req, res) => {
             title, category, priority, status, description, location, address, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
-            custom_sms_message,
+            custom_sms_message, notify_complainant,
         } = req.body;
 
         if (!title || !complainant_name || !phone) {
@@ -278,13 +278,15 @@ export const createSuggestion = async (req, res) => {
         });
 
         // Fire-and-forget: SMS confirmation to complainant
-        // Admin may supply a custom message via the notification drawer — prefer that if present.
-        const smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
-            name: complainant_name,
-            referenceNo: reference_no,
-            moduleLabel: 'Suggestion',
-        });
-        sendSMSSafe(phone, smsBody);
+        if (notify_complainant === true || notify_complainant === 'true') {
+            const smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
+                name: complainant_name,
+                dateFiled: date_filed || new Date().toISOString().split('T')[0],
+                referenceNo: reference_no,
+                status: status || 'Pending',
+            });
+            sendSMSSafe(phone, smsBody);
+        }
 
         const suggestion = await fetchFullSuggestion(newId);
         res.status(201).json({ success: true, message: 'Suggestion created successfully.', data: suggestion });

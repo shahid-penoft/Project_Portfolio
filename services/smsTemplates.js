@@ -8,11 +8,15 @@
  *
  * @param {object} opts
  * @param {string} opts.name          - Complainant / submitter name
+ * @param {string} opts.dateFiled     - Date the record was filed
  * @param {string} opts.referenceNo   - e.g. C-001, P-002, S-003, I-004
- * @param {string} opts.moduleLabel   - e.g. "Complaint", "Issue", "Suggestion", "Idea"
+ * @param {string} opts.status        - e.g. Pending, Submitted
  */
-export const submissionConfirmationSMS = ({ name, referenceNo, moduleLabel }) =>
-    `Hi ${name},\n\nYour ${moduleLabel} has been registered successfully.\n${moduleLabel} ID: ${referenceNo}\nOur team will review the details and take appropriate action. Please use your ${moduleLabel} ID to track the status.\n\nOffice of Shibu Theckumpuram MLA`;
+export const submissionConfirmationSMS = ({ name, dateFiled, referenceNo, status }) => {
+    const d = new Date(dateFiled);
+    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : dateFiled;
+    return `Hi ${name},\n\nApplication received: ${dateStr}\nTracking ID: ${referenceNo}\nStatus: ${status}\n\nOffice of Kothamangalam MLA`;
+};
 
 /**
  * Template 2 — Follow-up / Status Update
