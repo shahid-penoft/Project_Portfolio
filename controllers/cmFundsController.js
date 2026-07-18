@@ -2,6 +2,8 @@ import pool from '../configs/db.js';
 import generateCMFundsPdf from '../utils/cmFundsPdfTemplate.js';
 import { logActivity as auditLog } from './teamsLogController.js';
 import { broadcastNotification, createNotification } from '../utils/notificationHelper.js';
+import { sendSMSSafe } from '../services/smsService.js';
+import { followUpUpdateSMS, submissionConfirmationSMS } from '../services/smsTemplates.js';
 
 const generateAppId = async (connection, applicationType) => {
   const isCmdrf = applicationType && applicationType.toUpperCase() === 'CMDRF';
@@ -24,6 +26,17 @@ const generateAppId = async (connection, applicationType) => {
 
   const paddedNum = nextNum.toString().padStart(3, '0');
   return `${prefix}${paddedNum}`;
+};
+
+export const getNextAppId = async (req, res) => {
+  try {
+    const { application_type } = req.query;
+    const nextId = await generateAppId(pool, application_type || 'CMDRF');
+    res.json({ nextId });
+  } catch (err) {
+    console.error('Error getting next application ID:', err);
+    res.status(500).json({ error: 'Failed to generate application ID' });
+  }
 };
 
 export const listRequests = async (req, res) => {
@@ -162,9 +175,7 @@ export const createRequest = async (req, res) => {
     const remarks             = b.remarks             || null;
     const dateFiled           = b.date_filed          || null;
 
-    if (!applicantName || !applicantPhone || !addressLine1 || !city || !district || !pincode || 
-        !categoryId || !description || !bankName || !accountNumber || !ifscCode || 
-        !branch || !accountHolderName || !recommendedBy) {
+    if (!applicantName || !categoryId || !description) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -223,6 +234,7 @@ export const createRequest = async (req, res) => {
 
     await connection.commit();
     auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds application submitted — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
+    
     // Notify all admins
     broadcastNotification({
       title: `New CM Fund Request ${appId}`,
@@ -231,6 +243,22 @@ export const createRequest = async (req, res) => {
       record_id: null, record_ref: appId,
       link_path: `/mlaconnect/cm-funds/${appId}`,
     });
+
+    // Notify Applicant
+    if (b.notify_applicant === 'true' && applicantPhone) {
+      const message = b.custom_message || submissionConfirmationSMS({
+        name: applicantName,
+        dateFiled: dateFiled || new Date().toISOString().split('T')[0],
+        referenceNo: appId,
+        status: initialStatus
+      });
+      await sendSMSSafe(applicantPhone, message, {
+        referenceNo: appId,
+        module: 'cm-funds',
+        recipientName: applicantName
+      });
+    }
+
     res.status(201).json({ message: 'Application submitted successfully', id: appId });
   } catch (err) {
     await connection.rollback();
@@ -372,7 +400,50 @@ export const getRequest = async (req, res) => {
       ORDER BY t.created_at DESC
     `, [id]);
 
-    res.json({ data: { ...request, documents: docs, timeline } });
+    const [updates] = await pool.query(`
+      SELECT u.*, m.media_type, m.file_url, m.file_name
+      FROM cm_fund_updates u
+      LEFT JOIN cm_fund_update_media m ON u.id = m.update_id
+      WHERE u.request_id = ?
+      ORDER BY u.created_at DESC
+    `, [id]);
+
+    const formattedUpdatesMap = {};
+    updates.forEach(row => {
+      if (!formattedUpdatesMap[row.id]) {
+        formattedUpdatesMap[row.id] = {
+          id: row.id,
+          request_id: row.request_id,
+          type: row.type,
+          title: row.title,
+          note: row.note,
+          created_at: row.created_at,
+          notify_complainant: row.notify_complainant,
+          gallery: [],
+          attachments: []
+        };
+      }
+      if (row.file_url) {
+        if (row.media_type === 'document') {
+          formattedUpdatesMap[row.id].attachments.push({
+            id: row.file_url,
+            name: row.file_name || 'Document',
+            file_url: row.file_url
+          });
+        } else {
+          formattedUpdatesMap[row.id].gallery.push({
+            id: row.file_url,
+            type: row.media_type,
+            previewUrl: row.file_url
+          });
+        }
+      }
+    });
+    
+    // Convert map to array and sort DESC
+    const updatesArray = Object.values(formattedUpdatesMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+    res.json({ data: { ...request, documents: docs, timeline, updates: updatesArray } });
   } catch (err) {
     console.error('Error in getRequest:', err);
     res.status(500).json({ error: 'Failed to fetch request' });
@@ -621,5 +692,111 @@ export const downloadPdf = async (req, res) => {
   } catch (err) {
     console.error('Error in downloadPdf:', err);
     res.status(500).json({ error: 'Failed to generate PDF' });
+  }
+};
+
+export const addUpdate = async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const { id } = req.params;
+    const { type, title, note, notify_complainant, custom_sms_message } = req.body;
+    const isNotify = notify_complainant === 'true' || notify_complainant === true;
+
+    if (!title || !type) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    await connection.beginTransaction();
+
+    const [requestRows] = await connection.query(`SELECT applicant_name, applicant_phone, status FROM cm_fund_requests WHERE id = ?`, [id]);
+    if (requestRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({ error: 'Application not found' });
+    }
+    const application = requestRows[0];
+
+    // Insert the update
+    const [result] = await connection.query(`
+      INSERT INTO cm_fund_updates (request_id, type, title, note, notify_complainant)
+      VALUES (?, ?, ?, ?, ?)
+    `, [id, type, title, note || null, isNotify ? 1 : 0]);
+    
+    const updateId = result.insertId;
+
+    // Insert Media
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
+        const isVideo = file.mimetype.startsWith('video/');
+        let mediaType = isVideo ? 'video' : 'photo';
+        if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
+            mediaType = 'document';
+        }
+        await connection.query(`
+          INSERT INTO cm_fund_update_media (update_id, media_type, file_url, file_name)
+          VALUES (?, ?, ?, ?)
+        `, [updateId, mediaType, fileUrl, file.originalname]);
+      }
+    }
+
+    // Update Application Status if changed
+    let oldStatus = application.status;
+    if (type !== application.status) {
+      await connection.query(`UPDATE cm_fund_requests SET status = ? WHERE id = ?`, [type, id]);
+      
+      // Log Status Change Timeline Event
+      await connection.query(`
+        INSERT INTO cm_fund_timeline_events (request_id, event_type, from_status, to_status, actor_id, note)
+        VALUES (?, 'Status Updated', ?, ?, ?, ?)
+      `, [id, oldStatus, type, req.admin ? req.admin.id : null, `Status changed via Follow-up Update: ${title}`]);
+    } else {
+      // Just log an update event
+      await connection.query(`
+        INSERT INTO cm_fund_timeline_events (request_id, event_type, to_status, actor_id, note)
+        VALUES (?, 'Follow-up Added', ?, ?, ?)
+      `, [id, type, req.admin ? req.admin.id : null, title]);
+    }
+
+    await connection.commit();
+
+    // Send SMS Notification
+    if (isNotify && application.applicant_phone) {
+      const smsMessage = custom_sms_message || followUpUpdateSMS({
+        ...application,
+        name: application.applicant_name,
+        referenceNo: id,
+        title: title,
+        status: type
+      }, { type, title, note }, 'cmfund');
+
+      sendSMSSafe(application.applicant_phone, smsMessage);
+    }
+
+    auditLog(req, { action: 'Updated', module: 'CM Funds', details: `Added follow-up to Application ${id}`, resource: `cm-funds/${id}`, severity: 'info' });
+
+    res.status(201).json({ message: 'Update added successfully', updateId });
+  } catch (err) {
+    await connection.rollback();
+    console.error('Error adding update:', err);
+    res.status(500).json({ error: 'Failed to add update' });
+  } finally {
+    connection.release();
+  }
+};
+
+export const deleteUpdate = async (req, res) => {
+  try {
+    const { id, updateId } = req.params;
+    const [result] = await pool.query('DELETE FROM cm_fund_updates WHERE id = ? AND request_id = ?', [updateId, id]);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Update not found' });
+    }
+
+    auditLog(req, { action: 'Deleted', module: 'CM Funds', details: `Deleted follow-up ${updateId} from Application ${id}`, resource: `cm-funds/${id}`, severity: 'warning' });
+    res.json({ message: 'Update deleted successfully' });
+  } catch (err) {
+    console.error('Error deleting update:', err);
+    res.status(500).json({ error: 'Failed to delete update' });
   }
 };

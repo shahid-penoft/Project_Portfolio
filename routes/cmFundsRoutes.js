@@ -12,7 +12,10 @@ import {
   deleteRequest,
   restoreRequest,
   permanentDeleteRequest,
-  downloadPdf
+  downloadPdf,
+  addUpdate,
+  deleteUpdate,
+  getNextAppId
 } from '../controllers/cmFundsController.js';
 
 import {
@@ -40,6 +43,7 @@ router.use(adminAuth);
 // Applications (Requests)
 // ==========================================
 router.post('/draft', uploadCMFundDocsS3, createDraftRequest);         // ← Quick-add draft (minimal fields)
+router.get('/next-id', getNextAppId);
 router.get('/requests', listRequests);
 router.post('/requests', uploadCMFundDocsS3, createRequest);
 
@@ -50,6 +54,8 @@ router.delete('/requests/:id', deleteRequest);                       // ← soft
 router.patch('/requests/:id/restore', restoreRequest);               // ← restore from trash
 router.delete('/requests/:id/permanent', permanentDeleteRequest);    // ← hard-delete from trash
 router.get('/requests/:id/pdf', downloadPdf);
+router.post('/requests/:id/updates', uploadCMFundDocsS3, addUpdate);
+router.delete('/requests/:id/updates/:updateId', deleteUpdate);
 
 // ==========================================
 // Document Master (Checklists)

@@ -114,7 +114,7 @@ const DEFAULT_CATEGORIES = [
 
 const DEFAULT_DOCUMENTS = [
   { id: "doc_med_cert", name: "Medical Certificate", description: "Certificate issued by a registered medical practitioner stating treatment details", requirement: "Mandatory" },
-  { id: "doc_app_letter", name: "Application Letter", description: "Written request letter signed by the applicant or representative", requirement: "Mandatory" },
+  { id: 'application_form', name: 'Application Letter', description: 'Formal request letter from applicant', requirement: 'Mandatory' },
   { id: "doc_mla_rec", name: "MLA Recommendation", description: "Recommendation letter from the MLA office", requirement: "Mandatory" },
   { id: "doc_inc_cert", name: "Income Certificate", description: "Certificate issued by Tahsildar stating annual family income (Limit: Rs. 2 Lakhs)", requirement: "Mandatory" },
   { id: "doc_bank_pass", name: "Bank Passbook Copy", description: "Copy of the front page of applicant's bank passbook showing IFSC and A/C No.", requirement: "Mandatory" },
@@ -146,7 +146,7 @@ const DEFAULT_DOCUMENTS = [
 const DEFAULT_CATEGORY_CONFIG = {
   "Cancer Treatment": {
     "doc_med_cert": "Mandatory",
-    "doc_app_letter": "Mandatory",
+    "application_form": "Mandatory",
     "doc_inc_cert": "Mandatory",
     "doc_aadhaar": "Mandatory",
     "doc_bank_pass": "Mandatory",
@@ -156,7 +156,7 @@ const DEFAULT_CATEGORY_CONFIG = {
   },
   "Dialysis / Kidney Disease": {
     "doc_med_cert": "Mandatory",
-    "doc_app_letter": "Mandatory",
+    "application_form": "Mandatory",
     "doc_inc_cert": "Mandatory",
     "doc_aadhaar": "Mandatory",
     "doc_bank_pass": "Mandatory",
@@ -165,7 +165,7 @@ const DEFAULT_CATEGORY_CONFIG = {
   },
   "Heart Surgery": {
     "doc_med_cert": "Mandatory",
-    "doc_app_letter": "Mandatory",
+    "application_form": "Mandatory",
     "doc_inc_cert": "Mandatory",
     "doc_aadhaar": "Mandatory",
     "doc_bank_pass": "Mandatory",
@@ -173,7 +173,7 @@ const DEFAULT_CATEGORY_CONFIG = {
   },
   "Accident Victim": {
     "doc_med_cert": "Mandatory",
-    "doc_app_letter": "Mandatory",
+    "application_form": "Mandatory",
     "doc_inc_cert": "Mandatory",
     "doc_aadhaar": "Mandatory",
     "doc_bank_pass": "Mandatory",
@@ -182,7 +182,7 @@ const DEFAULT_CATEGORY_CONFIG = {
   },
   "Physical Disability": {
     "doc_med_cert": "Mandatory",
-    "doc_app_letter": "Mandatory",
+    "application_form": "Mandatory",
     "doc_inc_cert": "Mandatory",
     "doc_aadhaar": "Mandatory",
     "doc_bank_pass": "Mandatory",
@@ -190,14 +190,14 @@ const DEFAULT_CATEGORY_CONFIG = {
   },
   "Death of Breadwinner": {
     "doc_death_cert": "Mandatory",
-    "doc_app_letter": "Mandatory",
+    "application_form": "Mandatory",
     "doc_inc_cert": "Mandatory",
     "doc_aadhaar": "Mandatory",
     "doc_bank_pass": "Mandatory",
     "doc_postmortem": "Optional"
   },
   "Natural Disaster Relief": {
-    "doc_app_letter": "Mandatory",
+    "application_form": "Mandatory",
     "doc_inc_cert": "Mandatory",
     "doc_aadhaar": "Mandatory",
     "doc_bank_pass": "Mandatory",
