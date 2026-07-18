@@ -126,16 +126,22 @@ export const createRequest = async (req, res) => {
   try {
     // Accept both snake_case (FormData from frontend) and camelCase
     const b = req.body;
+    const applicationTitle    = b.application_title   || b.applicationTitle   || null;
     const applicantName       = b.applicant_name      || b.applicantName;
     const applicationType     = b.application_type    || b.applicationType || 'CMDRF';
     const applicantPhone      = b.applicant_phone     || b.applicantPhone;
     const alternatePhone      = b.alternate_phone     || b.alternatePhone     || null;
     const aadhaarNumber       = b.aadhaar_number      || b.aadhaarNumber      || null;
     const rationCardNumber    = b.ration_card_number  || b.rationCardNumber   || null;
+    const panCardNumber       = b.pan_card_number     || b.panCardNumber      || null;
     const localBody           = b.local_body          || b.localBody          || null;
     const ward                = b.ward                                         || null;
     const addressLine1        = b.address_line1       || b.addressLine1;
     const addressLine2        = b.address_line2       || b.addressLine2       || null;
+    const address             = b.address             || null;
+    const location            = b.location            || null;
+    const latitude            = b.latitude            || null;
+    const longitude           = b.longitude           || null;
     const city                = b.city;
     const district            = b.district;
     const state               = b.state               || 'Kerala';
@@ -154,6 +160,7 @@ export const createRequest = async (req, res) => {
     const recommenderName     = b.recommender_name    || b.recommenderName    || null;
     const recommenderContact  = b.recommender_contact || b.recommenderContact || null;
     const remarks             = b.remarks             || null;
+    const dateFiled           = b.date_filed          || null;
 
     if (!applicantName || !applicantPhone || !addressLine1 || !city || !district || !pincode || 
         !categoryId || !description || !bankName || !accountNumber || !ifscCode || 
@@ -172,20 +179,20 @@ export const createRequest = async (req, res) => {
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
-        id, applicant_name, applicant_phone, alternate_phone, aadhaar_number, ration_card_number,
-        local_body_id, ward_id, address_line1, address_line2, city, district, state, pincode, application_type,
+        id, application_title, applicant_name, applicant_phone, alternate_phone, aadhaar_number, ration_card_number, pan_card_number,
+        local_body_id, ward_id, address_line1, address_line2, address, location, latitude, longitude, city, district, state, pincode, application_type,
         category_id, sub_category, priority, amount_requested, description,
         bank_name, account_number, ifsc_code, branch, account_holder_name,
         recommended_by, recommender_name, recommender_contact, remarks,
-        status, assigned_officer_id, submitted_by_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, assigned_officer_id, submitted_by_id, date_filed
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      appId, applicantName, applicantPhone, alternatePhone, aadhaarNumber, rationCardNumber,
-      localBody, ward, addressLine1, addressLine2, city, district, state, pincode, applicationType,
+      appId, applicationTitle, applicantName, applicantPhone, alternatePhone, aadhaarNumber, rationCardNumber, panCardNumber,
+      localBody, ward, addressLine1, addressLine2, address, location, latitude, longitude, city, district, state, pincode, applicationType,
       categoryId, subCategory, priority, amountRequested, description,
       bankName, accountNumber, ifscCode, branch, accountHolderName,
       recommendedBy, recommenderName, recommenderContact, remarks,
-      initialStatus, assignedOfficerId, userId
+      initialStatus, assignedOfficerId, userId, dateFiled
     ]);
 
     // Handle uploaded documents
@@ -246,7 +253,13 @@ export const createDraftRequest = async (req, res) => {
     const applicantName    = b.applicant_name   || b.applicantName;
     const applicationType  = b.application_type || b.applicationType || 'CMDRF';
     const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
+    const applicationTitle = b.application_title || b.applicationTitle || null;
     const categoryId       = b.category_id      || b.category;
+    const subCategory      = b.sub_category     || b.subCategory || null;
+    const addressLine1     = b.address_line1    || b.addressLine1 || b.house_name || '';
+    const localBody        = b.local_body       || b.localBody || null;
+    const ward             = b.ward             || null;
+    const recommendedBy    = b.recommended_by   || b.recommendedBy || '';
     const amountRequested  = b.amount_requested || b.amountRequested || null;
     const description      = b.description      || null;
     const priority         = b.priority         || 'Normal';
@@ -265,18 +278,20 @@ export const createDraftRequest = async (req, res) => {
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
-        id, applicant_name, applicant_phone, category_id, priority,
+        id, application_title, applicant_name, applicant_phone, category_id, sub_category, priority,
         amount_requested, description, remarks,
         status, submitted_by_id,
-        address_line1, city, district, state, pincode, application_type,
+        address_line1, local_body_id, ward_id, city, district, state, pincode, application_type,
         bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
-                '', '', '', 'Kerala', '', ?,
-                '', '', '', '', '', '')
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
+                ?, ?, ?, '', '', 'Kerala', '', ?,
+                '', '', '', '', '', ?)
     `, [
-      appId, applicantName, applicantPhone, categoryId, priority,
+      appId, applicationTitle, applicantName, applicantPhone, categoryId, subCategory, priority,
       amountRequested, description, remarks,
-      userId, applicationType,
+      userId,
+      addressLine1, localBody, ward, applicationType,
+      recommendedBy
     ]);
 
     await connection.query(`
@@ -371,11 +386,11 @@ export const updateRequest = async (req, res) => {
     
     // Partial update allowed
     const updatableFields = [
-      'applicant_name', 'applicant_phone', 'alternate_phone', 'aadhaar_number', 'ration_card_number',
-      'local_body_id', 'ward_id', 'address_line1', 'address_line2', 'city', 'district', 'state', 'pincode', 'application_type',
+      'application_title', 'applicant_name', 'applicant_phone', 'alternate_phone', 'aadhaar_number', 'ration_card_number', 'pan_card_number',
+      'local_body_id', 'ward_id', 'address_line1', 'address_line2', 'address', 'location', 'latitude', 'longitude', 'city', 'district', 'state', 'pincode', 'application_type',
       'category_id', 'sub_category', 'priority', 'amount_requested', 'description',
       'bank_name', 'account_number', 'ifsc_code', 'branch', 'account_holder_name',
-      'recommended_by', 'recommender_name', 'recommender_contact', 'remarks'
+      'recommended_by', 'recommender_name', 'recommender_contact', 'remarks', 'date_filed'
     ];
 
     const setParts = [];
@@ -383,6 +398,7 @@ export const updateRequest = async (req, res) => {
 
     // Map body keys to DB columns
     const bodyToDb = {
+      applicationTitle: 'application_title', panCardNumber: 'pan_card_number', address: 'address', location: 'location', latitude: 'latitude', longitude: 'longitude',
       applicantName: 'applicant_name', applicantPhone: 'applicant_phone', alternatePhone: 'alternate_phone', 
       aadhaarNumber: 'aadhaar_number', rationCardNumber: 'ration_card_number',
       localBody: 'local_body_id', ward: 'ward_id', addressLine1: 'address_line1', addressLine2: 'address_line2', 
@@ -393,7 +409,8 @@ export const updateRequest = async (req, res) => {
       branch: 'branch', accountHolderName: 'account_holder_name',
       recommendedBy: 'recommended_by', recommenderName: 'recommender_name', 
       recommenderContact: 'recommender_contact', remarks: 'remarks',
-      status: 'status', officer: 'assigned_officer_id', assignedOfficerId: 'assigned_officer_id'
+      status: 'status', officer: 'assigned_officer_id', assignedOfficerId: 'assigned_officer_id',
+      dateFiled: 'date_filed', date_filed: 'date_filed'
     };
 
     for (const [camelKey, dbKey] of Object.entries(bodyToDb)) {
