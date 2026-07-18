@@ -500,6 +500,12 @@ export const updateRequest = async (req, res) => {
     };
 
     const sanitize = (val) => (val === 'undefined' || val === 'null') ? '' : val;
+    
+    // Fields that are NOT NULL in the database schema
+    const notNullFields = new Set([
+      'applicant_name', 'applicant_phone', 'address_line1', 'city', 'district', 'pincode',
+      'description', 'bank_name', 'account_number', 'ifsc_code', 'branch', 'account_holder_name', 'recommended_by'
+    ]);
 
     for (const [camelKey, dbKey] of Object.entries(bodyToDb)) {
       // Check for either the snake_case key (from FormData) or the camelCase key
@@ -514,7 +520,11 @@ export const updateRequest = async (req, res) => {
       }
       if (value !== undefined) {
         setParts.push(`${dbKey} = ?`);
-        values.push(value || null); // Convert empty strings to null for optional fields
+        if (value === '') {
+          values.push(notNullFields.has(dbKey) ? '' : null);
+        } else {
+          values.push(value);
+        }
       }
     }
 
