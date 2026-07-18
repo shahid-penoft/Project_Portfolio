@@ -13,6 +13,7 @@ import {
     restoreIssue,
     deleteIssue,
     addIssueUpdate,
+    editIssueUpdate,
     deleteIssueUpdate,
     uploadIssueMedia as uploadMedia,
     deleteIssueMedia,
@@ -59,6 +60,14 @@ router.post('/:id/updates',
         next();
     }),
     addIssueUpdate
+);
+router.patch('/:id/updates/:updateId',
+    verifyToken,
+    (req, res, next) => uploadIssueUpdateFiles(req, res, (err) => {
+        if (err) return res.status(400).json({ success: false, message: err.message });
+        next();
+    }),
+    editIssueUpdate
 );
 router.delete('/:id/updates/:updateId',   verifyToken, deleteIssueUpdate);
 

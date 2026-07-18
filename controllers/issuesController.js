@@ -632,6 +632,71 @@ export const addIssueUpdate = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// PATCH /api/issues/:id/updates/:updateId  (admin only)
+// ─────────────────────────────────────────────────────────────
+export const editIssueUpdate = async (req, res) => {
+    try {
+        const { id, updateId } = req.params;
+        const { type, title, note, retained_media_ids, retained_attachment_ids } = req.body;
+
+        await pool.query(
+            'UPDATE issue_updates SET type = ?, title = ?, note = ? WHERE id = ? AND issue_id = ?',
+            [type || 'Status Update', title, note || null, updateId, id]
+        );
+
+        let retainedMedia = [];
+        let retainedAttachments = [];
+        try { if (retained_media_ids) retainedMedia = JSON.parse(retained_media_ids); } catch(e){}
+        try { if (retained_attachment_ids) retainedAttachments = JSON.parse(retained_attachment_ids); } catch(e){}
+
+        const [currentMedia] = await pool.query('SELECT id, file_url FROM issue_media WHERE update_id = ?', [updateId]);
+        const mediaToDelete = currentMedia.filter(m => !retainedMedia.includes(m.id));
+        if (mediaToDelete.length > 0) {
+            const idsToDelete = mediaToDelete.map(m => m.id);
+            await Promise.all(mediaToDelete.map(m => deleteS3Object(m.file_url)));
+            await pool.query('DELETE FROM issue_media WHERE id IN (?)', [idsToDelete]);
+        }
+
+        const [currentAtt] = await pool.query('SELECT id, file_url FROM issue_attachments WHERE update_id = ?', [updateId]);
+        const attToDelete = currentAtt.filter(m => !retainedAttachments.includes(m.id));
+        if (attToDelete.length > 0) {
+            const idsToDelete = attToDelete.map(m => m.id);
+            await Promise.all(attToDelete.map(m => deleteS3Object(m.file_url)));
+            await pool.query('DELETE FROM issue_attachments WHERE id IN (?)', [idsToDelete]);
+        }
+
+        if (req.files && req.files['media'] && req.files['media'].length > 0) {
+            const rows = req.files['media'].map(f => {
+                const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
+                return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, f.originalname, Math.round(f.size / 1024), updateId];
+            });
+            await pool.query(
+                'INSERT INTO issue_media (issue_id, media_type, file_url, caption, file_name, file_size_kb, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
+        if (req.files && req.files['attachments'] && req.files['attachments'].length > 0) {
+            const rows = req.files['attachments'].map(f => [
+                id, f.originalname, f.location, f.mimetype, Math.round(f.size / 1024), updateId
+            ]);
+            await pool.query(
+                'INSERT INTO issue_attachments (issue_id, file_name, file_url, file_type, file_size_kb, update_id) VALUES ?',
+                [rows]
+            );
+        }
+        
+        await logActivity(id, `An update was edited: ${title}`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Issues', details: `Edited update on Issue ID ${id}`, resource: `issues/${id}`, severity: 'info' });
+
+        res.json({ success: true, message: 'Update edited successfully.' });
+    } catch (err) {
+        console.error('[editIssueUpdate]', err);
+        res.status(500).json({ success: false, message: 'Failed to edit update.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
 // DELETE /api/issues/:id/updates/:updateId  (admin only)
 // ─────────────────────────────────────────────────────────────
 export const deleteIssueUpdate = async (req, res) => {

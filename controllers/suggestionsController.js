@@ -510,6 +510,68 @@ export const addSuggestionUpdate = async (req, res) => {
     }
 };
 
+export const editSuggestionUpdate = async (req, res) => {
+    try {
+        const { id, updateId } = req.params;
+        const { type, title, note, retained_media_ids, retained_attachment_ids } = req.body;
+
+        await pool.query(
+            'UPDATE suggestion_updates SET type = ?, title = ?, note = ? WHERE id = ? AND suggestion_id = ?',
+            [type || 'Status Update', title, note || null, updateId, id]
+        );
+
+        let retainedMedia = [];
+        let retainedAttachments = [];
+        try { if (retained_media_ids) retainedMedia = JSON.parse(retained_media_ids); } catch(e){}
+        try { if (retained_attachment_ids) retainedAttachments = JSON.parse(retained_attachment_ids); } catch(e){}
+
+        const [currentMedia] = await pool.query('SELECT id, file_url FROM suggestion_media WHERE update_id = ?', [updateId]);
+        const mediaToDelete = currentMedia.filter(m => !retainedMedia.includes(m.id));
+        if (mediaToDelete.length > 0) {
+            const idsToDelete = mediaToDelete.map(m => m.id);
+            await Promise.all(mediaToDelete.map(m => deleteS3Object(m.file_url)));
+            await pool.query('DELETE FROM suggestion_media WHERE id IN (?)', [idsToDelete]);
+        }
+
+        const [currentAtt] = await pool.query('SELECT id, file_url FROM suggestion_attachments WHERE update_id = ?', [updateId]);
+        const attToDelete = currentAtt.filter(m => !retainedAttachments.includes(m.id));
+        if (attToDelete.length > 0) {
+            const idsToDelete = attToDelete.map(m => m.id);
+            await Promise.all(attToDelete.map(m => deleteS3Object(m.file_url)));
+            await pool.query('DELETE FROM suggestion_attachments WHERE id IN (?)', [idsToDelete]);
+        }
+
+        if (req.files && req.files['media'] && req.files['media'].length > 0) {
+            const rows = req.files['media'].map(f => {
+                const isVideo = f.mimetype.startsWith('video/') || !!f.originalname.match(/\.(mp4|mov|avi|webm|mkv)$/i);
+                return [id, isVideo ? 'video' : 'photo', f.location, f.originalname, f.originalname, Math.round(f.size / 1024), updateId];
+            });
+            await pool.query(
+                'INSERT INTO suggestion_media (suggestion_id, media_type, file_url, caption, file_name, file_size_kb, update_id) VALUES ?',
+                [rows]
+            );
+        }
+
+        if (req.files && req.files['attachments'] && req.files['attachments'].length > 0) {
+            const rows = req.files['attachments'].map(f => [
+                id, f.originalname, f.location, f.mimetype, Math.round(f.size / 1024), updateId
+            ]);
+            await pool.query(
+                'INSERT INTO suggestion_attachments (suggestion_id, file_name, file_url, file_type, file_size_kb, update_id) VALUES ?',
+                [rows]
+            );
+        }
+        
+        await logActivity(id, `An update was edited: ${title}`, req.admin?.id);
+        auditLog(req, { action: 'Updated', module: 'Suggestions', details: `Edited update on Suggestion ID ${id}`, resource: `suggestions/${id}`, severity: 'info' });
+
+        res.json({ success: true, message: 'Update edited successfully.' });
+    } catch (err) {
+        console.error('[editSuggestionUpdate]', err);
+        res.status(500).json({ success: false, message: 'Failed to edit update.' });
+    }
+};
+
 export const deleteSuggestionUpdate = async (req, res) => {
     try {
         const { id, updateId } = req.params;

@@ -4,6 +4,30 @@ import { logActivity as auditLog } from './teamsLogController.js';
 import { broadcastNotification, createNotification } from '../utils/notificationHelper.js';
 import { sendSMSSafe } from '../services/smsService.js';
 import { followUpUpdateSMS, submissionConfirmationSMS } from '../services/smsTemplates.js';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+
+const s3Client = new S3Client({
+    region: process.env.AWS_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+    },
+});
+const s3Bucket = process.env.AWS_S3_BUCKET || 'my-portfolio-bucket';
+
+const keyFromUrl = (url) => {
+    try { return new URL(url).pathname.replace(/^\//, ''); } catch { return null; }
+};
+
+const deleteS3Object = async (url) => {
+    const key = keyFromUrl(url);
+    if (!key) return;
+    try {
+        await s3Client.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: key }));
+    } catch (err) {
+        console.warn('[S3 delete warn]', key, err.message);
+    }
+};
 
 const generateAppId = async (connection, applicationType) => {
   const isCmdrf = applicationType && applicationType.toUpperCase() === 'CMDRF';
@@ -828,6 +852,62 @@ export const addUpdate = async (req, res) => {
     await connection.rollback();
     console.error('Error adding update:', err);
     res.status(500).json({ error: 'Failed to add update' });
+  } finally {
+    connection.release();
+  }
+};
+
+export const editUpdate = async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const { id, updateId } = req.params;
+    const { type, title, note, retained_media_ids } = req.body;
+
+    await connection.beginTransaction();
+
+    await connection.query(
+      'UPDATE cm_fund_updates SET type = ?, title = ?, note = ? WHERE id = ? AND request_id = ?',
+      [type, title, note || null, updateId, id]
+    );
+
+    let retainedMedia = [];
+    try { if (retained_media_ids) retainedMedia = JSON.parse(retained_media_ids); } catch(e){}
+
+    const [currentMedia] = await connection.query('SELECT id, file_url FROM cm_fund_update_media WHERE update_id = ?', [updateId]);
+    const mediaToDelete = currentMedia.filter(m => !retainedMedia.includes(m.id));
+    if (mediaToDelete.length > 0) {
+      const idsToDelete = mediaToDelete.map(m => m.id);
+      await Promise.all(mediaToDelete.map(m => deleteS3Object(m.file_url)));
+      await connection.query('DELETE FROM cm_fund_update_media WHERE id IN (?)', [idsToDelete]);
+    }
+
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
+        const isVideo = file.mimetype.startsWith('video/');
+        let mediaType = isVideo ? 'video' : 'photo';
+        if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
+            mediaType = 'document';
+        }
+        await connection.query(`
+          INSERT INTO cm_fund_update_media (update_id, media_type, file_url, file_name)
+          VALUES (?, ?, ?, ?)
+        `, [updateId, mediaType, fileUrl, file.originalname]);
+      }
+    }
+
+    await connection.query(`
+      INSERT INTO cm_fund_timeline_events (request_id, event_type, actor_id, note)
+      VALUES (?, 'Update Edited', ?, ?)
+    `, [id, req.admin ? req.admin.id : null, `Follow-up updated: ${title}`]);
+
+    await connection.commit();
+    auditLog(req, { action: 'Updated', module: 'CM Funds', details: `Edited follow-up on Application ${id}`, resource: `cm-funds/${id}`, severity: 'info' });
+    res.json({ message: 'Update edited successfully' });
+  } catch (err) {
+    await connection.rollback();
+    console.error('Error editing update:', err);
+    res.status(500).json({ error: 'Failed to edit update' });
   } finally {
     connection.release();
   }

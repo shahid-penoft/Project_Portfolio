@@ -14,6 +14,7 @@ import {
   permanentDeleteRequest,
   downloadPdf,
   addUpdate,
+  editUpdate,
   deleteUpdate,
   getNextAppId
 } from '../controllers/cmFundsController.js';
@@ -55,6 +56,7 @@ router.patch('/requests/:id/restore', restoreRequest);               // ← rest
 router.delete('/requests/:id/permanent', permanentDeleteRequest);    // ← hard-delete from trash
 router.get('/requests/:id/pdf', downloadPdf);
 router.post('/requests/:id/updates', uploadCMFundDocsS3, addUpdate);
+router.patch('/requests/:id/updates/:updateId', uploadCMFundDocsS3, editUpdate);
 router.delete('/requests/:id/updates/:updateId', deleteUpdate);
 
 // ==========================================

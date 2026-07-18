@@ -13,6 +13,7 @@ import {
     restoreSuggestion,
     deleteSuggestion,
     addSuggestionUpdate,
+    editSuggestionUpdate,
     deleteSuggestionUpdate,
     uploadSuggestionMedia as uploadMedia,
     deleteSuggestionMedia,
@@ -49,6 +50,14 @@ router.post('/:id/updates',
         next();
     }),
     addSuggestionUpdate
+);
+router.patch('/:id/updates/:updateId',
+    verifyToken,
+    (req, res, next) => uploadSuggestionUpdateFiles(req, res, (err) => {
+        if (err) return res.status(400).json({ success: false, message: err.message });
+        next();
+    }),
+    editSuggestionUpdate
 );
 router.delete('/:id/updates/:updateId', verifyToken, deleteSuggestionUpdate);
 
