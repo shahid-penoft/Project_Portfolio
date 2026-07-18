@@ -142,41 +142,41 @@ export const createRequest = async (req, res) => {
     const applicationTitle    = b.application_title   || b.applicationTitle   || null;
     const applicantName       = b.applicant_name      || b.applicantName;
     const applicationType     = b.application_type    || b.applicationType || 'CMDRF';
-    const applicantPhone      = b.applicant_phone     || b.applicantPhone;
+    const applicantPhone      = b.applicant_phone     || b.applicantPhone     || '';
     const alternatePhone      = b.alternate_phone     || b.alternatePhone     || null;
     const aadhaarNumber       = b.aadhaar_number      || b.aadhaarNumber      || null;
     const rationCardNumber    = b.ration_card_number  || b.rationCardNumber   || null;
     const panCardNumber       = b.pan_card_number     || b.panCardNumber      || null;
     const localBody           = b.local_body          || b.localBody          || null;
     const ward                = b.ward                                         || null;
-    const addressLine1        = b.address_line1       || b.addressLine1;
+    const addressLine1        = b.address_line1       || b.addressLine1       || '';
     const addressLine2        = b.address_line2       || b.addressLine2       || null;
     const address             = b.address             || null;
     const location            = b.location            || null;
     const latitude            = b.latitude            || null;
     const longitude           = b.longitude           || null;
-    const city                = b.city;
-    const district            = b.district;
+    const city                = b.city                || '';
+    const district            = b.district            || '';
     const state               = b.state               || 'Kerala';
-    const pincode             = b.pincode;
+    const pincode             = b.pincode             || '';
     const categoryId          = b.category_id         || b.category;
     const subCategory         = b.sub_category        || b.subCategory        || null;
     const priority            = b.priority            || 'Normal';
-    const amountRequested     = b.amount_requested    || b.amountRequested || null;
+    const amountRequested     = b.amount_requested    || b.amountRequested    || null;
     const description         = b.description;
-    const bankName            = b.bank_name           || b.bankName;
-    const accountNumber       = b.account_number      || b.accountNumber;
-    const ifscCode            = b.ifsc_code           || b.ifscCode;
-    const branch              = b.branch;
-    const accountHolderName   = b.account_holder_name || b.accountHolderName;
-    const recommendedBy       = b.recommended_by      || b.recommendedBy;
+    const bankName            = b.bank_name           || b.bankName           || '';
+    const accountNumber       = b.account_number      || b.accountNumber      || '';
+    const ifscCode            = b.ifsc_code           || b.ifscCode           || '';
+    const branch              = b.branch              || '';
+    const accountHolderName   = b.account_holder_name || b.accountHolderName  || '';
+    const recommendedBy       = b.recommended_by      || b.recommendedBy      || '';
     const recommenderName     = b.recommender_name    || b.recommenderName    || null;
     const recommenderContact  = b.recommender_contact || b.recommenderContact || null;
     const remarks             = b.remarks             || null;
     const dateFiled           = b.date_filed          || null;
 
-    if (!applicantName || !categoryId || !description) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!applicationType || !applicantName || !categoryId || !description) {
+      return res.status(400).json({ error: 'Missing required fields: Application Type, Applicant Name, Category, or Description' });
     }
 
     await connection.beginTransaction();
@@ -349,6 +349,21 @@ export const createDraftRequest = async (req, res) => {
       }
     }
 
+    // Notify Applicant
+    if (b.notify_applicant === 'true' && applicantPhone) {
+      const message = b.custom_message || submissionConfirmationSMS({
+        name: applicantName,
+        dateFiled: new Date().toISOString().split('T')[0],
+        referenceNo: appId,
+        status: 'Draft'
+      });
+      await sendSMSSafe(applicantPhone, message, {
+        referenceNo: appId,
+        module: 'cm-funds',
+        recipientName: applicantName
+      });
+    }
+
     await connection.commit();
     auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds draft saved — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
     res.status(201).json({ message: 'Draft saved successfully', id: appId });
@@ -498,6 +513,24 @@ export const updateRequest = async (req, res) => {
 
     if (setParts.length === 0 && (!req.files || req.files.length === 0)) {
       return res.status(400).json({ error: 'No data provided to update' });
+    }
+
+    // Ensure required fields are not being nullified or are provided if updating
+    const getVal = (snake, camel) => req.body[snake] !== undefined ? req.body[snake] : req.body[camel];
+    const sanitize = (val) => (val === 'undefined' || val === 'null') ? '' : val;
+    
+    const checkAppType = sanitize(getVal('application_type', 'applicationType'));
+    const checkAppName = sanitize(getVal('applicant_name', 'applicantName'));
+    const checkCategory = sanitize(getVal('category_id', 'category'));
+    const checkDesc = sanitize(getVal('description', 'description'));
+
+    if (
+      (checkAppType !== undefined && !checkAppType) ||
+      (checkAppName !== undefined && !checkAppName) ||
+      (checkCategory !== undefined && !checkCategory) ||
+      (checkDesc !== undefined && !checkDesc)
+    ) {
+      return res.status(400).json({ error: 'Missing required fields: Application Type, Applicant Name, Category, or Description cannot be empty' });
     }
 
     await connection.beginTransaction();
