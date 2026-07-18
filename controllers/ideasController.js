@@ -180,17 +180,10 @@ export const getIdeas = async (req, res) => {
 
 export const getIdeaStats = async (req, res) => {
     try {
-        const [[stats]] = await pool.query(`
-            SELECT
-                COUNT(*)                                         AS total,
-                SUM(status = 'Pending')                          AS pending,
-                SUM(status = 'Under Review')                     AS underReview,
-                SUM(status = 'Approved')                         AS approved,
-                SUM(status = 'Rejected')                         AS rejected,
-                SUM(status = 'Implemented')                      AS implemented,
-                SUM(is_deleted = 1)                              AS trashed
-            FROM ideas
-        `);
+        const [statusRows] = await pool.query(`SELECT status, COUNT(*) as count FROM ideas GROUP BY status`);
+        const [[{ total }]] = await pool.query(`SELECT COUNT(*) as total FROM ideas`);
+        const stats = { total };
+        statusRows.forEach(row => { stats[row.status] = row.count });
         res.json({ success: true, data: stats });
     } catch (err) {
         console.error('[getIdeaStats]', err);

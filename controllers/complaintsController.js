@@ -272,18 +272,10 @@ export const getComplaints = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const getComplaintStats = async (req, res) => {
     try {
-        const [[stats]] = await pool.query(`
-            SELECT
-                COUNT(*)                                         AS total,
-                SUM(status = 'Draft')                            AS draft,
-                SUM(status = 'Pending')                          AS pending,
-                SUM(status = 'Under Process')                    AS underProcess,
-                SUM(status = 'Not Attended')                     AS notAttended,
-                SUM(status = 'Resolved')                         AS resolved,
-                SUM(status = 'Escalated')                        AS escalated,
-                SUM(is_deleted = 1)                              AS trashed
-            FROM complaints
-        `);
+        const [statusRows] = await pool.query(`SELECT status, COUNT(*) as count FROM complaints GROUP BY status`);
+        const [[{ total }]] = await pool.query(`SELECT COUNT(*) as total FROM complaints`);
+        const stats = { total };
+        statusRows.forEach(row => { stats[row.status] = row.count });
         res.json({ success: true, data: stats });
     } catch (err) {
         console.error('[getComplaintStats]', err);
