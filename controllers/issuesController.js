@@ -140,11 +140,13 @@ const fetchFullIssue = async (id) => {
                lb.name AS local_body_name,
                lbw.ward_no,
                lbw.place_name AS ward_place_name,
-               au.full_name   AS filed_by_admin_name
+               au.full_name   AS filed_by_admin_name,
+               au_updater.full_name AS updated_by_admin_name
         FROM issues c
         LEFT JOIN local_bodies     lb  ON c.local_body_id     = lb.id
         LEFT JOIN local_body_wards lbw ON c.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
+        LEFT JOIN admin_users au_updater ON c.updated_by_admin_id = au_updater.id
         WHERE c.id = ?
     `, [id]);
 
@@ -425,12 +427,13 @@ export const updateIssue = async (req, res) => {
               local_body_id = COALESCE(?, local_body_id),
               ward_id = COALESCE(?, ward_id),
               department = COALESCE(?, department),
-              date_filed = COALESCE(?, date_filed)
+              date_filed = COALESCE(?, date_filed),
+              updated_by_admin_id = ?
             WHERE id = ?
         `, [
             title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department, date_filed, id,
+            local_body_id, ward_id, department, date_filed, req.admin?.id || null, id,
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Issue not found.' });
@@ -453,7 +456,7 @@ export const updateIssueStatus = async (req, res) => {
         const { status } = req.body;
         if (!status) return res.status(400).json({ success: false, message: 'status is required.' });
 
-        const [result] = await pool.query('UPDATE issues SET status = ? WHERE id = ?', [status, id]);
+        const [result] = await pool.query('UPDATE issues SET status = ?, updated_by_admin_id = ? WHERE id = ?', [status, req.admin?.id || null, id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Issue not found.' });
 
         await logActivity(id, `Status changed to "${status}".`, req.admin?.id);

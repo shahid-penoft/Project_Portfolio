@@ -410,12 +410,14 @@ export const getRequest = async (req, res) => {
              o.full_name as assigned_officer_name,
              d.full_name as deleted_by_name,
              lb.name as local_body_name,
+             up.full_name as updated_by_admin_name,
              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name
       FROM cm_fund_requests r
       LEFT JOIN cm_fund_categories c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
       LEFT JOIN admin_users o ON r.assigned_officer_id = o.id
       LEFT JOIN admin_users d ON r.deleted_by_id = d.id
+      LEFT JOIN admin_users up ON r.updated_by_admin_id = up.id
       LEFT JOIN local_bodies lb ON r.local_body_id = lb.id
       LEFT JOIN local_body_wards w ON r.ward_id = w.id
       WHERE r.id = ? AND r.is_deleted = 0
@@ -576,6 +578,8 @@ export const updateRequest = async (req, res) => {
     await connection.beginTransaction();
 
     if (setParts.length > 0) {
+      setParts.push('updated_by_admin_id = ?');
+      values.push(req.admin?.id || null);
       values.push(id);
       await connection.query(`UPDATE cm_fund_requests SET ${setParts.join(', ')} WHERE id = ?`, values);
     }
@@ -644,8 +648,8 @@ export const updateStatus = async (req, res) => {
        return res.json({ message: 'Status is already ' + status });
     }
 
-    const updateQuery = `UPDATE cm_fund_requests SET status = ? ${approvedAmount !== undefined ? ', approved_amount = ?' : ''} WHERE id = ?`;
-    const updateParams = approvedAmount !== undefined ? [status, approvedAmount, id] : [status, id];
+    const updateQuery = `UPDATE cm_fund_requests SET status = ?, updated_by_admin_id = ? ${approvedAmount !== undefined ? ', approved_amount = ?' : ''} WHERE id = ?`;
+    const updateParams = approvedAmount !== undefined ? [status, req.admin?.id || null, approvedAmount, id] : [status, req.admin?.id || null, id];
     
     await connection.query(updateQuery, updateParams);
 
@@ -815,7 +819,7 @@ export const addUpdate = async (req, res) => {
     // Update Application Status if changed
     let oldStatus = application.status;
     if (type !== application.status) {
-      await connection.query(`UPDATE cm_fund_requests SET status = ? WHERE id = ?`, [type, id]);
+      await connection.query(`UPDATE cm_fund_requests SET status = ?, updated_by_admin_id = ? WHERE id = ?`, [type, req.admin?.id || null, id]);
       
       // Log Status Change Timeline Event
       await connection.query(`

@@ -60,11 +60,13 @@ const fetchFullSuggestion = async (id) => {
                lb.name AS local_body_name,
                lbw.ward_no,
                lbw.place_name AS ward_place_name,
-               au.full_name   AS filed_by_admin_name
+               au.full_name   AS filed_by_admin_name,
+               au_updater.full_name AS updated_by_admin_name
         FROM suggestions i
         LEFT JOIN local_bodies     lb  ON i.local_body_id     = lb.id
         LEFT JOIN local_body_wards lbw ON i.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON i.filed_by_admin_id = au.id
+        LEFT JOIN admin_users au_updater ON i.updated_by_admin_id = au_updater.id
         WHERE i.id = ?
     `, [id]);
 
@@ -316,12 +318,13 @@ export const updateSuggestion = async (req, res) => {
               local_body_id = COALESCE(?, local_body_id),
               ward_id = COALESCE(?, ward_id),
               department = COALESCE(?, department),
-              date_filed = COALESCE(?, date_filed)
+              date_filed = COALESCE(?, date_filed),
+              updated_by_admin_id = ?
             WHERE id = ?
         `, [
             title, category, priority, status, description, location, address, internal_note,
             complainant_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department, date_filed, id,
+            local_body_id, ward_id, department, date_filed, req.admin?.id || null, id,
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found.' });
@@ -341,7 +344,7 @@ export const updateSuggestionStatus = async (req, res) => {
         const { status } = req.body;
         if (!status) return res.status(400).json({ success: false, message: 'status is required.' });
 
-        const [result] = await pool.query('UPDATE suggestions SET status = ? WHERE id = ?', [status, id]);
+        const [result] = await pool.query('UPDATE suggestions SET status = ?, updated_by_admin_id = ? WHERE id = ?', [status, req.admin?.id || null, id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found.' });
 
         await logActivity(id, `Status changed to "${status}".`, req.admin?.id);
