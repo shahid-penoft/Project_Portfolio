@@ -238,7 +238,7 @@ export const getIssues = async (req, res) => {
         );
 
         const [rows] = await pool.query(`
-            SELECT c.id, c.reference_no, c.title, c.category, c.issue_scope, c.priority, c.status, c.description,
+            SELECT c.id, c.reference_no, c.title, c.category, c.affected_by, c.resolved_date, c.priority, c.status, c.description,
                    c.submitter_name, c.phone, c.date_filed, c.created_at, c.is_deleted, c.deleted_at,
                    c.department AS department_name,
                    lb.name AS local_body_name,
@@ -312,7 +312,7 @@ export const getIssueById = async (req, res) => {
 export const createIssue = async (req, res) => {
     try {
         const {
-            title, category, issue_scope, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             custom_sms_message, notify_complainant,
@@ -329,16 +329,17 @@ export const createIssue = async (req, res) => {
 
         const [result] = await pool.query(`
             INSERT INTO issues
-              (reference_no, title, category, issue_scope, priority, status, description, location, address, latitude, longitude, internal_note,
+              (reference_no, title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
                submitter_name, phone, alternative_phone, email,
                local_body_id, ward_id, department,
                constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
             category || 'Other',
-            issue_scope || 'Individual Issue',
+            affected_by || null,
+            resolved_date || null,
             priority || 'Medium',
             status || 'Pending',
             description || null,
@@ -397,7 +398,7 @@ export const updateIssue = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, issue_scope, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
         } = req.body;
@@ -406,7 +407,8 @@ export const updateIssue = async (req, res) => {
             UPDATE issues SET
               title = COALESCE(?, title),
               category = COALESCE(?, category),
-              issue_scope = COALESCE(?, issue_scope),
+              affected_by = COALESCE(?, affected_by),
+              resolved_date = COALESCE(?, resolved_date),
               priority = COALESCE(?, priority),
               status = COALESCE(?, status),
               description = COALESCE(?, description),
@@ -425,7 +427,7 @@ export const updateIssue = async (req, res) => {
               date_filed = COALESCE(?, date_filed)
             WHERE id = ?
         `, [
-            title, category, issue_scope, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed, id,
         ]);
