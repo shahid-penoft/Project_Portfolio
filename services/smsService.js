@@ -63,3 +63,24 @@ export const sendSMSSafe = async (to, content) => {
         console.warn('[SMS failed — non-fatal]', to, err.message);
     }
 };
+
+const FRONTEND_URL = process.env.FRONTEND_URL;
+const APP_NAME = process.env.APP_NAME || 'MLA Connect';
+
+/**
+ * Send an Admin Invite SMS with a setup link.
+ */
+export const sendAdminInviteSMS = async ({ to, name, link }) => {
+    const firstName = name ? name.split(' ')[0] : 'Admin';
+    const content = `Hi ${firstName}, set your ${APP_NAME} Admin password here: ${link}`;
+    return sendSMSSafe(to, content);
+};
+
+/**
+ * Send an Admin Password Reset SMS with a reset link.
+ */
+export const sendAdminPasswordResetSMS = async ({ to, name, link }) => {
+    const firstName = name ? name.split(' ')[0] : 'Admin';
+    const content = `Hi ${firstName}, reset your ${APP_NAME} Admin password here: ${link}`;
+    return sendSMSSafe(to, content);
+};

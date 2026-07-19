@@ -2,7 +2,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../configs/db.js';
 import { sendPasswordResetEmail, sendWelcomeEmail, sendAdminChangePasswordOtpEmail } from '../utils/email.js';
-import { generateToken, minutesFromNow, successResponse, errorResponse } from '../utils/helpers.js';
+import { sendAdminPasswordResetSMS } from '../services/smsService.js';
+import { generateToken, minutesFromNow, successResponse, errorResponse, createShortLink } from '../utils/helpers.js';
 import { logActivity as auditLog } from './teamsLogController.js';
 
 // ─────────────────────────────────────────────────────────────
@@ -58,20 +59,20 @@ export const register = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { identifier, password } = req.body;
 
-        if (!email || !password)
-            return errorResponse(res, 'Email and password are required.', 400);
+        if (!identifier || !password)
+            return errorResponse(res, 'Email/Mobile Number and password are required.', 400);
 
         const [rows] = await db.query(
             `SELECT u.*, r.name as role, r.permissions, r.is_system 
              FROM admin_users u 
              LEFT JOIN admin_roles r ON u.role_id = r.id 
-             WHERE u.email = ?`,
-            [email]
+             WHERE u.email = ? OR u.phone = ?`,
+            [identifier, identifier]
         );
         if (!rows.length)
-            return errorResponse(res, 'Invalid email or password.', 401);
+            return errorResponse(res, 'Invalid credentials.', 401);
 
         const admin = rows[0];
 
@@ -113,34 +114,41 @@ export const login = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const forgotPassword = async (req, res) => {
     try {
-        const { email } = req.body;
-        if (!email) return errorResponse(res, 'Email is required.', 400);
+        const { identifier } = req.body;
+        if (!identifier) return errorResponse(res, 'Email or Mobile Number is required.', 400);
 
         const [rows] = await db.query(
-            'SELECT id, full_name, email FROM admin_users WHERE email = ? AND is_active = 1',
-            [email]
+            'SELECT id, full_name, email, phone FROM admin_users WHERE (email = ? OR phone = ?) AND is_active = 1',
+            [identifier, identifier]
         );
 
-        // Always return the same message (prevents email enumeration)
+        // Always return the same message (prevents enumeration)
         if (!rows.length)
-            return successResponse(res, {}, 'If that email exists, a reset link has been sent.');
+            return successResponse(res, {}, 'If that account exists, a reset link has been sent.');
 
         const admin = rows[0];
         const token = generateToken();
-        const expiresAt = minutesFromNow(30); // 30-minute expiry
-
-        // Invalidate previous tokens for this email
-        await db.query('UPDATE password_resets SET used = 1 WHERE email = ? AND used = 0', [email]);
+        
+        // Invalidate previous tokens for this identifier
+        await db.query('UPDATE password_resets SET used = 1 WHERE email = ? AND used = 0', [identifier]);
 
         // Insert new token (expires_at stored in UTC to match UTC_TIMESTAMP() comparisons)
         await db.query(
             'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 30 MINUTE)',
-            [email, token]
+            [identifier, token]
         );
 
-        await sendPasswordResetEmail({ to: email, name: admin.full_name, token });
+        // Send Email OR SMS based on what they provided as identifier
+        if (admin.email && admin.email === identifier) {
+            await sendPasswordResetEmail({ to: admin.email, name: admin.full_name, token });
+        } else {
+            const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',')[0] : 'http://localhost:5173';
+            const fullLink = `${frontendUrl}/admin/reset-password?token=${token}`;
+            const shortLink = await createShortLink(fullLink, 30);
+            await sendAdminPasswordResetSMS({ to: admin.phone || identifier, name: admin.full_name, link: shortLink });
+        }
 
-        return successResponse(res, {}, 'If that email exists, a reset link has been sent.');
+        return successResponse(res, {}, 'If that account exists, a reset link has been sent.');
     } catch (err) {
         console.error('[forgotPassword]', err);
         return errorResponse(res, 'Server error. Please try again later.');
@@ -170,7 +178,7 @@ export const resetPassword = async (req, res) => {
         const resetRecord = rows[0];
         const hashed = await bcrypt.hash(new_password, 12);
 
-        await db.query('UPDATE admin_users SET password = ? WHERE email = ?', [hashed, resetRecord.email]);
+        await db.query('UPDATE admin_users SET password = ? WHERE email = ? OR phone = ?', [hashed, resetRecord.email, resetRecord.email]);
         await db.query('UPDATE password_resets SET used = 1 WHERE id = ?', [resetRecord.id]);
 
         return successResponse(res, {}, 'Password has been reset successfully.');

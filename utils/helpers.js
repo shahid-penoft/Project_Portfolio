@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import db from '../configs/db.js';
 /**
  * Generate a secure random token (hex string)
  */
@@ -14,6 +15,22 @@ export const minutesFromNow = (minutes) => {
     d.setMinutes(d.getMinutes() + minutes);
     // MySQL DATETIME format
     return d.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+/**
+ * Create a short link in the database and return the short URL.
+ */
+export const createShortLink = async (longUrl, minutesValid = 30) => {
+    // Generate an 8-character alphanumeric short code
+    const code = crypto.randomBytes(6).toString('base64url').slice(0, 8);
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
+    
+    await db.query(
+        'INSERT INTO short_links (code, long_url, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL ? MINUTE)',
+        [code, longUrl, minutesValid]
+    );
+
+    return `${backendUrl}/r/${code}`;
 };
 
 /**

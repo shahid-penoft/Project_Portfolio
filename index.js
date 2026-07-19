@@ -4,6 +4,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import db from './configs/db.js';
 
 import authRoutes from './routes/authRoutes.js';
 import localBodyRoutes from './routes/localBodyRoutes.js';
@@ -101,6 +102,27 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/health', (_, res) =>
     res.json({ success: true, message: 'Server is running', timestamp: new Date() })
 );
+
+// ─── URL Shortener Redirection ────────────────────────────────
+app.get('/r/:code', async (req, res) => {
+    try {
+        const { code } = req.params;
+        const [rows] = await db.query(
+            'SELECT long_url FROM short_links WHERE code = ? AND expires_at > UTC_TIMESTAMP()',
+            [code]
+        );
+        if (rows.length > 0) {
+            return res.redirect(302, rows[0].long_url);
+        }
+        // If expired or invalid
+        const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',')[0] : 'http://localhost:5173';
+        return res.redirect(302, `${frontendUrl}/admin/login?error=link-expired`);
+    } catch (err) {
+        console.error('[ShortLinkError]', err);
+        const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',')[0] : 'http://localhost:5173';
+        return res.redirect(302, `${frontendUrl}/admin/login?error=server-error`);
+    }
+});
 
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
