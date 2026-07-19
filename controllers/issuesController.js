@@ -203,7 +203,7 @@ const fetchFullIssue = async (id) => {
 export const getIssues = async (req, res) => {
     try {
         console.log("Updated getIssues executing...");
-        const { status, category, priority, search, page = 1, limit = 20, trash } = req.query;
+        const { status, category, department, priority, search, page = 1, limit = 20, trash } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         const conditions = [];
@@ -224,6 +224,7 @@ export const getIssues = async (req, res) => {
 
         if (status)   { conditions.push('c.status = ?');   params.push(status); }
         if (category) { conditions.push('c.category = ?'); params.push(category); }
+        if (department) { conditions.push('c.department LIKE ?'); params.push('%' + department + '%'); }
         if (priority) { conditions.push('c.priority = ?'); params.push(priority); }
         if (search) {
             conditions.push('(c.title LIKE ? OR c.submitter_name LIKE ? OR c.reference_no LIKE ?)');

@@ -116,7 +116,7 @@ const fetchFullIdea = async (id) => {
 
 export const getIdeas = async (req, res) => {
     try {
-        const { status, category, priority, search, page = 1, limit = 20, trash } = req.query;
+        const { status, category, department, priority, search, page = 1, limit = 20, trash } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         const conditions = [];
@@ -135,6 +135,7 @@ export const getIdeas = async (req, res) => {
 
         if (status)   { conditions.push('i.status = ?');   params.push(status); }
         if (category && category !== 'All') { conditions.push('i.category = ?'); params.push(category); }
+        if (department) { conditions.push('i.department LIKE ?'); params.push('%' + department + '%'); }
         if (priority && priority !== 'All') { conditions.push('i.priority = ?'); params.push(priority); }
         if (search) {
             conditions.push('(i.title LIKE ? OR i.complainant_name LIKE ? OR i.reference_no LIKE ?)');
