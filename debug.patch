@@ -1,0 +1,18 @@
+--- controllers/governingBodiesController.js
++++ controllers/governingBodiesController.js
+@@ -74,6 +74,7 @@
+ // GET /api/admin/governing-bodies
+ export const getGoverningBodies = async (req, res) => {
+     try {
++        console.log('[getGoverningBodies] called with query:', req.query);
+         const { type, localBodyId, wardId, roleId, search, bookmarked, sortBy, page, limit, trash } = req.query;
+ 
+         let query = \
+@@ -148,6 +149,7 @@
+         }
+ 
+         const [rows] = await db.query(query, params);
++        console.log('[getGoverningBodies] returning rows count:', rows.length);
+ 
+         const data = rows.map(row => {
+             const parsed = parseRepRow(row);

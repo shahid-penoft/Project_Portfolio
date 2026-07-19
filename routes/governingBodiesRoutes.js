@@ -2,6 +2,7 @@ import express from 'express';
 import {
     getGoverningBodies,
     getGoverningBodyById,
+    getGoverningBodyStats,
     createGoverningBody,
     updateGoverningBody,
     deleteGoverningBody,
@@ -21,6 +22,9 @@ const router = express.Router();
 
 // GET all governing bodies (supports ?trash=true for trash view)
 router.get('/', checkAdmin, getGoverningBodies);
+
+// GET stats: staff member counts per office (MUST be before /:id)
+router.get('/stats', checkAdmin, getGoverningBodyStats);
 
 // GET a specific governing body by ID
 router.get('/:id', checkAdmin, getGoverningBodyById);

@@ -13,6 +13,25 @@ const parseJsonField = (field) => {
     }
 };
 
+/**
+ * Parse all JSON-stored columns on a representative row before sending to client.
+ * Ensures frontend receives typed arrays/objects, never raw JSON strings.
+ */
+const parseRepRow = (row) => {
+    if (!row) return row;
+    return {
+        ...row,
+        location:         parseJsonField(row.location),
+        office_location:  parseJsonField(row.office_location),
+        officeLocation:   parseJsonField(row.office_location ?? row.officeLocation),
+        additional_roles: parseJsonField(row.additional_roles) ?? [],
+        additionalRoles:  parseJsonField(row.additional_roles ?? row.additionalRoles) ?? [],
+        achievements:     parseJsonField(row.achievements) ?? [],
+        notes:            parseJsonField(row.notes) ?? [],
+        otherDetails:     parseJsonField(row.notes ?? row.otherDetails) ?? [],
+    };
+};
+
 const validateBody = (body) => {
     const { governing_body_type, local_body_id, name, role_id, phone, department, head_name, status } = body;
     if (!governing_body_type || !['GRAM_PANCHAYAT', 'MUNICIPALITY', 'BLOCK_PANCHAYAT', 'DISTRICT_PANCHAYAT', 'OTHER'].includes(governing_body_type)) {
@@ -45,6 +64,7 @@ const validateBody = (body) => {
 // GET /api/admin/governing-bodies
 export const getGoverningBodies = async (req, res) => {
     try {
+        console.log('[getGoverningBodies] query:', req.query);
         const { type, localBodyId, wardId, roleId, search, bookmarked, sortBy, page, limit, trash } = req.query;
 
         let query = `
@@ -56,13 +76,23 @@ export const getGoverningBodies = async (req, res) => {
                 gr.office_email    AS officeEmail,
                 gr.officer_email   AS officerEmail,
                 gr.office_location AS officeLocation,
+                gr.alternative_phone AS alternativePhone,
+                gr.house_name      AS houseName,
+                gr.home_address    AS homeAddress,
+                gr.office_address  AS officeAddress,
+                gr.office_phone    AS officePhone,
                 gr.notes           AS otherDetails,
+                gr.role_id         AS roleId,
+                gr.local_body_id   AS localBodyId,
+                gr.ward_id         AS wardId,
                 lb.name            AS localBodyName,
                 lb.name            AS localBody,
                 w.place_name       AS wardName,
                 w.ward_no          AS wardNumber,
+                CONCAT('Ward ', w.ward_no, ' - ', w.place_name) AS ward,
                 r.label            AS headDesignation,
                 r.label            AS roleName,
+                r.label            AS role,
                 (SELECT au.full_name 
                  FROM governing_body_activity_logs al 
                  LEFT JOIN admin_users au ON al.admin_user_id = au.id 
@@ -156,6 +186,7 @@ export const getGoverningBodies = async (req, res) => {
         }
 
         const [rows] = await db.query(query, params);
+        const parsedRows = rows.map(parseRepRow);
         
         let pagination = null;
         if (page && limit) {
@@ -164,7 +195,7 @@ export const getGoverningBodies = async (req, res) => {
             pagination = { total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) };
         }
 
-        return successResponse(res, { data: rows, pagination }, 'Governing bodies fetched successfully.');
+        return successResponse(res, { data: parsedRows, pagination }, 'Governing bodies fetched successfully.');
     } catch (error) {
         console.error('[getGoverningBodies]', error);
         return errorResponse(res, 'Server error fetching governing bodies.');
@@ -186,13 +217,23 @@ export const getGoverningBodyById = async (req, res) => {
                 gr.office_email    AS officeEmail,
                 gr.officer_email   AS officerEmail,
                 gr.office_location AS officeLocation,
+                gr.alternative_phone AS alternativePhone,
+                gr.house_name      AS houseName,
+                gr.home_address    AS homeAddress,
+                gr.office_address  AS officeAddress,
+                gr.office_phone    AS officePhone,
                 gr.notes           AS otherDetails,
+                gr.role_id         AS roleId,
+                gr.local_body_id   AS localBodyId,
+                gr.ward_id         AS wardId,
                 lb.name            AS localBodyName,
                 lb.name            AS localBody,
                 w.place_name       AS wardName,
                 w.ward_no          AS wardNumber,
+                CONCAT('Ward ', w.ward_no, ' - ', w.place_name) AS ward,
                 r.label            AS headDesignation,
-                r.label            AS roleName
+                r.label            AS roleName,
+                r.label            AS role
             FROM governing_representatives gr
             LEFT JOIN local_bodies lb ON gr.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON gr.ward_id = w.id
@@ -205,7 +246,7 @@ export const getGoverningBodyById = async (req, res) => {
             return errorResponse(res, 'Governing body representative not found.', 404);
         }
 
-        const rep = rows[0];
+        const rep = parseRepRow(rows[0]);
 
         const [activityRows] = await db.query(`
             SELECT 
@@ -222,8 +263,8 @@ export const getGoverningBodyById = async (req, res) => {
         rep.activity = activityRows;
         
         if (activityRows.length > 0) {
-            rep.createdBy = activityRows[activityRows.length - 1].author_name || "Admin";
-            rep.updatedBy = activityRows[0].author_name || "Admin";
+            rep.createdBy = activityRows[activityRows.length - 1].author_name || 'Admin';
+            rep.updatedBy = activityRows[0].author_name || 'Admin';
         }
 
         return successResponse(res, { data: rep }, 'Governing body representative fetched successfully.');
@@ -482,3 +523,19 @@ export const toggleBookmark = async (req, res) => {
     }
 };
 
+// GET /api/admin/governing-bodies/stats
+// Returns staff member counts per office — used by OtherOfficesPage to show memberCount badge.
+// IMPORTANT: This route must be registered BEFORE /:id to avoid route collision.
+export const getGoverningBodyStats = async (req, res) => {
+    try {
+        const [rows] = await db.query(
+            `SELECT governing_body_id AS officeId, COUNT(*) AS memberCount
+             FROM governing_body_staffs
+             GROUP BY governing_body_id`
+        );
+        return successResponse(res, { stats: rows }, 'Stats fetched successfully.');
+    } catch (error) {
+        console.error('[getGoverningBodyStats]', error);
+        return errorResponse(res, 'Server error fetching stats.');
+    }
+};
