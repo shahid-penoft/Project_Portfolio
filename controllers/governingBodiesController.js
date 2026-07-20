@@ -370,6 +370,9 @@ export const createGoverningBody = async (req, res) => {
         const [rows] = await db.query('SELECT * FROM governing_representatives WHERE id = ?', [result.insertId]);
         return successResponse(res, { data: rows[0] }, 'Governing body representative created successfully.', 201);
     } catch (error) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return errorResponse(res, 'Image file size exceeds the 5MB limit. Please upload a smaller image.', 400);
+        }
         if (error.code === 'ER_NO_REFERENCED_ROW_2') {
              return errorResponse(res, 'Foreign key constraint failed. Check local_body_id, ward_id, or role_id.', 400);
         }
@@ -493,6 +496,9 @@ export const updateGoverningBody = async (req, res) => {
         const [rows] = await db.query('SELECT * FROM governing_representatives WHERE id = ?', [id]);
         return successResponse(res, { data: rows[0] }, 'Governing body representative updated successfully.');
     } catch (error) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return errorResponse(res, 'Image file size exceeds the 5MB limit. Please upload a smaller image.', 400);
+        }
         if (error.code === 'ER_NO_REFERENCED_ROW_2') {
              return errorResponse(res, 'Foreign key constraint failed. Check local_body_id, ward_id, or role_id.', 400);
         }
