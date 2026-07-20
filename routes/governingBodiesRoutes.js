@@ -9,6 +9,7 @@ import {
     toggleBookmark,
     trashGoverningBody,
     restoreGoverningBody,
+    checkWardUniqueness,
 } from '../controllers/governingBodiesController.js';
 import {
     getStaffsByOffice,
@@ -25,6 +26,9 @@ router.get('/', checkAdmin, getGoverningBodies);
 
 // GET stats: staff member counts per office (MUST be before /:id)
 router.get('/stats', checkAdmin, getGoverningBodyStats);
+
+// GET check if a ward is already occupied by a member
+router.get('/check-ward/:wardId', checkAdmin, checkWardUniqueness);
 
 // GET a specific governing body by ID
 router.get('/:id', checkAdmin, getGoverningBodyById);

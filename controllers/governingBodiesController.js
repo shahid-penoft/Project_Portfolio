@@ -609,3 +609,38 @@ export const getGoverningBodyStats = async (req, res) => {
         return errorResponse(res, 'Server error fetching stats.');
     }
 };
+
+// GET /api/admin/governing-bodies/check-ward/:wardId
+export const checkWardUniqueness = async (req, res) => {
+    try {
+        const { wardId } = req.params;
+        const { excludeId } = req.query;
+
+        let query = `
+            SELECT id, name FROM governing_representatives 
+            WHERE ward_id = ? 
+              AND governing_body_type != 'OTHER'
+              AND (is_deleted = 0 OR is_deleted IS NULL)
+        `;
+        const params = [wardId];
+
+        if (excludeId) {
+            query += ' AND id != ?';
+            params.push(excludeId);
+        }
+        
+        query += ' LIMIT 1';
+
+        const [rows] = await db.query(query, params);
+
+        if (rows.length > 0) {
+            return successResponse(res, { isOccupied: true, memberName: rows[0].name }, 'Ward is already occupied.');
+        }
+
+        return successResponse(res, { isOccupied: false }, 'Ward is available.');
+    } catch (error) {
+        console.error('[checkWardUniqueness]', error);
+        return errorResponse(res, 'Server error checking ward uniqueness.');
+    }
+};
+
