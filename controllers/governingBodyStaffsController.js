@@ -30,13 +30,13 @@ export const createStaff = async (req, res) => {
         const errorMsg = validateStaffBody(req.body);
         if (errorMsg) return errorResponse(res, errorMsg, 400);
 
-        const { name, designation, phone, email, whatsapp_number, is_key, color } = req.body;
+        const { name, designation, phone, email, whatsapp_number, is_key, color, remarks } = req.body;
         const photo_url = req.file ? req.file.location : null;
 
         const [result] = await db.query(`
             INSERT INTO governing_body_staffs (
-                governing_body_id, name, designation, phone, email, whatsapp_number, is_key, color, photo_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                governing_body_id, name, designation, phone, email, whatsapp_number, is_key, color, remarks, photo_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             officeId,
             name,
@@ -46,6 +46,7 @@ export const createStaff = async (req, res) => {
             whatsapp_number || null,
             is_key === 'true' || is_key === true,
             color || null,
+            remarks || null,
             photo_url
         ]);
 
@@ -82,7 +83,7 @@ export const updateStaff = async (req, res) => {
         const errorMsg = validateStaffBody(req.body);
         if (errorMsg) return errorResponse(res, errorMsg, 400);
 
-        const { name, designation, phone, email, whatsapp_number, is_key, color } = req.body;
+        const { name, designation, phone, email, whatsapp_number, is_key, color, remarks } = req.body;
 
         const [[existing]] = await db.query('SELECT photo_url FROM governing_body_staffs WHERE id = ?', [staffId]);
         if (!existing) {
@@ -93,7 +94,7 @@ export const updateStaff = async (req, res) => {
 
         await db.query(`
             UPDATE governing_body_staffs SET
-                name = ?, designation = ?, phone = ?, email = ?, whatsapp_number = ?, is_key = ?, color = ?, photo_url = ?
+                name = ?, designation = ?, phone = ?, email = ?, whatsapp_number = ?, is_key = ?, color = ?, remarks = ?, photo_url = ?
             WHERE id = ?
         `, [
             name,
@@ -103,6 +104,7 @@ export const updateStaff = async (req, res) => {
             whatsapp_number || null,
             is_key === 'true' || is_key === true,
             color || null,
+            remarks || null,
             photo_url,
             staffId
         ]);
