@@ -253,7 +253,8 @@ export const getGoverningBodyById = async (req, res) => {
                 al.id, 
                 al.text, 
                 al.created_at AS createdAt,
-                au.full_name AS author_name
+                au.full_name AS author_name,
+                au.id AS admin_id
             FROM governing_body_activity_logs al
             LEFT JOIN admin_users au ON al.admin_user_id = au.id
             WHERE al.governing_body_id = ?
@@ -264,7 +265,9 @@ export const getGoverningBodyById = async (req, res) => {
         
         if (activityRows.length > 0) {
             rep.createdBy = activityRows[activityRows.length - 1].author_name || 'Admin';
+            rep.createdById = activityRows[activityRows.length - 1].admin_id;
             rep.updatedBy = activityRows[0].author_name || 'Admin';
+            rep.updatedById = activityRows[0].admin_id;
         }
 
         return successResponse(res, { data: rep }, 'Governing body representative fetched successfully.');
@@ -289,7 +292,7 @@ export const createGoverningBody = async (req, res) => {
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
-            department, head_name, hours, avatar_color, officer_phone, officer_email, status
+            department, category, head_name, hours, avatar_color, officer_phone, officer_email, status, whatsapp_number
         } = req.body;
 
         const photo_url = req.file ? req.file.location : null;
@@ -297,11 +300,11 @@ export const createGoverningBody = async (req, res) => {
         const [result] = await db.query(`
             INSERT INTO governing_representatives (
                 governing_body_type, local_body_id, ward_id, name, role_id, gender, age,
-                phone, alternative_phone, email, house_name, home_address, location,
+                phone, alternative_phone, email, whatsapp_number, house_name, home_address, location,
                 bio, office_name, office_phone, office_email, office_address, office_location,
                 additional_roles, achievements, notes, bookmarked, photo_url,
-                department, head_name, hours, avatar_color, officer_phone, officer_email, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                department, category, head_name, hours, avatar_color, officer_phone, officer_email, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             governing_body_type, 
             local_body_id, 
@@ -313,6 +316,7 @@ export const createGoverningBody = async (req, res) => {
             phone, 
             alternative_phone || null, 
             email || null, 
+            whatsapp_number || null,
             house_name || null, 
             home_address || null,
             location ? JSON.stringify(parseJsonField(location)) : null,
@@ -328,6 +332,7 @@ export const createGoverningBody = async (req, res) => {
             bookmarked === 'true' || bookmarked === true,
             photo_url,
             department || null,
+            category || null,
             head_name || null,
             hours || null,
             avatar_color || null,
@@ -387,7 +392,7 @@ export const updateGoverningBody = async (req, res) => {
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
-            department, head_name, hours, avatar_color, officer_phone, officer_email, status
+            department, category, head_name, hours, avatar_color, officer_phone, officer_email, status, whatsapp_number
         } = req.body;
 
         const [[existing]] = await db.query('SELECT photo_url FROM governing_representatives WHERE id = ?', [id]);
@@ -400,10 +405,10 @@ export const updateGoverningBody = async (req, res) => {
         await db.query(`
             UPDATE governing_representatives SET
                 governing_body_type = ?, local_body_id = ?, ward_id = ?, name = ?, role_id = ?, gender = ?, age = ?,
-                phone = ?, alternative_phone = ?, email = ?, house_name = ?, home_address = ?, location = ?,
+                phone = ?, alternative_phone = ?, email = ?, whatsapp_number = ?, house_name = ?, home_address = ?, location = ?,
                 bio = ?, office_name = ?, office_phone = ?, office_email = ?, office_address = ?, office_location = ?,
                 additional_roles = ?, achievements = ?, notes = ?, bookmarked = ?, photo_url = ?,
-                department = ?, head_name = ?, hours = ?, avatar_color = ?, officer_phone = ?, officer_email = ?, status = COALESCE(?, status)
+                department = ?, category = ?, head_name = ?, hours = ?, avatar_color = ?, officer_phone = ?, officer_email = ?, status = COALESCE(?, status)
             WHERE id = ?
         `, [
             governing_body_type, 
@@ -416,6 +421,7 @@ export const updateGoverningBody = async (req, res) => {
             phone, 
             alternative_phone || null, 
             email || null, 
+            whatsapp_number || null,
             house_name || null, 
             home_address || null,
             location ? JSON.stringify(parseJsonField(location)) : null,
@@ -431,6 +437,7 @@ export const updateGoverningBody = async (req, res) => {
             bookmarked === 'true' || bookmarked === true,
             photo_url,
             department || null,
+            category || null,
             head_name || null,
             hours || null,
             avatar_color || null,
