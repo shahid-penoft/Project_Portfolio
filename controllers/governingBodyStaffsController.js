@@ -48,6 +48,16 @@ export const createStaff = async (req, res) => {
             photo_url
         ]);
 
+        if (is_key === 'true' || is_key === true) {
+            await db.query('UPDATE governing_body_staffs SET is_key = 0 WHERE governing_body_id = ? AND id != ?', [officeId, result.insertId]);
+            await db.query(`
+                UPDATE governing_representatives SET 
+                    head_name = ?, officer_phone = ?, officer_email = ?,
+                    role_id = COALESCE((SELECT id FROM mla_dropdown_lists WHERE label = ? AND type = 'head_designation' LIMIT 1), role_id)
+                WHERE id = ?
+            `, [name, phone || null, email || null, designation, officeId]);
+        }
+
         const [rows] = await db.query('SELECT * FROM governing_body_staffs WHERE id = ?', [result.insertId]);
         return successResponse(res, { data: rows[0] }, 'Staff created successfully.', 201);
     } catch (error) {
@@ -91,6 +101,19 @@ export const updateStaff = async (req, res) => {
             photo_url,
             staffId
         ]);
+
+        if (is_key === 'true' || is_key === true) {
+            const [[staff]] = await db.query('SELECT governing_body_id FROM governing_body_staffs WHERE id = ?', [staffId]);
+            if (staff) {
+                await db.query('UPDATE governing_body_staffs SET is_key = 0 WHERE governing_body_id = ? AND id != ?', [staff.governing_body_id, staffId]);
+                await db.query(`
+                    UPDATE governing_representatives SET 
+                        head_name = ?, officer_phone = ?, officer_email = ?,
+                        role_id = COALESCE((SELECT id FROM mla_dropdown_lists WHERE label = ? AND type = 'head_designation' LIMIT 1), role_id)
+                    WHERE id = ?
+                `, [name, phone || null, email || null, designation, staff.governing_body_id]);
+            }
+        }
 
         const [rows] = await db.query('SELECT * FROM governing_body_staffs WHERE id = ?', [staffId]);
         return successResponse(res, { data: rows[0] }, 'Staff updated successfully.');

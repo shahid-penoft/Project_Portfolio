@@ -336,6 +336,26 @@ export const createGoverningBody = async (req, res) => {
             status || 'Active'
         ]);
 
+        if (head_name) {
+            let staffDesignation = '';
+            if (role_id) {
+                const [[roleRow]] = await db.query('SELECT label FROM mla_dropdown_lists WHERE id = ?', [role_id]);
+                if (roleRow) staffDesignation = roleRow.label;
+            }
+            await db.query(`
+                INSERT INTO governing_body_staffs (
+                    governing_body_id, name, designation, phone, email, is_key
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            `, [
+                result.insertId,
+                head_name,
+                staffDesignation,
+                officer_phone || null,
+                officer_email || null,
+                true
+            ]);
+        }
+
         await db.query(
             'INSERT INTO governing_body_activity_logs (governing_body_id, admin_user_id, text) VALUES (?, ?, ?)',
             [result.insertId, req.admin?.id || null, 'Created the governing body representative.']
@@ -419,6 +439,43 @@ export const updateGoverningBody = async (req, res) => {
             status || null,
             id
         ]);
+
+        if (head_name) {
+            let staffDesignation = '';
+            if (role_id) {
+                const [[roleRow]] = await db.query('SELECT label FROM mla_dropdown_lists WHERE id = ?', [role_id]);
+                if (roleRow) staffDesignation = roleRow.label;
+            }
+            
+            const [[existingKeyStaff]] = await db.query('SELECT id FROM governing_body_staffs WHERE governing_body_id = ? AND is_key = 1 LIMIT 1', [id]);
+            
+            if (existingKeyStaff) {
+                await db.query(`
+                    UPDATE governing_body_staffs SET
+                        name = ?, designation = ?, phone = ?, email = ?
+                    WHERE id = ?
+                `, [
+                    head_name,
+                    staffDesignation,
+                    officer_phone || null,
+                    officer_email || null,
+                    existingKeyStaff.id
+                ]);
+            } else {
+                await db.query(`
+                    INSERT INTO governing_body_staffs (
+                        governing_body_id, name, designation, phone, email, is_key
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                `, [
+                    id,
+                    head_name,
+                    staffDesignation,
+                    officer_phone || null,
+                    officer_email || null,
+                    true
+                ]);
+            }
+        }
 
         await db.query(
             'INSERT INTO governing_body_activity_logs (governing_body_id, admin_user_id, text) VALUES (?, ?, ?)',

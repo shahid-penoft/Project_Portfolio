@@ -314,7 +314,7 @@ export const getComplaintById = async (req, res) => {
 export const createComplaint = async (req, res) => {
     try {
         const {
-            title, category, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             custom_sms_message, notify_complainant,
@@ -331,11 +331,11 @@ export const createComplaint = async (req, res) => {
 
         const [result] = await pool.query(`
             INSERT INTO complaints
-              (reference_no, title, category, priority, status, description, location, address, latitude, longitude, internal_note,
+              (reference_no, title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
                complainant_name, phone, alternative_phone, email,
                local_body_id, ward_id, department,
                constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -345,6 +345,7 @@ export const createComplaint = async (req, res) => {
             description || null,
             location || null,
             address || null,
+            address_line1 || null,
             latitude || null,
             longitude || null,
             internal_note || null,
@@ -398,7 +399,7 @@ export const updateComplaint = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
         } = req.body;
@@ -412,6 +413,7 @@ export const updateComplaint = async (req, res) => {
               description = COALESCE(?, description),
               location = COALESCE(?, location),
               address = COALESCE(?, address),
+              address_line1 = COALESCE(?, address_line1),
               latitude = COALESCE(?, latitude),
               longitude = COALESCE(?, longitude),
               internal_note = COALESCE(?, internal_note),
@@ -426,7 +428,7 @@ export const updateComplaint = async (req, res) => {
               updated_by_admin_id = ?
             WHERE id = ?
         `, [
-            title, category, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed, req.admin?.id || null, id,
         ]);
