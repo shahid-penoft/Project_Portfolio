@@ -316,7 +316,7 @@ export const createIssue = async (req, res) => {
             title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
-            custom_sms_message, notify_complainant,
+            address_line1, custom_sms_message, notify_complainant,
         } = req.body;
 
         if (!title || !submitter_name || !phone) {
@@ -332,9 +332,9 @@ export const createIssue = async (req, res) => {
             INSERT INTO issues
               (reference_no, title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
                submitter_name, phone, alternative_phone, email,
-               local_body_id, ward_id, department,
+               local_body_id, ward_id, department, address_line1,
                constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -356,6 +356,7 @@ export const createIssue = async (req, res) => {
             local_body_id || null,
             ward_id || null,
             department || null,
+            address_line1 || null,
             constituentId,
             adminId,
             date_filed || new Date().toISOString().split('T')[0],
@@ -401,7 +402,7 @@ export const updateIssue = async (req, res) => {
         const {
             title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department, date_filed,
+            local_body_id, ward_id, department, date_filed, address_line1,
         } = req.body;
 
         const [result] = await pool.query(`
@@ -425,13 +426,14 @@ export const updateIssue = async (req, res) => {
               local_body_id = COALESCE(?, local_body_id),
               ward_id = COALESCE(?, ward_id),
               department = COALESCE(?, department),
+              address_line1 = COALESCE(?, address_line1),
               date_filed = COALESCE(?, date_filed),
               updated_by_admin_id = ?
             WHERE id = ?
         `, [
             title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
             submitter_name, phone, alternative_phone, email,
-            local_body_id, ward_id, department, date_filed, req.admin?.id || null, id,
+            local_body_id, ward_id, department, address_line1, date_filed, req.admin?.id || null, id,
         ]);
 
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Issue not found.' });
