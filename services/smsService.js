@@ -84,3 +84,12 @@ export const sendAdminPasswordResetSMS = async ({ to, name, link }) => {
     const content = `Hi ${firstName}, reset your ${APP_NAME} Admin password here: ${link}`;
     return sendSMSSafe(to, content);
 };
+
+/**
+ * Send an Admin Forgot Password OTP SMS.
+ */
+export const sendAdminForgotPasswordOtpSMS = async ({ to, name, otp }) => {
+    const firstName = name ? name.split(' ')[0] : 'Admin';
+    const content = `Hi ${firstName}, your ${APP_NAME} Admin password reset OTP is ${otp}. Valid for 10 minutes.`;
+    return sendSMSSafe(to, content);
+};

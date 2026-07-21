@@ -5,6 +5,7 @@ import {
     register,
     login,
     forgotPassword,
+    verifyForgotPasswordOtp,
     resetPassword,
     changePassword,
     sendChangePasswordOtp,
@@ -36,6 +37,7 @@ const forgotLimiter = rateLimit({
 // ─── Public Routes ───────────────────────────────────────────
 router.post('/login', authLimiter, login);
 router.post('/forgot-password', forgotLimiter, forgotPassword);
+router.post('/forgot-password/verify-otp', forgotLimiter, verifyForgotPasswordOtp);
 router.post('/reset-password', resetPassword);
 
 // ─── Protected Routes (cookie JWT required) ───────────────────

@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../configs/db.js';
-import { sendPasswordResetEmail, sendWelcomeEmail, sendAdminChangePasswordOtpEmail } from '../utils/email.js';
-import { sendAdminPasswordResetSMS } from '../services/smsService.js';
+import { sendPasswordResetEmail, sendWelcomeEmail, sendAdminChangePasswordOtpEmail, sendForgotPasswordOtpEmail } from '../utils/email.js';
+import { sendAdminPasswordResetSMS, sendAdminForgotPasswordOtpSMS } from '../services/smsService.js';
 import { generateToken, minutesFromNow, successResponse, errorResponse, createShortLink } from '../utils/helpers.js';
 import { logActivity as auditLog } from './teamsLogController.js';
 
@@ -124,34 +124,69 @@ export const forgotPassword = async (req, res) => {
 
         // Always return the same message (prevents enumeration)
         if (!rows.length)
-            return successResponse(res, {}, 'If that account exists, a reset link has been sent.');
+            return successResponse(res, {}, 'If that account exists, an OTP has been sent.');
 
         const admin = rows[0];
-        const token = generateToken();
+        // Generate a 6-digit OTP instead of a token
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
         
         // Invalidate previous tokens for this identifier
         await db.query('UPDATE password_resets SET used = 1 WHERE email = ? AND used = 0', [identifier]);
 
-        // Insert new token (expires_at stored in UTC to match UTC_TIMESTAMP() comparisons)
+        // Insert new OTP (expires in 10 minutes)
         await db.query(
-            'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 30 MINUTE)',
-            [identifier, token]
+            'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 10 MINUTE)',
+            [identifier, otp]
         );
 
         // Send Email OR SMS based on what they provided as identifier
         if (admin.email && admin.email === identifier) {
-            await sendPasswordResetEmail({ to: admin.email, name: admin.full_name, token });
+            await sendForgotPasswordOtpEmail({ to: admin.email, name: admin.full_name, otp });
         } else {
-            const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',')[0] : 'http://localhost:5173';
-            const fullLink = `${frontendUrl}/admin/reset-password?token=${token}`;
-            const shortLink = await createShortLink(fullLink, 30);
-            await sendAdminPasswordResetSMS({ to: admin.phone || identifier, name: admin.full_name, link: shortLink });
+            await sendAdminForgotPasswordOtpSMS({ to: admin.phone || identifier, name: admin.full_name, otp });
         }
 
-        return successResponse(res, {}, 'If that account exists, a reset link has been sent.');
+        return successResponse(res, {}, 'If that account exists, an OTP has been sent.');
     } catch (err) {
         console.error('[forgotPassword]', err);
         return errorResponse(res, 'Server error. Please try again later.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/auth/forgot-password/verify-otp
+// ─────────────────────────────────────────────────────────────
+export const verifyForgotPasswordOtp = async (req, res) => {
+    try {
+        const { identifier, otp } = req.body;
+        if (!identifier || !otp)
+            return errorResponse(res, 'Identifier and OTP are required.', 400);
+
+        const [rows] = await db.query(
+            'SELECT * FROM password_resets WHERE email = ? AND token = ? AND used = 0 AND expires_at > UTC_TIMESTAMP()',
+            [identifier, otp]
+        );
+
+        if (!rows.length) {
+            return errorResponse(res, 'Invalid or expired OTP.', 400);
+        }
+
+        const resetRecord = rows[0];
+        
+        // Mark OTP as used
+        await db.query('UPDATE password_resets SET used = 1 WHERE id = ?', [resetRecord.id]);
+
+        // Generate a 32-byte reset token for the final step
+        const temp_token = generateToken();
+        await db.query(
+            'INSERT INTO password_resets (email, token, expires_at) VALUES (?, ?, UTC_TIMESTAMP() + INTERVAL 15 MINUTE)',
+            [identifier, temp_token]
+        );
+
+        return successResponse(res, { reset_token: temp_token }, 'OTP verified successfully.');
+    } catch (err) {
+        console.error('[verifyForgotPasswordOtp]', err);
+        return errorResponse(res, 'Server error verifying OTP.');
     }
 };
 
