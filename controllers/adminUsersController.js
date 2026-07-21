@@ -114,18 +114,25 @@ export const createAdminUser = async (req, res) => {
 export const updateAdminUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { full_name, role_id, is_active, phone } = req.body;
+        const { full_name, role_id, is_active, phone, email } = req.body;
 
         if (!full_name || !role_id) {
             return errorResponse(res, 'Name and role are required', 400);
+        }
+
+        if (email) {
+            const [existingEmail] = await db.query('SELECT id FROM admin_users WHERE email = ? AND id != ?', [email, id]);
+            if (existingEmail.length > 0) {
+                return errorResponse(res, 'Email already exists', 400);
+            }
         }
 
         // Protect Superadmin modifications if needed, but since this route is superadmin only, 
         // we mainly want to prevent taking away the superadmin role from the last superadmin.
         // For simplicity, we just allow the update.
         await db.query(
-            'UPDATE admin_users SET full_name = ?, role_id = ?, is_active = ?, phone = ? WHERE id = ?',
-            [full_name, role_id, is_active, phone || null, id]
+            'UPDATE admin_users SET full_name = ?, role_id = ?, is_active = ?, phone = ?, email = ? WHERE id = ?',
+            [full_name, role_id, is_active, phone || null, email || null, id]
         );
 
         return successResponse(res, {}, 'User updated successfully');

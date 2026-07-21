@@ -240,12 +240,10 @@ export const getComplaints = async (req, res) => {
         );
 
         const [rows] = await pool.query(`
-            SELECT c.id, c.reference_no, c.title, c.category, c.priority, c.status, c.description,
-                   c.complainant_name, c.phone, c.date_filed, c.created_at, c.is_deleted, c.deleted_at,
+            SELECT c.*,
                    c.department AS department_name,
                    lb.name AS local_body_name,
                    lbw.ward_no, lbw.place_name AS ward_name,
-                   c.filed_by_admin_id,
                    au.full_name AS filed_by_admin_name,
                    (SELECT au2.full_name FROM complaint_activity ca LEFT JOIN admin_users au2 ON ca.admin_user_id = au2.id WHERE ca.complaint_id = c.id AND ca.text LIKE '%trash%' ORDER BY ca.created_at DESC LIMIT 1) AS deleted_by_name
             FROM complaints c
