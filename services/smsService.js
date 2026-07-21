@@ -64,7 +64,7 @@ export const sendSMSSafe = async (to, content) => {
     }
 };
 
-const FRONTEND_URL = process.env.FRONTEND_URL;
+const FRONTEND_URL = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',')[0] : 'http://localhost:5173';
 const APP_NAME = process.env.APP_NAME || 'MLA Connect';
 
 /**

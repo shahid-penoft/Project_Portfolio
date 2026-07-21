@@ -3,7 +3,7 @@ import transporter from '../configs/mailer.js';
 
 const APP_NAME = process.env.APP_NAME || 'Shibu Theckumpuram';
 const MAIL_FROM = process.env.MAIL_FROM || `"${APP_NAME}" <no-reply@shibu-theckumpuram.com>`;
-const FRONTEND_URL = process.env.FRONTEND_URL;
+const FRONTEND_URL = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',')[0] : 'http://localhost:5173';
 
 // ─────────────────────────────────────────────────────────────
 //  Forgot Password Email
