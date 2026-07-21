@@ -154,6 +154,16 @@ export const deleteAdminUser = async (req, res) => {
         return successResponse(res, {}, 'User deleted successfully');
     } catch (error) {
         console.error('[deleteAdminUser]', error);
+        
+        // Handle Foreign Key Constraint Error (errno 1451 in MySQL)
+        if (error.errno === 1451) {
+            return errorResponse(
+                res, 
+                'Cannot delete this user because they are assigned to existing records (e.g., CM Funds or Complaints). Please deactivate their account instead.', 
+                409 // 409 Conflict
+            );
+        }
+        
         return errorResponse(res, 'Failed to delete user', 500);
     }
 };
