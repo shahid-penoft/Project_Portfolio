@@ -105,7 +105,7 @@ app.get('/health', (_, res) =>
 );
 
 // ─── URL Shortener Redirection ────────────────────────────────
-app.get('/r/:code', async (req, res) => {
+app.get('/api/r/:code', async (req, res) => {
     try {
         const { code } = req.params;
         const [rows] = await db.query(

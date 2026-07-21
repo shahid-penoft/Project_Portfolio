@@ -30,7 +30,7 @@ export const createShortLink = async (longUrl, minutesValid = 30) => {
         [code, longUrl, minutesValid]
     );
 
-    return `${backendUrl}/r/${code}`;
+    return `${backendUrl}/api/r/${code}`;
 };
 
 /**
