@@ -246,11 +246,13 @@ export const getIssues = async (req, res) => {
                    lb.name AS local_body_name,
                    lbw.ward_no, lbw.place_name AS ward_name,
                    au.full_name AS filed_by_admin_name,
+                   au_updater.full_name AS updated_by_admin_name,
                    (SELECT au2.full_name FROM issue_activity ia LEFT JOIN admin_users au2 ON ia.admin_user_id = au2.id WHERE ia.issue_id = c.id AND ia.text LIKE '%trash%' ORDER BY ia.created_at DESC LIMIT 1) AS deleted_by_name
             FROM issues c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id
             LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
+            LEFT JOIN admin_users      au_updater ON c.updated_by_admin_id = au_updater.id
             ${where}
             ORDER BY c.created_at DESC
             LIMIT ? OFFSET ?

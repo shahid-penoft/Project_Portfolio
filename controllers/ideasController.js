@@ -156,11 +156,13 @@ export const getIdeas = async (req, res) => {
                    i.department AS department_name,
                    lb.name AS local_body_name,
                    lbw.ward_no, lbw.place_name AS ward_name,
-                   au.full_name AS filed_by_admin_name
+                   au.full_name AS filed_by_admin_name,
+                   au_updater.full_name AS updated_by_admin_name
             FROM ideas i
             LEFT JOIN local_bodies     lb  ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON i.ward_id = lbw.id
             LEFT JOIN admin_users      au  ON i.filed_by_admin_id = au.id
+            LEFT JOIN admin_users      au_updater ON i.updated_by_admin_id = au_updater.id
             ${where}
             ORDER BY i.created_at DESC
             LIMIT ? OFFSET ?
