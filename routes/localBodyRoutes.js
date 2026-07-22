@@ -1,9 +1,10 @@
 import express from 'express';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
-import { getAllLocalBodies, createLocalBody, updateLocalBody, deleteLocalBody, uploadLocalBodyImage } from '../controllers/localBodyController.js';
+import { getAllLocalBodies, getLocalBodiesWithWards, createLocalBody, updateLocalBody, deleteLocalBody, uploadLocalBodyImage } from '../controllers/localBodyController.js';
 
 const router = express.Router();
 
+router.get('/all-with-wards', getLocalBodiesWithWards); // public hierarchical route
 router.get('/', getAllLocalBodies); // public
 
 router.use(verifyToken, requirePermission('enquiries'));

@@ -8,6 +8,7 @@ import db from './configs/db.js';
 
 import authRoutes from './routes/authRoutes.js';
 import localBodyRoutes from './routes/localBodyRoutes.js';
+import { getLocalBodiesWithWards } from './controllers/localBodyController.js';
 import wardRoutes from './routes/wardRoutes.js';
 import { getWardsByLocalBodyName } from './controllers/wardController.js';
 import sectorRoutes from './routes/sectorRoutes.js';
@@ -104,6 +105,8 @@ app.get('/health', (_, res) =>
     res.json({ success: true, message: 'Server is running', timestamp: new Date() })
 );
 
+// ─── End of Server Initialization ───
+// Nodemon trigger
 // ─── URL Shortener Redirection ────────────────────────────────
 app.get('/api/r/:code', async (req, res) => {
     try {
@@ -127,8 +130,9 @@ app.get('/api/r/:code', async (req, res) => {
 
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
-app.use('/api/local-bodies/:localBodyId/wards', wardRoutes);
+app.get('/api/local-bodies-with-wards', getLocalBodiesWithWards);
 app.use('/api/local-bodies', localBodyRoutes);
+app.use('/api/local-bodies/:localBodyId/wards', wardRoutes);
 app.get('/api/wards/by-name/:name', getWardsByLocalBodyName);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/event-types', eventTypeRoutes);

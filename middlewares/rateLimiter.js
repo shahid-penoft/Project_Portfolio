@@ -2,11 +2,11 @@ import rateLimit from 'express-rate-limit';
 
 /**
  * General API rate limiter to prevent basic DOS attacks and brute force.
- * Limits each IP to 100 requests per minute.
+ * Limits each IP to 200 requests per minute.
  */
 export const apiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000, // 1 minute
-    max: 100,
+    max: 200,
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     message: {

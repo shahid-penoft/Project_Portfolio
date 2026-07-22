@@ -2,6 +2,49 @@ import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 import { uploadImage, runMulter } from '../configs/multerS3.js';
 
+// GET /api/local-bodies/with-wards
+export const getLocalBodiesWithWards = async (req, res) => {
+    try {
+        const [localBodies] = await db.query('SELECT * FROM local_bodies ORDER BY name ASC');
+        const [wards] = await db.query('SELECT * FROM local_body_wards ORDER BY CAST(ward_no AS UNSIGNED) ASC, ward_no ASC');
+
+        const wardsByLocalBody = {};
+        const formattedAllWards = [];
+
+        wards.forEach(w => {
+            const lb = localBodies.find(l => l.id === w.local_body_id);
+            const lbName = lb ? lb.name : '';
+            formattedAllWards.push({
+                id: String(w.id),
+                ward_no: w.ward_no,
+                place_name: w.place_name,
+                local_body_id: String(w.local_body_id),
+                local_body_name: lbName,
+                label: `Ward ${w.ward_no}${w.place_name ? ` - ${w.place_name}` : ''}${lbName ? ` (${lbName})` : ''}`,
+                value: String(w.id)
+            });
+
+            if (!wardsByLocalBody[w.local_body_id]) {
+                wardsByLocalBody[w.local_body_id] = [];
+            }
+            wardsByLocalBody[w.local_body_id].push(w);
+        });
+
+        const structuredLocalBodies = localBodies.map(lb => ({
+            ...lb,
+            wards: wardsByLocalBody[lb.id] || []
+        }));
+
+        return successResponse(res, {
+            data: structuredLocalBodies,
+            allWards: formattedAllWards
+        }, 'Local bodies with wards fetched successfully.');
+    } catch (err) {
+        console.error('[getLocalBodiesWithWards]', err);
+        return errorResponse(res, 'Server error fetching local bodies with wards.');
+    }
+};
+
 // GET /api/local-bodies
 export const getAllLocalBodies = async (req, res) => {
     try {
