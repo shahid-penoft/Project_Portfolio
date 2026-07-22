@@ -497,7 +497,8 @@ export const trashIssue = async (req, res) => {
     try {
         const { id } = req.params;
         const [result] = await pool.query(
-            'UPDATE issues SET is_deleted = 1, deleted_at = NOW() WHERE id = ? AND is_deleted = 0', [id]
+            'UPDATE issues SET is_deleted = 1, deleted_at = NOW(), updated_by_admin_id = ? WHERE id = ? AND is_deleted = 0',
+            [req.admin?.id || null, id]
         );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Issue not found or already trashed.' });
         await logActivity(id, 'Issue moved to trash.', req.admin?.id);

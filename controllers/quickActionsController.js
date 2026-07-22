@@ -47,8 +47,8 @@ export const getUnifiedItems = async (req, res) => {
             FROM complaints c
             LEFT JOIN local_bodies lb ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON c.ward_id = w.id
-            LEFT JOIN admin_users u ON c.filed_by_admin_id = u.id
-            LEFT JOIN admin_users del_u ON c.updated_by_admin_id = del_u.id 
+            LEFT JOIN admin_users u ON COALESCE(c.filed_by_admin_id, c.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users del_u ON COALESCE(c.updated_by_admin_id, (SELECT admin_user_id FROM complaint_activity WHERE complaint_id = c.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id 
             WHERE c.${statusFilter}
             
             UNION ALL
@@ -70,8 +70,8 @@ export const getUnifiedItems = async (req, res) => {
             FROM issues i
             LEFT JOIN local_bodies lb ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON i.ward_id = w.id
-            LEFT JOIN admin_users u ON i.filed_by_admin_id = u.id
-            LEFT JOIN admin_users del_u ON i.updated_by_admin_id = del_u.id
+            LEFT JOIN admin_users u ON COALESCE(i.filed_by_admin_id, i.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users del_u ON COALESCE(i.updated_by_admin_id, (SELECT admin_user_id FROM issue_activity WHERE issue_id = i.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id
             WHERE i.${statusFilter}
             
             UNION ALL
@@ -93,7 +93,7 @@ export const getUnifiedItems = async (req, res) => {
             FROM cm_fund_requests f
             LEFT JOIN local_bodies lb ON f.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON f.ward_id = w.id
-            LEFT JOIN admin_users u ON f.submitted_by_id = u.id
+            LEFT JOIN admin_users u ON COALESCE(f.submitted_by_id, f.updated_by_admin_id) = u.id
             LEFT JOIN admin_users del_u ON f.deleted_by_id = del_u.id
             WHERE f.${statusFilter}
             
@@ -132,11 +132,25 @@ export const getUnifiedItems = async (req, res) => {
                 g.created_at AS created_at,
                 g.updated_at AS updated_at,
                 g.deleted_at AS deleted_at,
-                NULL AS created_by,
-                NULL AS deleted_by
+                u.full_name AS created_by,
+                del_u.full_name AS deleted_by
             FROM governing_representatives g
             LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON g.ward_id = w.id
+            LEFT JOIN (
+                SELECT governing_body_id, MIN(admin_user_id) AS admin_user_id
+                FROM governing_body_activity_logs
+                WHERE text LIKE 'Created%'
+                GROUP BY governing_body_id
+            ) creator_log ON g.id = creator_log.governing_body_id
+            LEFT JOIN admin_users u ON creator_log.admin_user_id = u.id
+            LEFT JOIN (
+                SELECT governing_body_id, MAX(admin_user_id) AS admin_user_id
+                FROM governing_body_activity_logs
+                WHERE text LIKE '%trash%'
+                GROUP BY governing_body_id
+            ) deleter_log ON g.id = deleter_log.governing_body_id
+            LEFT JOIN admin_users del_u ON deleter_log.admin_user_id = del_u.id
             WHERE g.${statusFilter}
         `;
 

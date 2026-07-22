@@ -313,7 +313,7 @@ export const createDraftRequest = async (req, res) => {
     const ward             = b.ward             || null;
     const recommendedBy    = b.recommended_by   || b.recommendedBy || '';
     const amountRequested  = b.amount_requested || b.amountRequested || null;
-    const description      = b.description      || null;
+    const description      = b.description      || '';
     const priority         = b.priority         || 'Normal';
     const remarks          = b.remarks          || null;
 
@@ -580,6 +580,10 @@ export const updateRequest = async (req, res) => {
     if (setParts.length > 0) {
       setParts.push('updated_by_admin_id = ?');
       values.push(req.admin?.id || null);
+      if (req.admin?.id) {
+        setParts.push('submitted_by_id = COALESCE(submitted_by_id, ?)');
+        values.push(req.admin.id);
+      }
       values.push(id);
       await connection.query(`UPDATE cm_fund_requests SET ${setParts.join(', ')} WHERE id = ?`, values);
     }

@@ -542,6 +542,10 @@ export const trashGoverningBody = async (req, res) => {
         if (!result.affectedRows) {
             return errorResponse(res, 'Representative not found or already trashed.', 404);
         }
+        await db.query(
+            'INSERT INTO governing_body_activity_logs (governing_body_id, admin_user_id, text) VALUES (?, ?, ?)',
+            [id, req.admin?.id || null, 'Moved governing body representative to trash.']
+        );
         auditLog(req, { action: 'Archived', module: 'Governing Body', details: `Governing body representative ID ${id} moved to trash`, resource: `governing-bodies/${id}`, severity: 'warning' });
         return successResponse(res, null, 'Representative moved to trash.');
     } catch (error) {
