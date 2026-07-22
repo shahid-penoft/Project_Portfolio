@@ -205,7 +205,7 @@ const fetchFullIssue = async (id) => {
 export const getIssues = async (req, res) => {
     try {
         console.log("Updated getIssues executing...");
-        const { status, category, department, priority, search, page = 1, limit = 20, trash } = req.query;
+        const { status, category, department, priority, search, local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id, page = 1, limit = 20, trash } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         const conditions = [];
@@ -228,6 +228,21 @@ export const getIssues = async (req, res) => {
         if (category) { conditions.push('c.category = ?'); params.push(category); }
         if (department) { conditions.push('c.department LIKE ?'); params.push('%' + department + '%'); }
         if (priority) { conditions.push('c.priority = ?'); params.push(priority); }
+        
+        const lbId = local_body_id || local_body;
+        if (lbId) { conditions.push('c.local_body_id = ?'); params.push(lbId); }
+
+        const wId = ward_id || ward;
+        if (wId) { conditions.push('c.ward_id = ?'); params.push(wId); }
+
+        if (startDate) { conditions.push('c.created_at >= ?'); params.push(startDate); }
+        if (endDate) { conditions.push('c.created_at <= ?'); params.push(endDate); }
+
+        if (assignee_id) {
+            conditions.push('(c.filed_by_admin_id = ? OR c.updated_by_admin_id = ?)');
+            params.push(assignee_id, assignee_id);
+        }
+
         if (search) {
             conditions.push('(c.title LIKE ? OR c.submitter_name LIKE ? OR c.reference_no LIKE ?)');
             const q = `%${search}%`;

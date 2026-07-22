@@ -118,7 +118,7 @@ const fetchFullIdea = async (id) => {
 
 export const getIdeas = async (req, res) => {
     try {
-        const { status, category, department, priority, search, page = 1, limit = 20, trash } = req.query;
+        const { status, category, department, priority, search, local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id, page = 1, limit = 20, trash } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         const conditions = [];
@@ -139,6 +139,21 @@ export const getIdeas = async (req, res) => {
         if (category && category !== 'All') { conditions.push('i.category = ?'); params.push(category); }
         if (department) { conditions.push('i.department LIKE ?'); params.push('%' + department + '%'); }
         if (priority && priority !== 'All') { conditions.push('i.priority = ?'); params.push(priority); }
+        
+        const lbId = local_body_id || local_body;
+        if (lbId) { conditions.push('i.local_body_id = ?'); params.push(lbId); }
+
+        const wId = ward_id || ward;
+        if (wId) { conditions.push('i.ward_id = ?'); params.push(wId); }
+
+        if (startDate) { conditions.push('i.created_at >= ?'); params.push(startDate); }
+        if (endDate) { conditions.push('i.created_at <= ?'); params.push(endDate); }
+
+        if (assignee_id) {
+            conditions.push('(i.filed_by_admin_id = ? OR i.updated_by_admin_id = ?)');
+            params.push(assignee_id, assignee_id);
+        }
+
         if (search) {
             conditions.push('(i.title LIKE ? OR i.complainant_name LIKE ? OR i.reference_no LIKE ?)');
             const q = `%${search}%`;
