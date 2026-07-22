@@ -27,6 +27,7 @@ import {
   deleteDocumentType,
   listCategories,
   addCategory,
+  updateCategory,
   removeCategory,
   getCategoryConfig,
   saveCategoryConfig,
@@ -73,6 +74,7 @@ router.delete('/documents/:id', deleteDocumentType);
 // ==========================================
 router.get('/categories', listCategories);
 router.post('/categories', addCategory);
+router.put('/categories/:id', updateCategory);
 router.delete('/categories/:id', removeCategory);
 
 router.get('/categories/:id/config', getCategoryConfig);

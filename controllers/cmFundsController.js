@@ -98,8 +98,20 @@ export const listRequests = async (req, res) => {
       queryParams.push(priorities);
     }
     if (search) {
-      baseQuery += ` AND (r.applicant_name LIKE ? OR r.id LIKE ? OR c.label LIKE ? OR o.full_name LIKE ?)`;
-      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+      baseQuery += ` AND (
+        r.applicant_name LIKE ? OR 
+        r.id LIKE ? OR 
+        r.applicant_phone LIKE ? OR 
+        r.application_title LIKE ? OR 
+        r.application_type LIKE ? OR 
+        c.name LIKE ? OR 
+        r.sub_category LIKE ? OR 
+        lb.name LIKE ? OR 
+        w.place_name LIKE ? OR 
+        o.full_name LIKE ?
+      )`;
+      const s = `%${search}%`;
+      queryParams.push(s, s, s, s, s, s, s, s, s, s);
     }
 
     // Support both legacy aliases and new sort=<col>&order=<dir> style
@@ -183,11 +195,12 @@ export const createRequest = async (req, res) => {
     const district            = b.district            || '';
     const state               = b.state               || 'Kerala';
     const pincode             = b.pincode             || '';
-    const categoryId          = b.category_id         || b.category;
+    const rawCategoryId       = b.category_id         || b.category;
+    const categoryId          = rawCategoryId ? rawCategoryId : null;
     const subCategory         = b.sub_category        || b.subCategory        || null;
     const priority            = b.priority            || 'Normal';
     const amountRequested     = b.amount_requested    || b.amountRequested    || null;
-    const description         = b.description;
+    const description         = b.description         || '';
     const bankName            = b.bank_name           || b.bankName           || '';
     const accountNumber       = b.account_number      || b.accountNumber      || '';
     const ifscCode            = b.ifsc_code           || b.ifscCode           || '';
@@ -199,8 +212,8 @@ export const createRequest = async (req, res) => {
     const remarks             = b.remarks             || null;
     const dateFiled           = b.date_filed          || null;
 
-    if (!applicationType || !applicantName || !categoryId || !description) {
-      return res.status(400).json({ error: 'Missing required fields: Application Type, Applicant Name, Category, or Description' });
+    if (!applicationType || !applicantName) {
+      return res.status(400).json({ error: 'Missing required fields: Application Type or Applicant Name' });
     }
 
     await connection.beginTransaction();
@@ -306,7 +319,8 @@ export const createDraftRequest = async (req, res) => {
     const applicationType  = b.application_type || b.applicationType || 'CMDRF';
     const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
     const applicationTitle = b.application_title || b.applicationTitle || null;
-    const categoryId       = b.category_id      || b.category;
+    const rawCategoryId    = b.category_id      || b.category;
+    const categoryId       = rawCategoryId ? rawCategoryId : null;
     const subCategory      = b.sub_category     || b.subCategory || null;
     const addressLine1     = b.address_line1    || b.addressLine1 || b.house_name || '';
     const localBody        = b.local_body       || b.localBody || null;
@@ -317,9 +331,9 @@ export const createDraftRequest = async (req, res) => {
     const priority         = b.priority         || 'Normal';
     const remarks          = b.remarks          || null;
 
-    if (!applicantName || !applicantPhone || !categoryId) {
+    if (!applicantName || !applicantPhone) {
       return res.status(400).json({
-        error: 'Missing required fields: applicant_name, phone, category_id',
+        error: 'Missing required fields: applicant_name, phone',
       });
     }
 

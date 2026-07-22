@@ -253,6 +253,7 @@ export const getGoverningBodyById = async (req, res) => {
                 al.id, 
                 al.text, 
                 al.created_at AS createdAt,
+                al.created_at AS created_at,
                 au.full_name AS author_name,
                 au.id AS admin_id
             FROM governing_body_activity_logs al
@@ -588,6 +589,11 @@ export const toggleBookmark = async (req, res) => {
         if (!result.affectedRows) {
             return errorResponse(res, 'Governing body representative not found.', 404);
         }
+
+        await db.query(
+            'INSERT INTO governing_body_activity_logs (governing_body_id, admin_user_id, text) VALUES (?, ?, ?)',
+            [id, req.admin?.id || null, bookmarked ? 'Bookmarked the record.' : 'Removed bookmark from record.']
+        );
 
         const [rows] = await db.query('SELECT * FROM governing_representatives WHERE id = ?', [id]);
         return successResponse(res, { data: rows[0] }, 'Bookmark status updated successfully.');

@@ -121,6 +121,27 @@ export const addCategory = async (req, res) => {
   }
 };
 
+export const updateCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, applicationType = 'General' } = req.body;
+    if (!name) return res.status(400).json({ error: 'Category name is required' });
+
+    await pool.query(
+      `UPDATE cm_fund_categories SET name = ?, application_type = ? WHERE id = ?`,
+      [name, applicationType, id]
+    );
+
+    res.json({ message: 'Category updated successfully' });
+  } catch (err) {
+    console.error('Error in updateCategory:', err);
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ error: 'Category name already exists for this type' });
+    }
+    res.status(500).json({ error: 'Failed to update category' });
+  }
+};
+
 export const removeCategory = async (req, res) => {
   try {
     const { id } = req.params;
