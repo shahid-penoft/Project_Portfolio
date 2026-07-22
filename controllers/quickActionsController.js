@@ -1,6 +1,12 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 
+const parseArrayParam = (param) => {
+    if (!param) return [];
+    if (Array.isArray(param)) return param.map(s => String(s).trim()).filter(Boolean);
+    return String(param).split(',').map(s => s.trim()).filter(Boolean);
+};
+
 export const getUnifiedItems = async (req, res) => {
     try {
         const {
@@ -12,6 +18,13 @@ export const getUnifiedItems = async (req, res) => {
             priority = '',
             daysLeft = '', // comma-separated: 'critical,warning,safe'
             sortBy = '', // 'Most Recent', 'Least Recent', 'Title A-Z', 'Title Z-A', 'Expiring Soon', 'Expiring Last', 'Recently Deleted'
+            datePreset = '',
+            startDate = '',
+            endDate = '',
+            localBody = '',
+            ward = '',
+            createdBy = '',
+            deletedBy = ''
         } = req.query;
 
         const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -35,8 +48,11 @@ export const getUnifiedItems = async (req, res) => {
                 CONCAT('C-', c.id) AS display_id,
                 'Complaints' AS module,
                 c.title AS title,
+                c.local_body_id AS local_body_id,
                 lb.name AS local_body_name,
-                w.place_name AS ward_name,
+                c.ward_id AS ward_id,
+                w.ward_no AS ward_no,
+                IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 c.priority AS priority,
                 c.status AS status,
                 c.created_at AS created_at,
@@ -58,8 +74,11 @@ export const getUnifiedItems = async (req, res) => {
                 CONCAT('I-', i.id) AS display_id,
                 'Public Issue' AS module,
                 i.title AS title,
+                i.local_body_id AS local_body_id,
                 lb.name AS local_body_name,
-                w.place_name AS ward_name,
+                i.ward_id AS ward_id,
+                w.ward_no AS ward_no,
+                IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 i.priority AS priority,
                 i.status AS status,
                 i.created_at AS created_at,
@@ -81,8 +100,11 @@ export const getUnifiedItems = async (req, res) => {
                 CAST(f.id AS CHAR) AS display_id,
                 'Applications' AS module,
                 IFNULL(f.applicant_name, 'Untitled Application') AS title,
+                f.local_body_id AS local_body_id,
                 lb.name AS local_body_name,
-                w.place_name AS ward_name,
+                f.ward_id AS ward_id,
+                w.ward_no AS ward_no,
+                IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 f.priority AS priority,
                 f.status AS status,
                 f.created_at AS created_at,
@@ -104,7 +126,10 @@ export const getUnifiedItems = async (req, res) => {
                 IFNULL(l.letter_id COLLATE utf8mb4_unicode_ci, CONCAT('L-', l.id)) AS display_id,
                 'Letters' AS module,
                 l.subject AS title,
+                NULL AS local_body_id,
                 NULL AS local_body_name,
+                NULL AS ward_id,
+                NULL AS ward_no,
                 NULL AS ward_name,
                 l.priority AS priority,
                 l.status AS status,
@@ -125,8 +150,11 @@ export const getUnifiedItems = async (req, res) => {
                 IF(g.governing_body_type COLLATE utf8mb4_unicode_ci ='OTHER', CONCAT('O-', g.id), CONCAT('M-', g.id)) AS display_id,
                 IF(g.governing_body_type COLLATE utf8mb4_unicode_ci ='OTHER', 'Office', 'Governing Body') AS module,
                 g.name AS title,
+                g.local_body_id AS local_body_id,
                 lb.name AS local_body_name,
-                w.place_name AS ward_name,
+                g.ward_id AS ward_id,
+                w.ward_no AS ward_no,
+                IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 'Normal' AS priority,
                 g.status AS status,
                 g.created_at AS created_at,
@@ -147,30 +175,93 @@ export const getUnifiedItems = async (req, res) => {
             LEFT JOIN (
                 SELECT governing_body_id, MAX(admin_user_id) AS admin_user_id
                 FROM governing_body_activity_logs
-                WHERE text LIKE '%trash%'
+                WHERE text LIKE '%trash%' OR text LIKE '%delete%' OR text LIKE '%Delete%'
                 GROUP BY governing_body_id
             ) deleter_log ON g.id = deleter_log.governing_body_id
-            LEFT JOIN admin_users del_u ON deleter_log.admin_user_id = del_u.id
+            LEFT JOIN admin_users del_u ON COALESCE(deleter_log.admin_user_id, creator_log.admin_user_id) = del_u.id
             WHERE g.${statusFilter}
         `;
 
         // Wrap the union in a subquery to apply global filters/sort
         let outerQuery = `SELECT *, 
-            GREATEST(0, CEIL((UNIX_TIMESTAMP(DATE_ADD(deleted_at, INTERVAL 30 DAY)) - UNIX_TIMESTAMP(NOW())) / 86400)) AS daysLeft
+            CAST(GREATEST(0, DATEDIFF(DATE_ADD(deleted_at, INTERVAL 30 DAY), NOW())) AS SIGNED) AS daysLeft
             FROM (${baseQuery}) AS unified WHERE 1=1`;
         
         const params = [];
 
-        if (module && module !== 'all') {
-            outerQuery += ` AND module = ?`;
-            params.push(module);
+        const mArray = parseArrayParam(module).filter(m => m !== 'all');
+        if (mArray.length > 0) {
+            const placeholders = mArray.map(() => '?').join(',');
+            outerQuery += ` AND module IN (${placeholders})`;
+            params.push(...mArray);
         }
 
-        if (priority) {
-            const pArray = priority.split(',').map(p => p.trim());
+        const pArray = parseArrayParam(priority);
+        if (pArray.length > 0) {
             const placeholders = pArray.map(() => '?').join(',');
             outerQuery += ` AND priority IN (${placeholders})`;
             params.push(...pArray);
+        }
+
+        const dateCol = type === 'trash' ? 'COALESCE(deleted_at, created_at)' : 'created_at';
+
+        if (startDate) {
+            outerQuery += ` AND DATE(${dateCol}) >= ?`;
+            params.push(startDate);
+        }
+
+        if (endDate) {
+            outerQuery += ` AND DATE(${dateCol}) <= ?`;
+            params.push(endDate);
+        }
+
+        if (!startDate && !endDate && datePreset) {
+            if (datePreset === 'Today') {
+                outerQuery += ` AND DATE(${dateCol}) = CURDATE()`;
+            } else if (datePreset === 'Yesterday') {
+                outerQuery += ` AND DATE(${dateCol}) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)`;
+            } else if (datePreset === 'Last 7 Days') {
+                outerQuery += ` AND ${dateCol} >= DATE_SUB(NOW(), INTERVAL 7 DAY)`;
+            } else if (datePreset === 'Last 30 Days') {
+                outerQuery += ` AND ${dateCol} >= DATE_SUB(NOW(), INTERVAL 30 DAY)`;
+            } else if (datePreset === 'This Month') {
+                outerQuery += ` AND YEAR(${dateCol}) = YEAR(NOW()) AND MONTH(${dateCol}) = MONTH(NOW())`;
+            } else if (datePreset === 'This Year') {
+                outerQuery += ` AND YEAR(${dateCol}) = YEAR(NOW())`;
+            }
+        }
+
+        const lbArray = parseArrayParam(localBody);
+        if (lbArray.length > 0) {
+            const placeholders = lbArray.map(() => '?').join(',');
+            outerQuery += ` AND (local_body_name IN (${placeholders}) OR CAST(local_body_id AS CHAR) IN (${placeholders}))`;
+            params.push(...lbArray, ...lbArray);
+        }
+
+        const wArray = parseArrayParam(ward);
+        if (wArray.length > 0) {
+            const placeholders = wArray.map(() => '?').join(',');
+            const likeClauses = wArray.map(() => `ward_name LIKE ? OR CONCAT('Ward ', ward_no) LIKE ?`).join(' OR ');
+            outerQuery += ` AND (ward_name IN (${placeholders}) OR CAST(ward_id AS CHAR) IN (${placeholders}) OR ${likeClauses})`;
+            params.push(...wArray, ...wArray);
+            wArray.forEach(w => {
+                const clean = w.replace(/^Ward\s+\d+\s*-\s*/i, '').trim();
+                params.push(`%${clean}%`, `%${clean}%`);
+            });
+        }
+
+        const cbArray = parseArrayParam(createdBy);
+        if (cbArray.length > 0) {
+            const placeholders = cbArray.map(() => '?').join(',');
+            outerQuery += ` AND created_by IN (${placeholders})`;
+            params.push(...cbArray);
+        }
+
+        const dbArray = parseArrayParam(deletedBy);
+        if (dbArray.length > 0) {
+            const placeholders = dbArray.map(() => '?').join(',');
+            outerQuery += ` AND deleted_by IN (${placeholders})`;
+            params.push(...dbArray);
         }
 
         if (search) {
@@ -180,11 +271,12 @@ export const getUnifiedItems = async (req, res) => {
         }
 
         if (type === 'trash' && daysLeft) {
-            const dlArray = daysLeft.split(',').map(d => d.trim());
+            const dlArray = parseArrayParam(daysLeft);
             const conditions = [];
-            if (dlArray.includes('critical')) conditions.push(`GREATEST(0, CEIL((UNIX_TIMESTAMP(DATE_ADD(deleted_at, INTERVAL 30 DAY)) - UNIX_TIMESTAMP(NOW())) / 86400)) <= 3`);
-            if (dlArray.includes('warning')) conditions.push(`(GREATEST(0, CEIL((UNIX_TIMESTAMP(DATE_ADD(deleted_at, INTERVAL 30 DAY)) - UNIX_TIMESTAMP(NOW())) / 86400)) >= 4 AND GREATEST(0, CEIL((UNIX_TIMESTAMP(DATE_ADD(deleted_at, INTERVAL 30 DAY)) - UNIX_TIMESTAMP(NOW())) / 86400)) <= 15)`);
-            if (dlArray.includes('safe')) conditions.push(`GREATEST(0, CEIL((UNIX_TIMESTAMP(DATE_ADD(deleted_at, INTERVAL 30 DAY)) - UNIX_TIMESTAMP(NOW())) / 86400)) > 15`);
+            const daysExpr = `CAST(GREATEST(0, DATEDIFF(DATE_ADD(deleted_at, INTERVAL 30 DAY), NOW())) AS SIGNED)`;
+            if (dlArray.includes('critical')) conditions.push(`${daysExpr} <= 3`);
+            if (dlArray.includes('warning')) conditions.push(`(${daysExpr} >= 4 AND ${daysExpr} <= 15)`);
+            if (dlArray.includes('safe')) conditions.push(`${daysExpr} > 15`);
             
             if (conditions.length > 0) {
                 outerQuery += ` AND (${conditions.join(' OR ')})`;
