@@ -100,7 +100,15 @@ export const getNextAppId = async (req, res) => {
 
 export const listRequests = async (req, res) => {
   try {
-    const { status, priority, search, sort, order, page = 1, limit = 8 } = req.query;
+    const { 
+      status, priority, search, sort, order, 
+      application_type, applicationType,
+      category, category_id,
+      local_body_id, localBody,
+      ward_id, ward,
+      startDate, endDate,
+      page = 1, limit = 8 
+    } = req.query;
     
     const isTrash = req.query.is_deleted === '1' || req.query.trash === 'true';
 
@@ -124,14 +132,59 @@ export const listRequests = async (req, res) => {
     const queryParams = [isTrash ? 1 : 0];
 
     if (!isTrash && status && status !== 'All') {
-      baseQuery += ` AND r.status = ?`;
-      queryParams.push(status);
+      const statuses = status.split(',');
+      if (statuses.length === 1) {
+        baseQuery += ` AND r.status = ?`;
+        queryParams.push(statuses[0]);
+      } else {
+        baseQuery += ` AND r.status IN (?)`;
+        queryParams.push(statuses);
+      }
     }
     if (priority && priority !== 'All') {
       const priorities = priority.split(',');
       baseQuery += ` AND r.priority IN (?)`;
       queryParams.push(priorities);
     }
+
+    const rawAppType = application_type || applicationType;
+    if (rawAppType && rawAppType !== 'All') {
+      const appTypes = rawAppType.split(',');
+      baseQuery += ` AND r.application_type IN (?)`;
+      queryParams.push(appTypes);
+    }
+
+    const rawCategory = category || category_id;
+    if (rawCategory && rawCategory !== 'All') {
+      const cats = rawCategory.split(',');
+      baseQuery += ` AND (r.category_id IN (?) OR c.name IN (?))`;
+      queryParams.push(cats, cats);
+    }
+
+    const rawLocalBody = local_body_id || localBody;
+    if (rawLocalBody && rawLocalBody !== 'All') {
+      const lbs = rawLocalBody.split(',');
+      baseQuery += ` AND r.local_body_id IN (?)`;
+      queryParams.push(lbs);
+    }
+
+    const rawWard = ward_id || ward;
+    if (rawWard && rawWard !== 'All') {
+      const wards = rawWard.split(',');
+      baseQuery += ` AND r.ward_id IN (?)`;
+      queryParams.push(wards);
+    }
+
+    if (startDate) {
+      baseQuery += ` AND COALESCE(r.date_filed, DATE(CONVERT_TZ(r.created_at, '+00:00', '+05:30'))) >= ?`;
+      queryParams.push(startDate);
+    }
+
+    if (endDate) {
+      baseQuery += ` AND COALESCE(r.date_filed, DATE(CONVERT_TZ(r.created_at, '+00:00', '+05:30'))) <= ?`;
+      queryParams.push(endDate);
+    }
+
     if (search) {
       baseQuery += ` AND (
         r.applicant_name LIKE ? OR 
