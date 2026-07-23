@@ -32,5 +32,6 @@ export const followUpUpdateSMS = ({ name, referenceNo, statusTitle, moduleLabel,
     const d = new Date(updateDate || Date.now());
     const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
     const label = moduleLabel || 'Application';
-    return `Hi ${name},\n\nYour ${label} Update: ${dateStr}\nTracking ID: ${referenceNo}\nStatus: ${statusTitle}\n\nOffice of Kothamangalam MLA`;
+    const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
+    return `Hi ${name},\n\nYour ${label} Update: ${dateStr}\nTracking ID: ${referenceNo}\nStatus: ${status}\n\nOffice of Kothamangalam MLA`;
 };
