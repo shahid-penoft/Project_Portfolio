@@ -295,7 +295,6 @@ export const createSuggestion = async (req, res) => {
                 name: complainant_name,
                 dateFiled: date_filed || new Date().toISOString().split('T')[0],
                 referenceNo: reference_no,
-                status: status || 'Pending',
             });
             sendSMSSafe(phone, smsBody);
         }
@@ -510,14 +509,15 @@ export const addSuggestionUpdate = async (req, res) => {
         // Fire-and-forget: SMS follow-up if admin chose to notify complainant
         if (notify_complainant === 'true' || notify_complainant === true) {
             const [[rec]] = await pool.query(
-                'SELECT complainant_name, phone, department, status, reference_no FROM suggestions WHERE id = ?', [id]
+                'SELECT complainant_name, phone, reference_no FROM suggestions WHERE id = ?', [id]
             );
             if (rec?.phone) {
                 const finalSms = custom_sms_message?.trim() || followUpUpdateSMS({
                     name: rec.complainant_name,
                     referenceNo: rec.reference_no,
-                    status: rec.status,
-                    department: rec.department,
+                    statusTitle: title,
+                    moduleLabel: 'Suggestion',
+                    updateDate: new Date(),
                 });
                 sendSMSSafe(rec.phone, finalSms);
             }

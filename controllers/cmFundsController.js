@@ -287,7 +287,6 @@ export const createRequest = async (req, res) => {
         name: applicantName,
         dateFiled: dateFiled || new Date().toISOString().split('T')[0],
         referenceNo: appId,
-        status: initialStatus
       });
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
@@ -393,7 +392,6 @@ export const createDraftRequest = async (req, res) => {
         name: applicantName,
         dateFiled: new Date().toISOString().split('T')[0],
         referenceNo: appId,
-        status: 'Draft'
       });
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
@@ -857,12 +855,12 @@ export const addUpdate = async (req, res) => {
     // Send SMS Notification
     if (isNotify && application.applicant_phone) {
       const smsMessage = custom_sms_message || followUpUpdateSMS({
-        ...application,
         name: application.applicant_name,
         referenceNo: id,
-        title: title,
-        status: type
-      }, { type, title, note }, 'cmfund');
+        statusTitle: title,
+        moduleLabel: 'Application',
+        updateDate: new Date(),
+      });
 
       sendSMSSafe(application.applicant_phone, smsMessage);
     }
