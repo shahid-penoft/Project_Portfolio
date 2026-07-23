@@ -29,6 +29,41 @@ const deleteS3Object = async (url) => {
     }
 };
 
+/**
+ * Helper to resolve raw category input (which could be an ID in cm_fund_categories,
+ * an ID in mla_dropdown_lists, or a category name string) to a valid cm_fund_categories(id)
+ * or NULL if invalid.
+ */
+async function resolveCategoryId(connection, rawCategoryId) {
+    if (!rawCategoryId || rawCategoryId === 'undefined' || rawCategoryId === 'null') return null;
+
+    // 1. Check if rawCategoryId exists directly in cm_fund_categories
+    const [existing] = await connection.query('SELECT id FROM cm_fund_categories WHERE id = ?', [rawCategoryId]);
+    if (existing.length > 0) return existing[0].id;
+
+    // 2. If rawCategoryId is numeric, check if it matches an option in mla_dropdown_lists
+    let categoryName = String(rawCategoryId).trim();
+    if (!isNaN(rawCategoryId)) {
+        const [dropOpt] = await connection.query('SELECT value FROM mla_dropdown_lists WHERE id = ?', [rawCategoryId]);
+        if (dropOpt.length > 0) {
+            categoryName = dropOpt[0].value;
+        }
+    }
+
+    // 3. Search cm_fund_categories by name
+    const [byName] = await connection.query('SELECT id FROM cm_fund_categories WHERE name = ? LIMIT 1', [categoryName]);
+    if (byName.length > 0) return byName[0].id;
+
+    // 4. If not found, attempt to insert into cm_fund_categories so foreign key constraint succeeds
+    try {
+        const [ins] = await connection.query('INSERT INTO cm_fund_categories (name, application_type) VALUES (?, ?)', [categoryName, 'General']);
+        return ins.insertId;
+    } catch (e) {
+        console.warn('[resolveCategoryId] Fallback lookup failed:', e.message);
+        return null;
+    }
+}
+
 const generateAppId = async (connection, applicationType) => {
   const isCmdrf = applicationType && applicationType.toUpperCase() === 'CMDRF';
   const prefix = isCmdrf ? 'CM-' : 'A-';
@@ -196,7 +231,7 @@ export const createRequest = async (req, res) => {
     const state               = b.state               || 'Kerala';
     const pincode             = b.pincode             || '';
     const rawCategoryId       = b.category_id         || b.category;
-    const categoryId          = rawCategoryId ? rawCategoryId : null;
+    const categoryId          = await resolveCategoryId(pool, rawCategoryId);
     const subCategory         = b.sub_category        || b.subCategory        || null;
     const priority            = b.priority            || 'Normal';
     const amountRequested     = b.amount_requested    || b.amountRequested    || null;
@@ -319,7 +354,7 @@ export const createDraftRequest = async (req, res) => {
     const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
     const applicationTitle = b.application_title || b.applicationTitle || null;
     const rawCategoryId    = b.category_id      || b.category;
-    const categoryId       = rawCategoryId ? rawCategoryId : null;
+    const categoryId       = await resolveCategoryId(pool, rawCategoryId);
     const subCategory      = b.sub_category     || b.subCategory || null;
     const addressLine1     = b.address_line1    || b.addressLine1 || b.house_name || '';
     const localBody        = b.local_body       || b.localBody || null;
@@ -555,6 +590,9 @@ export const updateRequest = async (req, res) => {
       
       if (dbKey === 'assigned_officer_id' && value === 'Unassigned') {
         value = null;
+      }
+      if (dbKey === 'category_id' && value) {
+        value = await resolveCategoryId(pool, value);
       }
       if (value !== undefined) {
         setParts.push(`${dbKey} = ?`);
