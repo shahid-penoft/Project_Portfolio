@@ -244,6 +244,16 @@ export const uploadSuggestionUpdateFiles = multer({
     { name: 'attachments', maxCount: 5 }
 ]);
 
+// ─── Information Center Uploads ─────────────────────────────────
+export const uploadInformationCenterFiles = multer({
+    storage: multerS3(s3StorageOptions('information-center')),
+    fileFilter,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+}).fields([
+    { name: 'coverImage', maxCount: 1 },
+    { name: 'attachments', maxCount: 20 }
+]);
+
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>
