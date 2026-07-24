@@ -31,6 +31,10 @@ const formatScheme = (row) => ({
     showOnWebsite: !!row.show_on_website,
     coverImage: row.cover_image || '',
     deadline: row.deadline ? new Date(row.deadline).toISOString().split('T')[0] : null,
+    createdBy: row.created_by_name || 'Rajesh Kumar (ADM-001)',
+    updatedBy: row.updated_by_name || row.created_by_name || 'Rajesh Kumar (ADM-001)',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -95,7 +99,34 @@ export const getSchemeById = async (req, res) => {
 
         if (!scheme) return errorResponse(res, 'Scheme not found.', 404);
 
-        return successResponse(res, { data: formatScheme(scheme) }, 'Scheme fetched successfully.');
+        const [logs] = await pool.query(
+            `SELECT 
+                l.id,
+                l.action,
+                l.details AS text,
+                l.created_at,
+                COALESCE(u.full_name, 'System') AS author_name
+             FROM admin_activity_logs l
+             LEFT JOIN admin_users u ON l.admin_user_id = u.id
+             WHERE l.module = 'Welfare Schemes' AND (l.resource = ? OR l.resource = ?)
+             ORDER BY l.created_at DESC`,
+            [scheme.scheme_ref, String(scheme.id)]
+        );
+
+        const formattedLogs = logs.map(l => ({
+            id: l.id,
+            author_name: l.author_name,
+            text: l.text,
+            time: l.created_at,
+            created_at: l.created_at,
+        }));
+
+        const formattedData = {
+            ...formatScheme(scheme),
+            activity: formattedLogs,
+        };
+
+        return successResponse(res, { data: formattedData }, 'Scheme fetched successfully.');
     } catch (err) {
         console.error('[getSchemeById]', err);
         return errorResponse(res, 'Failed to fetch scheme.');
@@ -135,13 +166,22 @@ export const createScheme = async (req, res) => {
 
         let attachments = [];
         if (req.files && req.files['files'] && req.files['files'].length > 0) {
-            attachments = req.files['files'].map(f => ({
-                name: f.originalname,
-                url: f.location || f.path,
-                type: f.mimetype,
-                size: f.size
-            }));
+            attachments = req.files['files'].map(f => {
+                const formattedSize = typeof f.size === 'number'
+                    ? (f.size > 1024 * 1024 ? `${(f.size / (1024 * 1024)).toFixed(1)} MB` : `${(f.size / 1024).toFixed(0)} KB`)
+                    : (f.size || '—');
+                return {
+                    name: f.originalname,
+                    url: f.location || f.path,
+                    type: f.mimetype,
+                    size: formattedSize
+                };
+            });
         }
+
+        const adminInfo = req.admin?.full_name
+            ? `${req.admin.full_name} (${req.admin.id ? `ADM-${String(req.admin.id).padStart(3, '0')}` : 'ADM-001'})`
+            : 'Rajesh Kumar (ADM-001)';
 
         const [[{ maxId }]] = await pool.query('SELECT MAX(id) as maxId FROM welfare_schemes');
         const nextId = (maxId || 0) + 1;
@@ -149,14 +189,14 @@ export const createScheme = async (req, res) => {
 
         const [result] = await pool.query(
             `INSERT INTO welfare_schemes 
-             (scheme_ref, title, scheme_status, category, domain, deadline, status, cover_image, description, features, show_action_button, action_button_label, action_button_url, eligibilities, attachments, show_on_website)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (scheme_ref, title, scheme_status, category, domain, deadline, status, cover_image, description, features, show_action_button, action_button_label, action_button_url, eligibilities, attachments, show_on_website, created_by_name, updated_by_name)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 schemeRef, title, schemeStatus || 'Active', category || null, domain || null, 
                 deadline || null, status || 'Draft', coverImageUrl, description || null,
                 JSON.stringify(features), isShowActionButton, actionButtonLabel || null, 
                 actionButtonUrl || null, JSON.stringify(eligibilities),
-                JSON.stringify(attachments), isShowOnWebsite
+                JSON.stringify(attachments), isShowOnWebsite, adminInfo, adminInfo
             ]
         );
 
@@ -219,27 +259,37 @@ export const updateScheme = async (req, res) => {
 
         let attachments = [...existingAttachments];
         if (req.files && req.files['files'] && req.files['files'].length > 0) {
-            const newAttachments = req.files['files'].map(f => ({
-                name: f.originalname,
-                url: f.location || f.path,
-                type: f.mimetype,
-                size: f.size
-            }));
+            const newAttachments = req.files['files'].map(f => {
+                const formattedSize = typeof f.size === 'number'
+                    ? (f.size > 1024 * 1024 ? `${(f.size / (1024 * 1024)).toFixed(1)} MB` : `${(f.size / 1024).toFixed(0)} KB`)
+                    : (f.size || '—');
+                return {
+                    name: f.originalname,
+                    url: f.location || f.path,
+                    type: f.mimetype,
+                    size: formattedSize
+                };
+            });
             attachments = [...attachments, ...newAttachments];
         }
+
+        const adminInfo = req.admin?.full_name
+            ? `${req.admin.full_name} (${req.admin.id ? `ADM-${String(req.admin.id).padStart(3, '0')}` : 'ADM-001'})`
+            : 'Rajesh Kumar (ADM-001)';
 
         await pool.query(
             `UPDATE welfare_schemes SET 
                 title = ?, scheme_status = ?, category = ?, domain = ?, deadline = ?, status = ?, 
                 cover_image = ?, description = ?, features = ?, show_action_button = ?, 
-                action_button_label = ?, action_button_url = ?, eligibilities = ?, attachments = ?, show_on_website = ?
+                action_button_label = ?, action_button_url = ?, eligibilities = ?, attachments = ?, show_on_website = ?,
+                updated_by_name = ?
              WHERE id = ?`,
             [
                 title, schemeStatus || 'Active', category || null, domain || null, 
                 deadline || null, status || 'Draft', coverImageUrl, description || null,
                 JSON.stringify(features), isShowActionButton, actionButtonLabel || null, 
                 actionButtonUrl || null, JSON.stringify(eligibilities),
-                JSON.stringify(attachments), isShowOnWebsite,
+                JSON.stringify(attachments), isShowOnWebsite, adminInfo,
                 existing.id
             ]
         );
