@@ -59,6 +59,7 @@ import notificationsRoutes from './routes/notificationsRoutes.js';
 import busTimingsRoutes from './routes/busTimingsRoutes.js';
 import informationCenterRoutes from './routes/informationCenterRoutes.js';
 import quickActionsRoutes from './routes/quickActionsRoutes.js';
+import petitionsRoutes from './routes/petitionsRoutes.js';
 import { initTrashPurge } from './services/trashPurgeService.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
@@ -170,6 +171,7 @@ app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/rbac/roles', rbacRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
 app.use('/api/issues', issuesRoutes);
+app.use('/api/petitions', petitionsRoutes);  // Public petition tracker (no auth)
 app.use('/api/geo-locations', geoLocationRoutes);
 app.use('/api/geo-categories', geoCategoryRoutes);
 app.use('/api/mla/dropdowns', mlaDropdownsRoutes);
