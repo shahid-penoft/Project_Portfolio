@@ -108,7 +108,7 @@ app.get('/health', (_, res) =>
 );
 
 // ─── End of Server Initialization ───
-// Nodemon trigger
+// Nodemon trigger — restart server now
 // ─── URL Shortener Redirection ────────────────────────────────
 app.get('/api/r/:code', async (req, res) => {
     try {
@@ -171,7 +171,7 @@ app.use('/api/suggestions', suggestionsRoutes);
 app.use('/api/rbac/roles', rbacRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
 app.use('/api/issues', issuesRoutes);
-app.use('/api/petitions', petitionsRoutes);  // Public petition tracker (no auth)
+app.use('/api/petitions', petitionsRoutes);  // Public petition tracker (no auth required)
 app.use('/api/geo-locations', geoLocationRoutes);
 app.use('/api/geo-categories', geoCategoryRoutes);
 app.use('/api/mla/dropdowns', mlaDropdownsRoutes);

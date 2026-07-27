@@ -1,5 +1,5 @@
 import express from 'express';
-import { dualAuth, adminOnly } from '../middlewares/dualAuthMiddleware.js';
+import { dualAuth, adminOnly, optionalDualAuth } from '../middlewares/dualAuthMiddleware.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { uploadIssueMedia, uploadIssueAttachments , uploadIssueUpdateFiles } from '../configs/multerS3.js';
 import {
@@ -39,11 +39,11 @@ router.post('/categories', verifyToken, createCategory);
 router.put('/categories/:id', verifyToken, updateCategory);
 router.delete('/categories/:id', verifyToken, deleteCategory);
 
-// ── List & Create (admin or authenticated constituent) ─────────
+// ── List & Create (admin, constituent, or public intake) ───────
 router.get('/next-id', dualAuth, getNextId);
 router.get('/',    dualAuth, getIssues);
 router.get('/:id', dualAuth, getIssueById);
-router.post('/',   dualAuth, createIssue);
+router.post('/',   optionalDualAuth, createIssue);
 
 // ── Admin-only mutations ───────────────────────────────────────
 router.patch('/:id',          verifyToken, updateIssue);

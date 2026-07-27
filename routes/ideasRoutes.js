@@ -1,5 +1,5 @@
 import express from 'express';
-import { dualAuth, adminOnly } from '../middlewares/dualAuthMiddleware.js';
+import { dualAuth, adminOnly, optionalDualAuth } from '../middlewares/dualAuthMiddleware.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
 import { uploadIdeaMediaS3 as uploadIdeaMedia, uploadIdeaAttachmentsS3 as uploadIdeaAttachments, uploadIdeaUpdateFiles } from '../configs/multerS3.js';
 import {
@@ -33,7 +33,7 @@ router.get('/stats', verifyToken, getIdeaStats);
 router.get('/next-id', dualAuth, getNextId);
 router.get('/',    dualAuth, getIdeas);
 router.get('/:id', dualAuth, getIdeaById);
-router.post('/',   dualAuth, createIdea);
+router.post('/',   optionalDualAuth, createIdea);
 
 // ── Admin-only mutations ───────────────────────────────────────
 router.patch('/:id',          verifyToken, updateIdea);
