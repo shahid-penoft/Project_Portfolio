@@ -644,6 +644,7 @@ export const addIssueUpdate = async (req, res) => {
                     updateDate: new Date(),
                 });
                 sendSMSSafe(rec.phone, finalSms);
+                await pool.query('UPDATE issue_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]);
             }
         }
 

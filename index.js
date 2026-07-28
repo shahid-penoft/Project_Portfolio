@@ -60,6 +60,7 @@ import busTimingsRoutes from './routes/busTimingsRoutes.js';
 import informationCenterRoutes from './routes/informationCenterRoutes.js';
 import quickActionsRoutes from './routes/quickActionsRoutes.js';
 import petitionsRoutes from './routes/petitionsRoutes.js';
+import bloodDonorRoutes from './routes/bloodDonorRoutes.js';
 import { initTrashPurge } from './services/trashPurgeService.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
@@ -172,6 +173,7 @@ app.use('/api/rbac/roles', rbacRoutes);
 app.use('/api/admin-users', adminUsersRoutes);
 app.use('/api/issues', issuesRoutes);
 app.use('/api/petitions', petitionsRoutes);  // Public petition tracker (no auth required)
+app.use('/api/blood-donors', bloodDonorRoutes); // Voluntary Blood Donor Directory & Emergency Needs
 app.use('/api/geo-locations', geoLocationRoutes);
 app.use('/api/geo-categories', geoCategoryRoutes);
 app.use('/api/mla/dropdowns', mlaDropdownsRoutes);
