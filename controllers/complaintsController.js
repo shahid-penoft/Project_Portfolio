@@ -1,4 +1,5 @@
 import pool from '../configs/db.js';
+import { getDropdownDefault } from './mlaDropdownsController.js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { logActivity as auditLog } from './teamsLogController.js';
 import { sendSMSSafe } from '../services/smsService.js';
@@ -360,9 +361,9 @@ export const createComplaint = async (req, res) => {
         `, [
             reference_no,
             title,
-            category || 'Other',
-            priority || 'Medium',
-            status || 'Pending',
+            category || await getDropdownDefault('complaint_category') || 'Other',
+            priority || await getDropdownDefault('complaint_priority') || 'Medium',
+            status   || await getDropdownDefault('complaint_status')   || 'Pending',
             description || null,
             location || null,
             address || null,

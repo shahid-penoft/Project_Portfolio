@@ -1,4 +1,5 @@
 import pool from '../configs/db.js';
+import { getDropdownDefault } from './mlaDropdownsController.js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { logActivity as auditLog } from './teamsLogController.js';
 import { sendSMSSafe } from '../services/smsService.js';
@@ -355,11 +356,11 @@ export const createIssue = async (req, res) => {
         `, [
             reference_no,
             title,
-            category || 'Other',
+            category || await getDropdownDefault('issue_category') || 'Other',
             affected_by || null,
             resolved_date || null,
-            priority || 'Medium',
-            status || 'Pending',
+            priority || await getDropdownDefault('issue_priority') || 'Medium',
+            status   || await getDropdownDefault('issue_status')   || 'Pending',
             description || null,
             location || null,
             address || null,

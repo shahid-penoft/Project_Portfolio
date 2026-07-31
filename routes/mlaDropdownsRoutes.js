@@ -9,6 +9,7 @@ import {
     deleteDropdown,
     toggleDropdownStatus,
     getDropdownImpact,
+    previewDropdownUpdate,
 } from '../controllers/mlaDropdownsController.js';
 
 const router = express.Router();
@@ -23,9 +24,13 @@ router.get('/', getDropdowns);
 router.get('/impact', getDropdownImpact);
 
 // ── Admin CRUD (protected) ─────────────────────────────────────
+// IMPORTANT: /preview-update and /reorder MUST be before /:id to avoid
+// the parameterized route matching "preview-update" or "reorder" as an id.
+router.post('/preview-update',  verifyToken, previewDropdownUpdate);
+router.put('/reorder',          verifyToken, reorderDropdowns);
+
 router.get('/:id',              verifyToken, getDropdownById);
 router.post('/',                verifyToken, createDropdown);
-router.put('/reorder',          verifyToken, reorderDropdowns);
 router.put('/:id',              verifyToken, updateDropdown);
 router.patch('/:id/toggle',     verifyToken, toggleDropdownStatus);
 router.delete('/:id',           verifyToken, deleteDropdown);
