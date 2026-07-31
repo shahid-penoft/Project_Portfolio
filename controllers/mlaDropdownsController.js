@@ -8,8 +8,9 @@ function buildTree(rows) {
     rows.forEach(r => { map[r.id] = { ...r, children: [] }; });
     const roots = [];
     rows.forEach(r => {
-        if (r.parent_id && map[r.parent_id]) {
-            map[r.parent_id].children.push(map[r.id]);
+        const pid = r.parent_id && r.parent_id !== 0 ? r.parent_id : null;
+        if (pid && map[pid]) {
+            map[pid].children.push(map[r.id]);
         } else {
             roots.push(map[r.id]);
         }
@@ -30,7 +31,7 @@ export const getDropdowns = async (req, res) => {
         if (key) {
             // ── Single-key fetch for forms (returns nested tree) ──
             const [rows] = await pool.query(
-                `SELECT id, \`key\`, label, value, color, icon, sort_order, parent_id, status
+                `SELECT id, \`key\`, label, value, color, icon, sort_order, IFNULL(parent_id, 0) AS parent_id, status
                  FROM mla_dropdown_lists
                  WHERE \`key\` = ? AND status = 'Active'
                  ORDER BY sort_order ASC`,
@@ -49,14 +50,14 @@ export const getDropdowns = async (req, res) => {
 
         // Fetch all rows, then group by key client-side for manager display
         const [rows] = await pool.query(
-            `SELECT id, \`key\`, module, sub_category, label, value, color, icon, sort_order, parent_id, status, created_at, updated_at
+            `SELECT id, \`key\`, module, sub_category, label, value, color, icon, sort_order, IFNULL(parent_id, 0) AS parent_id, status, created_at, updated_at
              FROM mla_dropdown_lists
              ${where}
              ORDER BY module ASC, \`key\` ASC, sort_order ASC`,
             params
         );
 
-// Group rows by key to produce "dropdown list" entries for the manager UI
+        // Group rows by key to produce "dropdown list" entries for the manager UI
         const grouped = {};
         rows.forEach(r => {
             if (!grouped[r.key]) {
@@ -83,7 +84,7 @@ export const getDropdowns = async (req, res) => {
                 ...g,
                 id: g.items[0]?.id || null, // Virtual ID using first item for toggling/editing
                 name: keyToLabel(g.key),
-                type: g.items.some(it => it.parent_id !== null) ? 'nested' : 'single',
+                type: g.items.some(it => it.parent_id && it.parent_id !== 0) ? 'nested' : 'single',
                 category: g.module,
                 subcategory: g.sub_category,
                 items: treeItems,
@@ -105,7 +106,7 @@ export const getDropdownById = async (req, res) => {
     try {
         const { id } = req.params;
         const [rows] = await pool.query(
-            `SELECT * FROM mla_dropdown_lists WHERE id = ? OR \`key\` = ? ORDER BY sort_order ASC`,
+            `SELECT id, \`key\`, module, sub_category, label, value, color, icon, sort_order, IFNULL(parent_id, 0) AS parent_id, status FROM mla_dropdown_lists WHERE id = ? OR \`key\` = ? ORDER BY sort_order ASC`,
             [id, id]
         );
         if (!rows.length) return res.status(404).json({ success: false, message: 'Dropdown not found.' });
@@ -117,12 +118,23 @@ export const getDropdownById = async (req, res) => {
 };
 
 // Helper function to recursively insert items in the tree
-const insertTreeItems = async (connection, items, key, module, subCategory, status, parentId = null) => {
+const insertTreeItems = async (connection, items, key, module, subCategory, status, parentId = 0) => {
     const dbStatus = status === true || status === 'Active' ? 'Active' : 'Disabled';
+    const dbParentId = parentId ? parseInt(parentId, 10) : 0;
+    const seenValuesAtLevel = new Set();
+
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const label = item.name || item.label || '';
         const value = item.value || label;
+
+        // Skip duplicates at the current parent level
+        const lowerVal = (value || '').trim().toLowerCase();
+        if (!lowerVal || seenValuesAtLevel.has(lowerVal)) {
+            continue;
+        }
+        seenValuesAtLevel.add(lowerVal);
+
         const color = item.color || null;
         const icon = item.icon || null;
         const sortOrder = item.sort_order !== undefined ? item.sort_order : (i + 1) * 10;
@@ -130,7 +142,7 @@ const insertTreeItems = async (connection, items, key, module, subCategory, stat
         const [result] = await connection.query(
             `INSERT INTO mla_dropdown_lists (\`key\`, module, sub_category, label, value, parent_id, color, icon, sort_order, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [key, module, subCategory || null, label, value, parentId, color, icon, sortOrder, dbStatus]
+            [key, module, subCategory || null, label, value, dbParentId, color, icon, sortOrder, dbStatus]
         );
 
         const newId = result.insertId;
@@ -172,7 +184,7 @@ export const createDropdown = async (req, res) => {
                 return res.status(400).json({ success: false, message: `A dropdown with key "${finalKey}" already exists.` });
             }
 
-            await insertTreeItems(connection, items, finalKey, finalModule, finalSubCategory, status);
+            await insertTreeItems(connection, items, finalKey, finalModule, finalSubCategory, status, 0);
 
             await connection.commit();
             inTransaction = false;
@@ -184,16 +196,27 @@ export const createDropdown = async (req, res) => {
         const singleKey = key;
         const singleModule = module;
         const singleSubCategory = sub_category;
+        const dbParentId = parent_id ? parseInt(parent_id, 10) : 0;
         
         if (!singleKey || !singleModule || !label || !value) {
             return res.status(400).json({ success: false, message: 'key, module, label, and value are required.' });
         }
 
+        // Check for duplicate single item
+        const targetVal = (value || label).trim();
+        const [[existingItem]] = await connection.query(
+            `SELECT id FROM mla_dropdown_lists WHERE \`key\` = ? AND LOWER(value) = LOWER(?) AND IFNULL(parent_id, 0) = ? LIMIT 1`,
+            [singleKey, targetVal, dbParentId]
+        );
+        if (existingItem) {
+            return res.status(400).json({ success: false, message: `An option with value "${targetVal}" already exists in this dropdown.` });
+        }
+
         let order = sort_order;
         if (order === undefined || order === null) {
             const [[{ maxOrder }]] = await connection.query(
-                `SELECT COALESCE(MAX(sort_order), 0) AS maxOrder FROM mla_dropdown_lists WHERE \`key\` = ? AND parent_id ${parent_id ? '= ?' : 'IS NULL'}`,
-                parent_id ? [singleKey, parent_id] : [singleKey]
+                `SELECT COALESCE(MAX(sort_order), 0) AS maxOrder FROM mla_dropdown_lists WHERE \`key\` = ? AND IFNULL(parent_id, 0) = ?`,
+                [singleKey, dbParentId]
             );
             order = maxOrder + 1;
         }
@@ -202,7 +225,7 @@ export const createDropdown = async (req, res) => {
         const [result] = await connection.query(
             `INSERT INTO mla_dropdown_lists (\`key\`, module, sub_category, label, value, parent_id, color, icon, sort_order, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [singleKey, singleModule, singleSubCategory || null, label, value, parent_id || null, color || null, icon || null, order, dbStatus]
+            [singleKey, singleModule, singleSubCategory || null, label, value, dbParentId, color || null, icon || null, order, dbStatus]
         );
 
         const [[row]] = await connection.query('SELECT * FROM mla_dropdown_lists WHERE id = ?', [result.insertId]);
@@ -248,7 +271,7 @@ export const updateDropdown = async (req, res) => {
             await connection.query('DELETE FROM mla_dropdown_lists WHERE `key` = ?', [oldKey]);
 
             // Insert new items tree
-            await insertTreeItems(connection, items, finalKey, finalModule, finalSubCategory, status);
+            await insertTreeItems(connection, items, finalKey, finalModule, finalSubCategory, status, 0);
 
             await connection.commit();
             inTransaction = false;
@@ -257,7 +280,25 @@ export const updateDropdown = async (req, res) => {
 
         // Otherwise fallback to single item update
         const { label, value, color, icon, sort_order, parent_id } = req.body;
+
+        if (label || value) {
+            const [[itemRow]] = await connection.query('SELECT `key`, IFNULL(parent_id, 0) AS parent_id, label, value FROM mla_dropdown_lists WHERE id = ?', [id]);
+            if (itemRow) {
+                const targetValue = (value || label || itemRow.value).trim();
+                const targetParentId = parent_id !== undefined ? (parent_id ? parseInt(parent_id, 10) : 0) : itemRow.parent_id;
+                const [[dup]] = await connection.query(
+                    `SELECT id FROM mla_dropdown_lists WHERE \`key\` = ? AND id != ? AND LOWER(value) = LOWER(?) AND IFNULL(parent_id, 0) = ? LIMIT 1`,
+                    [itemRow.key, id, targetValue, targetParentId]
+                );
+                if (dup) {
+                    return res.status(400).json({ success: false, message: `An option with value "${targetValue}" already exists in this dropdown.` });
+                }
+            }
+        }
+
         const dbStatus = status !== undefined ? (status === true || status === 'Active' ? 'Active' : 'Disabled') : undefined;
+
+
 
         const [result] = await connection.query(
             `UPDATE mla_dropdown_lists SET

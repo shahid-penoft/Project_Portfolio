@@ -4,9 +4,9 @@ import * as ctrl from '../controllers/informationCenterController.js';
 
 const router = express.Router();
 
-// ── Public (admin panel reads — protected behind verifyToken) ──
-router.get('/',     verifyToken, ctrl.getAll);
-router.get('/:id',  verifyToken, ctrl.getById);
+// ── Public Read (constituent + admin panel reads) ─────────────
+router.get('/',     ctrl.getAll);
+router.get('/:id',  ctrl.getById);
 
 // ── Activity log ───────────────────────────────────────────────
 router.get('/:id/activity', verifyToken, ctrl.getActivity);
