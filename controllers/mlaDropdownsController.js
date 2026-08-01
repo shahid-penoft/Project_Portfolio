@@ -524,6 +524,26 @@ export const updateDropdown = async (req, res) => {
                         console.info(`[updateDropdown] Cascade rename: key="${finalKey}" "${oldValue}"→"${newValue}" affected ${affected} rows`);
                     }
                 }
+
+                // ── Empty-string sweep ───────────────────────────────────────────
+                // Records left with status='' from the ENUM era are never caught by
+                // cascade renames (which target specific old values). This sweep
+                // auto-heals them on every dropdown save by setting '' → default.
+                const { table, col, deletedCol } = CASCADE_MAP[finalKey];
+                const whereDeleted = deletedCol ? `AND \`${deletedCol}\` = 0` : '';
+                const [[defaultRow]] = await connection.query(
+                    `SELECT value FROM mla_dropdown_lists WHERE \`key\` = ? AND is_default = 1 AND status = 'Active' LIMIT 1`,
+                    [finalKey]
+                );
+                if (defaultRow?.value) {
+                    const [sweep] = await connection.query(
+                        `UPDATE \`${table}\` SET \`${col}\` = ? WHERE \`${col}\` = '' ${whereDeleted}`,
+                        [defaultRow.value]
+                    );
+                    if (sweep.affectedRows > 0) {
+                        console.info(`[updateDropdown] Empty-string sweep: key="${finalKey}" reset ${sweep.affectedRows} rows to default "${defaultRow.value}"`);
+                    }
+                }
             }
 
             await connection.commit();
