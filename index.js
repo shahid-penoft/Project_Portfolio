@@ -61,6 +61,8 @@ import informationCenterRoutes from './routes/informationCenterRoutes.js';
 import quickActionsRoutes from './routes/quickActionsRoutes.js';
 import petitionsRoutes from './routes/petitionsRoutes.js';
 import bloodDonorRoutes from './routes/bloodDonorRoutes.js';
+import bloodRequestRoutes from './routes/bloodRequestRoutes.js';
+import mlaCareRoutes from './routes/mlaCareRoutes.js';
 import volunteersRoutes from './routes/volunteersRoutes.js';
 import volunteerCategoriesRoutes from './routes/volunteerCategoriesRoutes.js';
 import { initTrashPurge } from './services/trashPurgeService.js';
@@ -176,6 +178,8 @@ app.use('/api/admin-users', adminUsersRoutes);
 app.use('/api/issues', issuesRoutes);
 app.use('/api/petitions', petitionsRoutes);  // Public petition tracker (no auth required)
 app.use('/api/blood-donors', bloodDonorRoutes);          // Voluntary Blood Donor Directory & Emergency Needs
+app.use('/api/blood-requests', bloodRequestRoutes);      // Emergency Blood Requests (public submit + admin manage)
+app.use('/api/mla-care', mlaCareRoutes);                 // MLA Care Applications (public submit + admin manage)
 app.use('/api/volunteers', volunteersRoutes);             // Volunteers Corps Directory
 app.use('/api/volunteer-categories', volunteerCategoriesRoutes); // Volunteer Activity Categories (admin-managed)
 app.use('/api/geo-locations', geoLocationRoutes);
@@ -184,6 +188,7 @@ app.use('/api/mla/dropdowns', mlaDropdownsRoutes);
 app.use('/api/admin/governing-bodies', governingBodiesRoutes);
 app.use('/api/csr', csrRoutes);
 app.use('/api/admin/letters', lettersRoutes);
+app.use('/api/cm-funds',       cmFundsRoutes); // Public intake: POST /api/cm-funds/public-submit
 app.use('/api/admin/cm-funds', cmFundsRoutes);
 app.use('/api/admin/teams-log', teamsLogRoutes);
 app.use('/api/notifications',  notificationsRoutes);

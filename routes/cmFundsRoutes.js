@@ -36,9 +36,27 @@ import {
   toggleDocRequirement
 } from '../controllers/cmFundsChecklistsController.js';
 
+import { optionalDualAuth } from '../middlewares/dualAuthMiddleware.js';
+
 const router = express.Router();
 
-// Apply admin authentication to all CM Funds routes
+const handleCMFundUpload = (req, res, next) => {
+  if (req.headers['content-type']?.includes('multipart/form-data')) {
+    uploadCMFundDocsS3(req, res, (err) => {
+      if (err) return res.status(400).json({ success: false, message: err.message });
+      next();
+    });
+  } else {
+    next();
+  }
+};
+
+// ==========================================
+// Public Submission (no admin token required)
+// ==========================================
+router.post('/public-submit', optionalDualAuth, handleCMFundUpload, createRequest);
+
+// Apply admin authentication to remaining CM Funds routes
 router.use(adminAuth);
 
 // ==========================================

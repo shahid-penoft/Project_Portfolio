@@ -31,11 +31,14 @@ export const fetchDonorsByGroup = async (bloodGroup) => {
         SELECT
             d.id,
             d.name,
+            d.gender,
+            d.age,
             d.blood_group AS bloodGroup,
             d.phone,
             d.alternate_phone AS alternatePhone,
             d.email,
             d.panchayat,
+            d.house_name AS houseName,
             d.local_body_id AS localBodyId,
             lb.name AS localBodyName,
             d.ward_id AS wardId,
@@ -43,6 +46,7 @@ export const fetchDonorsByGroup = async (bloodGroup) => {
             w.place_name AS wardPlaceName,
             d.last_donated AS lastDonated,
             d.is_verified AS verified,
+            d.display_in_directory AS displayInDirectory,
             d.status,
             d.notes,
             d.profile_photo_url AS profilePhotoUrl,
@@ -72,6 +76,7 @@ export const fetchDonorsByGroup = async (bloodGroup) => {
             ...r,
             ward: wardStr || r.wardPlaceName || '',
             localBodyName: r.localBodyName || r.panchayat || '',
+            displayInDirectory: r.displayInDirectory === 1 || r.displayInDirectory === true,
         };
     });
 };
@@ -81,6 +86,8 @@ export const fetchDonorsByGroup = async (bloodGroup) => {
  */
 export const insertBloodDonor = async ({
     name,
+    gender,
+    age,
     bloodGroup,
     phone,
     alternatePhone,
@@ -88,8 +95,10 @@ export const insertBloodDonor = async ({
     localBodyId,
     wardId,
     panchayat,
+    houseName,
     status,
     verified,
+    displayInDirectory,
     notes,
     profilePhotoUrl
 }) => {
@@ -121,19 +130,27 @@ export const insertBloodDonor = async ({
         }
     }
 
+    const parsedAge = age ? parseInt(age, 10) : null;
+    const parsedDisplayInDir = displayInDirectory !== undefined ? (displayInDirectory ? 1 : 0) : 1;
+
     const [result] = await pool.query(
-        `INSERT INTO blood_donors (name, blood_group, phone, alternate_phone, email, panchayat, local_body_id, ward_id, last_donated, is_verified, is_active, status, notes, profile_photo_url)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Recently Registered', ?, 1, ?, ?, ?)`,
+        `INSERT INTO blood_donors
+         (name, gender, age, blood_group, phone, alternate_phone, email, panchayat, house_name, local_body_id, ward_id, last_donated, is_verified, display_in_directory, is_active, status, notes, profile_photo_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Recently Registered', ?, ?, 1, ?, ?, ?)`,
         [
             name,
+            gender || 'Male',
+            parsedAge,
             bloodGroup || 'O+',
             phone,
             alternatePhone || null,
             email || null,
             resolvedPanchayat,
+            houseName || null,
             parsedLbId,
             parsedWardId,
             isVerified,
+            parsedDisplayInDir,
             donorStatus,
             notes || null,
             profilePhotoUrl || null
@@ -143,15 +160,19 @@ export const insertBloodDonor = async ({
     return {
         id: result.insertId,
         name,
+        gender: gender || 'Male',
+        age: parsedAge,
         bloodGroup: bloodGroup || 'O+',
         phone,
         alternatePhone: alternatePhone || '',
         email: email || '',
         panchayat: resolvedPanchayat,
+        houseName: houseName || '',
         localBodyId: parsedLbId,
         wardId: parsedWardId,
         lastDonated: 'Recently Registered',
         verified: !!isVerified,
+        displayInDirectory: !!parsedDisplayInDir,
         status: donorStatus,
         notes: notes || '',
         profilePhotoUrl: profilePhotoUrl || ''
@@ -168,6 +189,14 @@ export const updateBloodDonorInDB = async (id, data) => {
     if (data.name !== undefined) {
         fields.push('name = ?');
         values.push(data.name);
+    }
+    if (data.gender !== undefined) {
+        fields.push('gender = ?');
+        values.push(data.gender);
+    }
+    if (data.age !== undefined) {
+        fields.push('age = ?');
+        values.push(data.age ? parseInt(data.age, 10) : null);
     }
     if (data.bloodGroup !== undefined) {
         fields.push('blood_group = ?');
@@ -189,6 +218,10 @@ export const updateBloodDonorInDB = async (id, data) => {
         fields.push('panchayat = ?');
         values.push(data.panchayat);
     }
+    if (data.houseName !== undefined) {
+        fields.push('house_name = ?');
+        values.push(data.houseName || null);
+    }
     if (data.localBodyId !== undefined) {
         fields.push('local_body_id = ?');
         values.push(data.localBodyId ? parseInt(data.localBodyId, 10) : null);
@@ -201,6 +234,10 @@ export const updateBloodDonorInDB = async (id, data) => {
         fields.push('is_verified = ?');
         values.push(data.verified ? 1 : 0);
     }
+    if (data.displayInDirectory !== undefined) {
+        fields.push('display_in_directory = ?');
+        values.push(data.displayInDirectory ? 1 : 0);
+    }
     if (data.status !== undefined) {
         fields.push('status = ?');
         values.push(data.status);
@@ -208,6 +245,10 @@ export const updateBloodDonorInDB = async (id, data) => {
     if (data.notes !== undefined) {
         fields.push('notes = ?');
         values.push(data.notes);
+    }
+    if (data.profilePhotoUrl !== undefined) {
+        fields.push('profile_photo_url = ?');
+        values.push(data.profilePhotoUrl || null);
     }
 
     if (fields.length === 0) return true;
