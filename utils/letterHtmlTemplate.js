@@ -20,7 +20,6 @@ const buildLetterHtmlTemplate = (letter, templateConfig = null) => {
     addressLine2: "Ernakulam District, Kerala – 686 691",
     phone: "+91 484 000 0000",
     email: "office@kothamangalammla.com",
-    showTricolor: true,
     showSeal: true,
     showPhoto: true,
     sealUrl: null,
@@ -55,14 +54,9 @@ const buildLetterHtmlTemplate = (letter, templateConfig = null) => {
         <table width="780" cellpadding="0" cellspacing="0" border="0"
                style="max-width:780px;background:#ffffff;border:1px solid #e0e0e0;font-family:Georgia,'Palatino Linotype','Book Antiqua',serif;">
 
-          <!-- TOP TRICOLOR BAR -->
-          ${t.showTricolor ? `<tr>
-            <td style="height:7px;background:linear-gradient(to right,#ff9933 0%,#ff9933 10%,#ffffff 30%,#ffffff 70%,#138808 90%,#138808 100%);line-height:7px;font-size:1px;">&nbsp;</td>
-          </tr>` : ''}
-
           <!-- HEADER SECTION -->
           <tr>
-            <td style="padding:28px 56px 0;border-bottom:2px solid #743fd5;">
+            <td style="padding:36px 56px 28px;background:#743fd5;background:linear-gradient(135deg, #743fd5 0%, #5528b0 100%);">
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Photo cell -->
@@ -73,18 +67,22 @@ const buildLetterHtmlTemplate = (letter, templateConfig = null) => {
                   <td width="16"></td>` : ''}
                   <!-- Info cell -->
                   <td valign="top" style="padding-top:4px;">
-                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:22px;font-weight:800;color:#101828;margin:0 0 2px;letter-spacing:0.2px;line-height:1.15;">${t.mlaName}</p>
-                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;font-weight:700;color:#743fd5;text-transform:uppercase;letter-spacing:1.5px;margin:0 0 10px;">${t.mlaTitle}</p>
-                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#374151;margin:0 0 2px;font-weight:600;">${t.constituency}</p>
-                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:11.5px;color:#6b7282;margin:0 0 1px;">${t.addressLine1}</p>
-                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:11.5px;color:#6b7282;margin:0;">${t.addressLine2}</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:22px;font-weight:800;color:#ffffff;margin:0 0 2px;letter-spacing:0.2px;line-height:1.15;">${t.mlaName}</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:13px;font-weight:700;color:rgba(255,255,255,0.9);text-transform:uppercase;letter-spacing:1.5px;margin:0 0 10px;">${t.mlaTitle}</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:rgba(255,255,255,0.85);margin:0 0 2px;font-weight:600;">${t.constituency}</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:11.5px;color:rgba(255,255,255,0.7);margin:0 0 1px;">${t.addressLine1}</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:11.5px;color:rgba(255,255,255,0.7);margin:0;">${t.addressLine2}</p>
                   </td>
                 </tr>
               </table>
+            </td>
+          </tr>
 
-              <!-- Ref / Date / Day row -->
+          <!-- Ref / Date / Day row -->
+          <tr>
+            <td style="padding:0 56px;">
               <table width="100%" cellpadding="0" cellspacing="0" border="0"
-                     style="margin-top:20px;padding-top:12px;padding-bottom:12px;border-top:1px solid #ececec;">
+                     style="padding-top:14px;padding-bottom:14px;border-bottom:1px solid #e5e7eb;">
                 <tr>
                   <td style="padding-right:28px;white-space:nowrap;">
                     <span style="font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;color:#9ca3af;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;">Ref No: </span>
@@ -134,10 +132,10 @@ const buildLetterHtmlTemplate = (letter, templateConfig = null) => {
                   <td valign="bottom">
                     <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:13.5px;font-weight:700;color:#101828;margin:0 0 1px;">${t.mlaName.replace('MLA ', '')}</p>
                     <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#374151;margin:0 0 1px;">Member of Legislative Assembly</p>
-                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#743fd5;font-weight:600;margin:0;">${t.constituency}, Kerala</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:12.5px;color:#035194;font-weight:600;margin:0;">${t.constituency}, Kerala</p>
                   </td>
                   ${t.showSeal ? `<td valign="bottom" align="right" width="80">
-                    ${t.sealUrl ? `<div style="width:68px;height:68px;display:inline-block;text-align:center;line-height:68px;"><img src="${t.sealUrl}" style="max-width:68px;max-height:68px;vertical-align:middle;display:inline-block;" alt="Seal"/></div>` : `<div style="width:68px;height:68px;border-radius:50%;border:1.5px dashed #d1d5db;background:rgba(116,63,213,0.02);text-align:center;line-height:1;padding-top:14px;box-sizing:border-box;">
+                    ${t.sealUrl ? `<div style="width:68px;height:68px;display:inline-block;text-align:center;line-height:68px;"><img src="${t.sealUrl}" style="max-width:68px;max-height:68px;vertical-align:middle;display:inline-block;" alt="Seal"/></div>` : `<div style="width:68px;height:68px;border-radius:50%;border:1.5px dashed #d1d5db;background:rgba(3,81,148,0.02);text-align:center;line-height:1;padding-top:14px;box-sizing:border-box;">
                       <div style="font-size:18px;color:#d1d5db;">&#128143;</div>
                       <div style="font-family:'Segoe UI',Arial,sans-serif;font-size:6.5px;color:#d1d5db;text-transform:uppercase;letter-spacing:0.5px;margin-top:3px;">Official Seal</div>
                     </div>`}
@@ -150,7 +148,7 @@ const buildLetterHtmlTemplate = (letter, templateConfig = null) => {
 
           <!-- FOOTER -->
           <tr>
-            <td style="background:#f7f7f8;border-top:1.5px solid #e5e7eb;padding:13px 56px;">
+            <td style="background:rgba(116, 63, 213, 0.03);border-top:1.5px solid rgba(116, 63, 213, 0.15);padding:13px 56px;">
               <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                   <!-- Address -->
@@ -168,17 +166,12 @@ const buildLetterHtmlTemplate = (letter, templateConfig = null) => {
                   <!-- Contact -->
                   <td valign="middle" align="right">
                     <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:10.5px;color:#374151;font-weight:600;margin:0 0 2px;">${t.phone}</p>
-                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#743fd5;margin:0;">${t.email}</p>
+                    <p style="font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#743fd5;margin:0;font-weight:600;">${t.email}</p>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
-
-          <!-- BOTTOM TRICOLOR BAR -->
-          ${t.showTricolor ? `<tr>
-            <td style="height:5px;background:linear-gradient(to right,#ff9933 0%,#ff9933 10%,#ffffff 30%,#ffffff 70%,#138808 90%,#138808 100%);line-height:5px;font-size:1px;">&nbsp;</td>
-          </tr>` : ''}
 
         </table>
       </td>

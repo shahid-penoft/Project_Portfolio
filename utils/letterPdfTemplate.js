@@ -7,12 +7,11 @@ import PDFDocument from 'pdfkit';
 import sharp from 'sharp';
 
 // ─── Colours (match LetterPreview.jsx) ────────────────────────
-const PURPLE    = '#743fd5';
+const PRIMARY   = '#743fd5';
+const SECONDARY = '#5528b0';
 const DARK      = '#101828';
 const GREY      = '#374151';
 const LIGHTGREY = '#6b7282';
-const SAFFRON   = '#ff9933';
-const GREEN_IN  = '#138808';
 
 // ─── Fonts (pdfkit ships with Helvetica, Times-Roman, Courier) ─
 const SANS      = 'Helvetica';
@@ -60,7 +59,6 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
     addressLine2: 'Ernakulam District, Kerala \u2013 686 691',
     phone: '+91 484 000 0000',
     email: 'office@kothamangalammla.com',
-    showTricolor: true,
     showSeal: true,
     showPhoto: true,
     sealUrl: null,
@@ -91,20 +89,12 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
 
       let y = 0;
 
-      // ── TOP TRICOLOR BAR (7pt) ────────────────────────────────
-      if (t.showTricolor) {
-        // Saffron section (10% of width)
-        doc.rect(0, y, PAGE_W * 0.10, 7).fill(SAFFRON);
-        // White section (60% of width)
-        doc.rect(PAGE_W * 0.10, y, PAGE_W * 0.80, 7).fill('#ffffff');
-        // Green section (10% of width)
-        doc.rect(PAGE_W * 0.90, y, PAGE_W * 0.10, 7).fill(GREEN_IN);
-        y += 7;
-      }
-
       // ── HEADER AREA ───────────────────────────────────────────
       const headerTop = y;
-      y += 28;
+      const headerGrad = doc.linearGradient(0, 0, PAGE_W, 159);
+      headerGrad.stop(0, PRIMARY).stop(1, SECONDARY);
+      doc.rect(0, 0, PAGE_W, 159).fill(headerGrad);
+      y += 36;
 
       // Photo placeholder box
       const photoX = MARGIN_X;
@@ -123,16 +113,17 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
       // Header text
       const infoX = t.showPhoto ? photoX + photoW + 18 : photoX;
       const infoW = PAGE_W - infoX - MARGIN_X;
-      doc.font(SANS_BOLD).fontSize(18).fillColor(DARK)
+      doc.font(SANS_BOLD).fontSize(18).fillColor('#ffffff').fillOpacity(1)
          .text(t.mlaName, infoX, y + 4, { width: infoW });
-      doc.font(SANS_BOLD).fontSize(9).fillColor(PURPLE)
+      doc.font(SANS_BOLD).fontSize(9).fillColor('#ffffff').fillOpacity(0.9)
          .text(t.mlaTitle.toUpperCase(), infoX, y + 26, { width: infoW, characterSpacing: 1.2 });
-      doc.font(SANS_BOLD).fontSize(9).fillColor(GREY)
+      doc.font(SANS_BOLD).fontSize(9).fillColor('#ffffff').fillOpacity(0.85)
          .text(t.constituency, infoX, y + 44, { width: infoW });
-      doc.font(SANS).fontSize(8.5).fillColor(LIGHTGREY)
+      doc.font(SANS).fontSize(8.5).fillColor('#ffffff').fillOpacity(0.7)
          .text(t.addressLine1, infoX, y + 58, { width: infoW });
-      doc.font(SANS).fontSize(8.5).fillColor(LIGHTGREY)
+      doc.font(SANS).fontSize(8.5).fillColor('#ffffff').fillOpacity(0.7)
          .text(t.addressLine2, infoX, y + 70, { width: infoW });
+      doc.fillOpacity(1); // Reset opacity for the rest of the document
 
       y += photoH + 14;
 
@@ -157,9 +148,9 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
 
       y += 18;
 
-      // ── Purple border under header ────────────────────────────
+      // ── Border under ref row ────────────────────────────
       doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y)
-         .lineWidth(1.5).stroke(PURPLE);
+         .lineWidth(1).stroke('#e5e7eb');
       y += 20;
 
       // ── TO BLOCK ──────────────────────────────────────────────
@@ -217,7 +208,7 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
       y += 14;
       doc.font(SANS).fontSize(9.5).fillColor(GREY).text('Member of Legislative Assembly', MARGIN_X, y);
       y += 13;
-      doc.font(SANS_BOLD).fontSize(9.5).fillColor(PURPLE).text(`${t.constituency}, Kerala`, MARGIN_X, y);
+      doc.font(SANS_BOLD).fontSize(9.5).fillColor(PRIMARY).text(`${t.constituency}, Kerala`, MARGIN_X, y);
 
       // Seal circle (right side)
       if (t.showSeal) {
@@ -237,8 +228,8 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
 
       // ── FOOTER ────────────────────────────────────────────────
       const footerY = 780;
-      doc.rect(0, footerY, PAGE_W, 60).fill('#f7f7f8');
-      doc.moveTo(0, footerY).lineTo(PAGE_W, footerY).lineWidth(1).stroke('#e5e7eb');
+      doc.rect(0, footerY, PAGE_W, 60).fill('#f7f5fa');
+      doc.moveTo(0, footerY).lineTo(PAGE_W, footerY).lineWidth(1).stroke('#e5dcf4');
 
       // Left: address
       doc.font(SANS_BOLD).fontSize(7.5).fillColor(GREY)
@@ -255,15 +246,8 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
       // Right: phone + email
       doc.font(SANS_BOLD).fontSize(7.5).fillColor(GREY)
          .text(t.phone, PAGE_W - MARGIN_X - 90, footerY + 10, { width: 90, align: 'right' });
-      doc.font(SANS).fontSize(7).fillColor(PURPLE)
+      doc.font(SANS).fontSize(7).fillColor(PRIMARY)
          .text(t.email, PAGE_W - MARGIN_X - 90, footerY + 23, { width: 90, align: 'right' });
-
-      // ── BOTTOM TRICOLOR BAR ───────────────────────────────────
-      if (t.showTricolor) {
-        doc.rect(0, 840 - 5, PAGE_W * 0.10, 5).fill(SAFFRON);
-        doc.rect(PAGE_W * 0.10, 840 - 5, PAGE_W * 0.80, 5).fill('#ffffff');
-        doc.rect(PAGE_W * 0.90, 840 - 5, PAGE_W * 0.10, 5).fill(GREEN_IN);
-      }
 
       doc.end();
     } catch (err) {

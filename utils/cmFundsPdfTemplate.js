@@ -1,12 +1,10 @@
 import PDFDocument from 'pdfkit';
 import sharp from 'sharp';
 
-const PURPLE    = '#743fd5';
+const PRIMARY   = '#743fd5';
 const DARK      = '#101828';
 const GREY      = '#374151';
 const LIGHTGREY = '#6b7282';
-const SAFFRON   = '#ff9933';
-const GREEN_IN  = '#138808';
 
 const SANS      = 'Helvetica';
 const SANS_BOLD = 'Helvetica-Bold';
@@ -52,7 +50,6 @@ const generateCMFundsPdf = async (request, templateConfig = null) => {
     addressLine2: 'Ernakulam District, Kerala \u2013 686 691',
     phone: '+91 484 000 0000',
     email: 'office@kothamangalammla.com',
-    showTricolor: true,
     showSeal: true,
     showPhoto: true,
     sealUrl: null,
@@ -84,16 +81,8 @@ const generateCMFundsPdf = async (request, templateConfig = null) => {
 
       let y = 0;
 
-      // ── TOP TRICOLOR BAR
-      if (t.showTricolor) {
-        doc.rect(0, y, PAGE_W * 0.10, 7).fill(SAFFRON);
-        doc.rect(PAGE_W * 0.10, y, PAGE_W * 0.80, 7).fill('#ffffff');
-        doc.rect(PAGE_W * 0.90, y, PAGE_W * 0.10, 7).fill(GREEN_IN);
-        y += 7;
-      }
-
       // ── HEADER AREA
-      y += 28;
+      y += 36;
 
       const photoX = MARGIN_X;
       const photoW = 75;
@@ -112,7 +101,7 @@ const generateCMFundsPdf = async (request, templateConfig = null) => {
       const infoW = PAGE_W - infoX - MARGIN_X;
       doc.font(SANS_BOLD).fontSize(18).fillColor(DARK)
          .text(t.mlaName, infoX, y + 4, { width: infoW });
-      doc.font(SANS_BOLD).fontSize(9).fillColor(PURPLE)
+      doc.font(SANS_BOLD).fontSize(9).fillColor(PRIMARY)
          .text(t.mlaTitle.toUpperCase(), infoX, y + 26, { width: infoW, characterSpacing: 1.2 });
       doc.font(SANS_BOLD).fontSize(9).fillColor(GREY)
          .text(t.constituency, infoX, y + 44, { width: infoW });
@@ -138,7 +127,7 @@ const generateCMFundsPdf = async (request, templateConfig = null) => {
          .text(dateStr, { continued: false });
 
       y += 18;
-      doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y).lineWidth(1.5).stroke(PURPLE);
+      doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y).lineWidth(1.5).stroke(PRIMARY);
       y += 20;
 
       // ── CONTENT ──
@@ -186,7 +175,7 @@ const generateCMFundsPdf = async (request, templateConfig = null) => {
       // BANK DETAILS
       doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y).lineWidth(0.5).stroke('#ececec');
       y += 15;
-      doc.font(SANS_BOLD).fontSize(11).fillColor(PURPLE).text('Bank Account Details', MARGIN_X, y);
+      doc.font(SANS_BOLD).fontSize(11).fillColor(PRIMARY).text('Bank Account Details', MARGIN_X, y);
       y += 20;
 
       drawField('Bank Name', request.bank_name, MARGIN_X, y);
@@ -205,7 +194,7 @@ const generateCMFundsPdf = async (request, templateConfig = null) => {
       y += 14;
       doc.font(SANS).fontSize(9.5).fillColor(GREY).text('Member of Legislative Assembly', MARGIN_X, y);
       y += 13;
-      doc.font(SANS_BOLD).fontSize(9.5).fillColor(PURPLE).text(`${t.constituency}, Kerala`, MARGIN_X, y);
+      doc.font(SANS_BOLD).fontSize(9.5).fillColor(PRIMARY).text(`${t.constituency}, Kerala`, MARGIN_X, y);
 
       if (t.showSeal) {
         const sealX = PAGE_W - MARGIN_X - 50;
@@ -237,14 +226,8 @@ const generateCMFundsPdf = async (request, templateConfig = null) => {
 
       doc.font(SANS_BOLD).fontSize(7.5).fillColor(GREY)
          .text(t.phone, PAGE_W - MARGIN_X - 90, footerY + 10, { width: 90, align: 'right' });
-      doc.font(SANS).fontSize(7).fillColor(PURPLE)
+      doc.font(SANS).fontSize(7).fillColor(PRIMARY)
          .text(t.email, PAGE_W - MARGIN_X - 90, footerY + 23, { width: 90, align: 'right' });
-
-      if (t.showTricolor) {
-        doc.rect(0, 840 - 5, PAGE_W * 0.10, 5).fill(SAFFRON);
-        doc.rect(PAGE_W * 0.10, 840 - 5, PAGE_W * 0.80, 5).fill('#ffffff');
-        doc.rect(PAGE_W * 0.90, 840 - 5, PAGE_W * 0.10, 5).fill(GREEN_IN);
-      }
 
       doc.end();
     } catch (err) {
