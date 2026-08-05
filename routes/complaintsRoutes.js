@@ -86,7 +86,7 @@ router.delete('/:id/media/:mediaId', verifyToken, deleteComplaintMedia);
 // ── Attachments sub-resource ───────────────────────────────────
 router.post(
     '/:id/attachments',
-    dualAuth,
+    optionalDualAuth,
     (req, res, next) => uploadComplaintAttachments(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();

@@ -9,6 +9,7 @@ import {
     uploadDonorImage,
 } from '../controllers/bloodDonorController.js';
 import { validateBloodDonorPayload } from '../middlewares/validateBloodDonor.js';
+import { verifyToken } from '../middlewares/auth.js';
 
 const router = express.Router();
 
@@ -36,10 +37,10 @@ router.get('/', getBloodDonors);
 // POST /api/blood-donors - Register new voluntary blood donor
 router.post('/', registrationLimiter, validateBloodDonorPayload, registerBloodDonor);
 
-// PUT /api/blood-donors/:id - Update blood donor details / verification / status
-router.put('/:id', updateBloodDonor);
+// PUT /api/blood-donors/:id - Update blood donor details / verification / status (admin only)
+router.put('/:id', verifyToken, updateBloodDonor);
 
-// DELETE /api/blood-donors/:id - Remove blood donor entry
-router.delete('/:id', deleteBloodDonor);
+// DELETE /api/blood-donors/:id - Remove blood donor entry (admin only)
+router.delete('/:id', verifyToken, deleteBloodDonor);
 
 export default router;

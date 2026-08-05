@@ -72,10 +72,15 @@ export const fetchDonorsByGroup = async (bloodGroup) => {
         if (r.wardNumber) {
             wardStr = `Ward ${r.wardNumber}${r.wardPlaceName ? ' - ' + r.wardPlaceName : ''}`;
         }
+        const normStatus = (r.status === 'Available' || r.status === 'Accepted' || r.status === 'Approved' || r.status === 'Verified')
+            ? 'Verified'
+            : (r.status || 'Verified');
+
         return {
             ...r,
             ward: wardStr || r.wardPlaceName || '',
             localBodyName: r.localBodyName || r.panchayat || '',
+            status: normStatus,
             displayInDirectory: r.displayInDirectory === 1 || r.displayInDirectory === true,
         };
     });
@@ -106,8 +111,8 @@ export const insertBloodDonor = async ({
 
     const parsedLbId   = localBodyId ? parseInt(localBodyId, 10) : null;
     const parsedWardId = wardId ? parseInt(wardId, 10) : null;
-    const isVerified   = verified !== undefined ? (verified ? 1 : 0) : 1;
-    const donorStatus  = status || 'Accepted';
+    const donorStatus  = status || 'Verified';
+    const isVerified   = verified !== undefined ? (verified ? 1 : 0) : (donorStatus === 'Verified' || donorStatus === 'Accepted' ? 1 : 0);
 
     if (parsedLbId) {
         try {
@@ -229,6 +234,15 @@ export const updateBloodDonorInDB = async (id, data) => {
     if (data.wardId !== undefined) {
         fields.push('ward_id = ?');
         values.push(data.wardId ? parseInt(data.wardId, 10) : null);
+    }
+    if (data.status !== undefined) {
+        fields.push('status = ?');
+        values.push(data.status);
+
+        if (data.verified === undefined) {
+            fields.push('is_verified = ?');
+            values.push(data.status === 'Verified' || data.status === 'Accepted' ? 1 : 0);
+        }
     }
     if (data.verified !== undefined) {
         fields.push('is_verified = ?');

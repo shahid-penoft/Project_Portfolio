@@ -16,9 +16,6 @@ export const validateBloodRequest = (req, res, next) => {
     if (!body.hospitalName || !String(body.hospitalName).trim()) {
         errors.push('hospitalName is required.');
     }
-    if (!body.houseName || !String(body.houseName).trim()) {
-        errors.push('houseName is required.');
-    }
     if (!body.contactPhone || !String(body.contactPhone).trim()) {
         errors.push('contactPhone is required.');
     }
@@ -59,7 +56,9 @@ export const validateBloodRequest = (req, res, next) => {
         bloodGroup,
         unitsNeeded: body.unitsNeeded || '2',
         hospitalName: String(body.hospitalName).trim().slice(0, 200),
-        houseName: String(body.houseName).trim().slice(0, 200),
+        department: body.department ? String(body.department).trim().slice(0, 100) : null,
+        hospitalLocation: body.hospitalLocation ? String(body.hospitalLocation).trim().slice(0, 2000) : null,
+        houseName: body.houseName ? String(body.houseName).trim().slice(0, 200) : null,
         localBodyId: parseInt(body.localBodyId, 10) || null,
         wardId: body.wardId ? parseInt(body.wardId, 10) : null,
         contactPerson: body.contactPerson ? String(body.contactPerson).trim().slice(0, 100) : null,

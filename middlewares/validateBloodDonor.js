@@ -46,6 +46,16 @@ export const validateBloodDonorPayload = (req, res, next) => {
         panchayat: cleanPanchayat,
         localBodyId: localBodyId || null,
         wardId: wardId || null,
+        gender: req.body.gender || 'Male',
+        age: req.body.age || null,
+        alternatePhone: req.body.alternatePhone || null,
+        email: req.body.email || null,
+        houseName: req.body.houseName || null,
+        status: req.body.status || 'Accepted',
+        verified: req.body.verified !== undefined ? req.body.verified : true,
+        displayInDirectory: req.body.displayInDirectory !== undefined ? req.body.displayInDirectory : true,
+        notes: req.body.notes || null,
+        profilePhotoUrl: req.body.profilePhotoUrl || null,
     };
 
     next();

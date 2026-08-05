@@ -11,6 +11,8 @@ export const fetchAllBloodRequests = async ({ status, bloodGroup } = {}) => {
             br.blood_group    AS bloodGroup,
             br.units_needed   AS unitsNeeded,
             br.hospital_name  AS hospitalName,
+            br.department     AS department,
+            br.hospital_location AS hospitalLocation,
             br.house_name     AS houseName,
             br.ward_info      AS wardInfo,
             br.local_body_id  AS localBodyId,
@@ -62,6 +64,8 @@ export const insertBloodRequest = async ({
     bloodGroup,
     unitsNeeded,
     hospitalName,
+    department,
+    hospitalLocation,
     houseName,
     localBodyId,
     wardId,
@@ -101,14 +105,16 @@ export const insertBloodRequest = async ({
 
     const [result] = await pool.query(
         `INSERT INTO blood_requests
-         (patient_name, blood_group, units_needed, hospital_name, house_name, local_body_id, ward_id, ward_info, contact_person, contact_phone, required_date, status, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (patient_name, blood_group, units_needed, hospital_name, department, hospital_location, house_name, local_body_id, ward_id, ward_info, contact_person, contact_phone, required_date, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             patientName,
             bloodGroup || 'O+',
             String(unitsNeeded || '2'),
             hospitalName,
-            houseName,
+            department || null,
+            hospitalLocation || null,
+            houseName || null,
             parsedLbId,
             parsedWardId,
             wardInfo,
@@ -126,7 +132,9 @@ export const insertBloodRequest = async ({
         bloodGroup: bloodGroup || 'O+',
         unitsNeeded: unitsNeeded || '2',
         hospitalName,
-        houseName,
+        department: department || null,
+        hospitalLocation: hospitalLocation || null,
+        houseName: houseName || null,
         wardInfo,
         localBodyId: parsedLbId,
         wardId: parsedWardId,
@@ -161,9 +169,17 @@ export const updateBloodRequestInDB = async (id, data) => {
         fields.push('hospital_name = ?');
         values.push(data.hospitalName);
     }
+    if (data.department !== undefined) {
+        fields.push('department = ?');
+        values.push(data.department || null);
+    }
+    if (data.hospitalLocation !== undefined) {
+        fields.push('hospital_location = ?');
+        values.push(data.hospitalLocation || null);
+    }
     if (data.houseName !== undefined) {
         fields.push('house_name = ?');
-        values.push(data.houseName);
+        values.push(data.houseName || null);
     }
     if (data.contactPerson !== undefined) {
         fields.push('contact_person = ?');

@@ -11,7 +11,14 @@ import {
  */
 export const getBloodRequests = async (req, res) => {
     try {
-        const status = req.query.status || '';
+        let status = req.query.status;
+        if (status === undefined || status === null) {
+            // Default unauthenticated public requests to Active status
+            status = req.admin ? '' : 'Active';
+        } else if (status === 'All') {
+            status = '';
+        }
+
         const bloodGroup = (req.query.blood_group || req.query.group || '').trim().toUpperCase();
 
         const requests = await fetchAllBloodRequests({ status, bloodGroup });
