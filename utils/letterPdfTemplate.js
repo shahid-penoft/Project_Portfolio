@@ -5,6 +5,12 @@
  */
 import PDFDocument from 'pdfkit';
 import sharp from 'sharp';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── Colours (match LetterPreview.jsx) ────────────────────────
 const PRIMARY   = '#743fd5';
@@ -16,8 +22,8 @@ const LIGHTGREY = '#6b7282';
 // ─── Fonts (pdfkit ships with Helvetica, Times-Roman, Courier) ─
 const SANS      = 'Helvetica';
 const SANS_BOLD = 'Helvetica-Bold';
-const SERIF     = 'Times-Roman';
-const SERIF_BOLD= 'Times-Bold';
+const SERIF     = 'Helvetica';
+const SERIF_BOLD= 'Helvetica-Bold';
 const MONO      = 'Courier';
 const MONO_BOLD = 'Courier-Bold';
 
@@ -26,7 +32,7 @@ const MONTHS = ['January','February','March','April','May','June',
 const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 const PAGE_W   = 595.28;   // A4 width pts
-const MARGIN_X = 72;       // ~1 inch
+const MARGIN_X = 42;       // ~0.6 inch matching LetterBody padding
 const CONTENT_W = PAGE_W - MARGIN_X * 2;
 
 /**
@@ -35,16 +41,50 @@ const CONTENT_W = PAGE_W - MARGIN_X * 2;
  * @returns {Promise<Buffer>}
  */
 const fetchImageAsBuffer = async (url) => {
+  if (!url || typeof url !== 'string') return null;
+
   try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const arrayBuffer = await res.arrayBuffer();
-    const originalBuffer = Buffer.from(arrayBuffer);
-    
-    // PDFKit only supports JPEG and PNG. Convert to PNG to maintain transparency and compatibility.
-    const convertedBuffer = await sharp(originalBuffer).png().toBuffer();
-    return convertedBuffer;
-  } catch(e) {
+    let originalBuffer = null;
+
+    if (url.startsWith('data:image/')) {
+      const base64Data = url.split(',')[1];
+      if (base64Data) {
+        originalBuffer = Buffer.from(base64Data, 'base64');
+      }
+    } else if (url.startsWith('/uploads/') || url.startsWith('uploads/')) {
+      const cleanPath = url.replace(/^\/+/, '');
+      const localFilePath = path.join(__dirname, '..', cleanPath);
+      if (fs.existsSync(localFilePath)) {
+        originalBuffer = await fs.promises.readFile(localFilePath);
+      }
+    } else if (url.startsWith('http://') || url.startsWith('https://')) {
+      if (url.includes('/uploads/')) {
+        const uploadPath = url.substring(url.indexOf('/uploads/')).replace(/^\/+/, '');
+        const localFilePath = path.join(__dirname, '..', uploadPath);
+        if (fs.existsSync(localFilePath)) {
+          originalBuffer = await fs.promises.readFile(localFilePath);
+        }
+      }
+
+      if (!originalBuffer) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        try {
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            const arrayBuffer = await res.arrayBuffer();
+            originalBuffer = Buffer.from(arrayBuffer);
+          }
+        } catch {
+          clearTimeout(timeoutId);
+        }
+      }
+    }
+
+    if (!originalBuffer) return null;
+    return await sharp(originalBuffer).png().toBuffer();
+  } catch (e) {
     console.error('Failed to fetch/convert image:', e);
     return null;
   }
@@ -90,46 +130,44 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
       let y = 0;
 
       // ── HEADER AREA ───────────────────────────────────────────
-      const headerTop = y;
-      const headerGrad = doc.linearGradient(0, 0, PAGE_W, 159);
+      const headerGrad = doc.linearGradient(0, 0, PAGE_W, 135);
       headerGrad.stop(0, PRIMARY).stop(1, SECONDARY);
-      doc.rect(0, 0, PAGE_W, 159).fill(headerGrad);
-      y += 36;
-
-      // Photo placeholder box
+      doc.rect(0, 0, PAGE_W, 135).fill(headerGrad);
+      
       const photoX = MARGIN_X;
-      const photoW = 75;
-      const photoH = 95;
+      const photoY = 20;
+      const photoW = 73;
+      const photoH = 94;
       if (t.showPhoto) {
         if (photoBuffer) {
-          doc.image(photoBuffer, photoX, y, { width: photoW, height: photoH, fit: [photoW, photoH], align: 'center', valign: 'center' });
+          doc.image(photoBuffer, photoX, photoY, { width: photoW, height: photoH, fit: [photoW, photoH], align: 'center', valign: 'center' });
         } else {
-          doc.rect(photoX, y, photoW, photoH).fill('#e8e8e8').stroke('#d4d4d4');
+          doc.rect(photoX, photoY, photoW, photoH).fill('#e8e8e8').stroke('#d4d4d4');
           doc.font(SANS).fontSize(7).fillColor('#aaaaaa')
-             .text('MLA Photo', photoX, y + photoH / 2 - 4, { width: photoW, align: 'center' });
+             .text('MLA Photo', photoX, photoY + photoH / 2 - 4, { width: photoW, align: 'center' });
         }
       }
 
       // Header text
       const infoX = t.showPhoto ? photoX + photoW + 18 : photoX;
       const infoW = PAGE_W - infoX - MARGIN_X;
-      doc.font(SANS_BOLD).fontSize(18).fillColor('#ffffff').fillOpacity(1)
-         .text(t.mlaName, infoX, y + 4, { width: infoW });
+      doc.font(SANS_BOLD).fontSize(16).fillColor('#ffffff').fillOpacity(1)
+         .text(t.mlaName, infoX, photoY + 2, { width: infoW });
       doc.font(SANS_BOLD).fontSize(9).fillColor('#ffffff').fillOpacity(0.9)
-         .text(t.mlaTitle.toUpperCase(), infoX, y + 26, { width: infoW, characterSpacing: 1.2 });
+         .text(t.mlaTitle.toUpperCase(), infoX, photoY + 22, { width: infoW, characterSpacing: 1.2 });
       doc.font(SANS_BOLD).fontSize(9).fillColor('#ffffff').fillOpacity(0.85)
-         .text(t.constituency, infoX, y + 44, { width: infoW });
+         .text(t.constituency, infoX, photoY + 38, { width: infoW });
       doc.font(SANS).fontSize(8.5).fillColor('#ffffff').fillOpacity(0.7)
-         .text(t.addressLine1, infoX, y + 58, { width: infoW });
+         .text(t.addressLine1, infoX, photoY + 52, { width: infoW });
       doc.font(SANS).fontSize(8.5).fillColor('#ffffff').fillOpacity(0.7)
-         .text(t.addressLine2, infoX, y + 70, { width: infoW });
-      doc.fillOpacity(1); // Reset opacity for the rest of the document
+         .text(t.addressLine2, infoX, photoY + 64, { width: infoW });
+      doc.fillOpacity(1);
 
-      y += photoH + 14;
+      y = 135;
 
       // ── Ref / Date / Day row ──────────────────────────────────
-      doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y).stroke('#ececec');
-      y += 10;
+      doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y).lineWidth(0.8).stroke('#e5e7eb');
+      y += 8;
 
       doc.font(SANS_BOLD).fontSize(7.5).fillColor('#9ca3af')
          .text('REF NO: ', MARGIN_X, y, { continued: true })
@@ -137,20 +175,17 @@ const generateLetterPdf = async (letter, templateConfig = null) => {
          .text(refNo, { continued: false });
 
       doc.font(SANS_BOLD).fontSize(7.5).fillColor('#9ca3af')
-         .text('DATE: ', MARGIN_X + 180, y, { continued: true })
+         .text('DATE: ', MARGIN_X + 220, y, { continued: true })
          .font(SANS_BOLD).fontSize(8.5).fillColor(DARK)
          .text(dateStr, { continued: false });
 
       doc.font(SANS_BOLD).fontSize(7.5).fillColor('#9ca3af')
-         .text('DAY: ', MARGIN_X + 360, y, { continued: true })
+         .text('DAY: ', MARGIN_X + 380, y, { continued: true })
          .font(SANS_BOLD).fontSize(8.5).fillColor(DARK)
          .text(dayStr, { continued: false });
 
-      y += 18;
-
-      // ── Border under ref row ────────────────────────────
-      doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y)
-         .lineWidth(1).stroke('#e5e7eb');
+      y += 16;
+      doc.moveTo(MARGIN_X, y).lineTo(PAGE_W - MARGIN_X, y).lineWidth(0.8).stroke('#e5e7eb');
       y += 20;
 
       // ── TO BLOCK ──────────────────────────────────────────────
