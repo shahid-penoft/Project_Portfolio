@@ -5,7 +5,14 @@ import { uploadImage, runMulter } from '../configs/multerS3.js';
 // GET /api/local-bodies/with-wards
 export const getLocalBodiesWithWards = async (req, res) => {
     try {
-        const [localBodies] = await db.query('SELECT * FROM local_bodies ORDER BY name ASC');
+        const { includeAll } = req.query;
+        let lbQuery = 'SELECT * FROM local_bodies';
+        if (!includeAll || includeAll === 'false') {
+            lbQuery += " WHERE type IS NULL OR type NOT IN ('BLOCK_PANCHAYAT', 'DISTRICT_PANCHAYAT')";
+        }
+        lbQuery += ' ORDER BY name ASC';
+        
+        const [localBodies] = await db.query(lbQuery);
         const [wards] = await db.query('SELECT * FROM local_body_wards ORDER BY CAST(ward_no AS UNSIGNED) ASC, ward_no ASC');
 
         const wardsByLocalBody = {};
@@ -53,11 +60,23 @@ export const getLocalBodiesWithWards = async (req, res) => {
 // GET /api/local-bodies
 export const getAllLocalBodies = async (req, res) => {
     try {
-        const { page, limit, search } = req.query;
+        const { page, limit, search, includeAll } = req.query;
+
+        let baseWhere = '1=1';
+        if (!includeAll || includeAll === 'false') {
+            baseWhere = "(type IS NULL OR type NOT IN ('BLOCK_PANCHAYAT', 'DISTRICT_PANCHAYAT'))";
+        }
 
         // If no pagination params are provided, maintain legacy behavior (fetch all)
         if (!page || !limit) {
-            const [rows] = await db.query('SELECT * FROM local_bodies ORDER BY name ASC');
+            let queryStr = `SELECT * FROM local_bodies WHERE ${baseWhere}`;
+            const params = [];
+            if (search) {
+                queryStr += ' AND (name LIKE ? OR description LIKE ? OR short_description LIKE ?)';
+                params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+            }
+            queryStr += ' ORDER BY name ASC';
+            const [rows] = await db.query(queryStr, params);
             return successResponse(res, { data: rows }, 'Local bodies fetched successfully.');
         }
 
@@ -65,13 +84,13 @@ export const getAllLocalBodies = async (req, res) => {
         const limitNum = parseInt(limit, 10) || 10;
         const offset = (pageNum - 1) * limitNum;
 
-        let query = 'SELECT * FROM local_bodies';
-        let countQuery = 'SELECT COUNT(*) as total FROM local_bodies';
+        let query = `SELECT * FROM local_bodies WHERE ${baseWhere}`;
+        let countQuery = `SELECT COUNT(*) as total FROM local_bodies WHERE ${baseWhere}`;
         const queryParams = [];
 
         if (search) {
-            query += ' WHERE name LIKE ? OR description LIKE ? OR short_description LIKE ?';
-            countQuery += ' WHERE name LIKE ? OR description LIKE ? OR short_description LIKE ?';
+            query += ' AND (name LIKE ? OR description LIKE ? OR short_description LIKE ?)';
+            countQuery += ' AND (name LIKE ? OR description LIKE ? OR short_description LIKE ?)';
             queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
         }
 
