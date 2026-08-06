@@ -30,10 +30,15 @@ export const getLocalBodiesWithWards = async (req, res) => {
             wardsByLocalBody[w.local_body_id].push(w);
         });
 
-        const structuredLocalBodies = localBodies.map(lb => ({
-            ...lb,
-            wards: wardsByLocalBody[lb.id] || []
-        }));
+        const structuredLocalBodies = localBodies.map(lb => {
+            const lbWards = wardsByLocalBody[lb.id] || [];
+            return {
+                ...lb,
+                wards: lbWards,
+                wardsCount: lbWards.length,
+                wardsLabel: `${lbWards.length} Wards`
+            };
+        });
 
         return successResponse(res, {
             data: structuredLocalBodies,
@@ -91,12 +96,12 @@ export const getAllLocalBodies = async (req, res) => {
 // POST /api/local-bodies
 export const createLocalBody = async (req, res) => {
     try {
-        const { name, description, short_description, cover_image, population, area } = req.body;
+        const { name, description, short_description, cover_image, population, area, type, headquarters, office_address, office_phone, office_email, office_working_hours, office_google_maps_url } = req.body;
         if (!name) return errorResponse(res, 'name is required.', 400);
 
         const [result] = await db.query(
-            'INSERT INTO local_bodies (name, description, short_description, cover_image, population, area) VALUES (?, ?, ?, ?, ?, ?)',
-            [name.trim(), description || null, short_description || null, cover_image || null, population || null, area || null]
+            'INSERT INTO local_bodies (name, description, short_description, cover_image, population, area, type, headquarters, office_address, office_phone, office_email, office_working_hours, office_google_maps_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [name.trim(), description || null, short_description || null, cover_image || null, population || null, area || null, type || null, headquarters || null, office_address || null, office_phone || null, office_email || null, office_working_hours ? JSON.stringify(office_working_hours) : null, office_google_maps_url || null]
         );
         const [rows] = await db.query('SELECT * FROM local_bodies WHERE id = ?', [result.insertId]);
         return successResponse(res, { data: rows[0] }, 'Local body created successfully.', 201);
@@ -111,12 +116,12 @@ export const createLocalBody = async (req, res) => {
 export const updateLocalBody = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, description, short_description, cover_image, population, area } = req.body;
+        const { name, description, short_description, cover_image, population, area, type, headquarters, office_address, office_phone, office_email, office_working_hours, office_google_maps_url } = req.body;
         if (!name) return errorResponse(res, 'name is required.', 400);
 
         const [result] = await db.query(
-            'UPDATE local_bodies SET name = ?, description = ?, short_description = ?, cover_image = ?, population = ?, area = ? WHERE id = ?',
-            [name.trim(), description || null, short_description || null, cover_image || null, population || null, area || null, id]
+            'UPDATE local_bodies SET name = ?, description = ?, short_description = ?, cover_image = ?, population = ?, area = ?, type = ?, headquarters = ?, office_address = ?, office_phone = ?, office_email = ?, office_working_hours = ?, office_google_maps_url = ? WHERE id = ?',
+            [name.trim(), description || null, short_description || null, cover_image || null, population || null, area || null, type || null, headquarters || null, office_address || null, office_phone || null, office_email || null, office_working_hours ? JSON.stringify(office_working_hours) : null, office_google_maps_url || null, id]
         );
         if (!result.affectedRows) return errorResponse(res, 'Local body not found.', 404);
         const [rows] = await db.query('SELECT * FROM local_bodies WHERE id = ?', [id]);
@@ -150,5 +155,82 @@ export const deleteLocalBody = async (req, res) => {
     } catch (err) {
         console.error('[deleteLocalBody]', err);
         return errorResponse(res, 'Server error deleting local body.');
+    }
+};
+
+// GET /api/local-bodies/public/:id
+export const getPublicLocalBodyById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [lbRows] = await db.query('SELECT * FROM local_bodies WHERE id = ?', [id]);
+        if (lbRows.length === 0) return errorResponse(res, 'Local body not found.', 404);
+        const lb = lbRows[0];
+
+        // Fetch President & Secretary
+        const [reps] = await db.query(`
+            SELECT gr.name, gr.phone, m.label as designation, gr.role_id
+            FROM governing_representatives gr
+            LEFT JOIN mla_dropdown_lists m ON gr.role_id = m.id
+            WHERE gr.local_body_id = ? AND gr.is_deleted = FALSE AND (m.label = 'President' OR m.label = 'Chairperson' OR m.label = 'Secretary')
+        `, [id]);
+        
+        let president = null;
+        let secretary = null;
+        reps.forEach(rep => {
+            if (rep.designation === 'President' || rep.designation === 'Chairperson') president = rep;
+            else if (rep.designation === 'Secretary') secretary = rep;
+        });
+
+        // Fetch Wards
+        const [wards] = await db.query(`
+            SELECT w.id as ward_id, w.ward_no, w.place_name, gr.name as member_name, gr.phone as member_phone
+            FROM local_body_wards w
+            LEFT JOIN governing_representatives gr ON w.id = gr.ward_id AND gr.is_deleted = FALSE
+            WHERE w.local_body_id = ?
+            ORDER BY CAST(w.ward_no AS UNSIGNED) ASC, w.ward_no ASC
+        `, [id]);
+
+        const formattedWards = wards.map(w => ({
+            number: w.ward_no,
+            name: w.place_name,
+            member: w.member_name || 'N/A',
+            phone: w.member_phone || 'N/A'
+        }));
+
+        // Try to parse office working hours
+        let parsedHours = null;
+        if (lb.office_working_hours) {
+            try { parsedHours = typeof lb.office_working_hours === 'string' ? JSON.parse(lb.office_working_hours) : lb.office_working_hours; } catch(e){}
+        }
+
+        const data = {
+            id: lb.id,
+            name: lb.name,
+            type: lb.type,
+            description: lb.description,
+            wardsLabel: `${wards.length} Wards`,
+            wardsCount: wards.length,
+            population: lb.population,
+            area: lb.area,
+            headquarters: lb.headquarters,
+            coverImage: lb.cover_image,
+            president,
+            secretary,
+            officeContact: {
+                address: lb.office_address,
+                phone: lb.office_phone,
+                email: lb.office_email,
+                workingHours: parsedHours,
+                googleMapsUrl: lb.office_google_maps_url
+            },
+            wards: formattedWards,
+            projects: [],
+            landmarks: []
+        };
+
+        return successResponse(res, { data }, 'Local body details fetched successfully.');
+    } catch (err) {
+        console.error('[getPublicLocalBodyById]', err);
+        return errorResponse(res, 'Server error fetching local body details.');
     }
 };
