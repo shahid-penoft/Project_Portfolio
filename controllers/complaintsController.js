@@ -276,7 +276,7 @@ export const getComplaints = async (req, res) => {
                    (SELECT au2.full_name FROM complaint_activity ca LEFT JOIN admin_users au2 ON ca.admin_user_id = au2.id WHERE ca.complaint_id = c.id AND ca.text LIKE '%trash%' ORDER BY ca.created_at DESC LIMIT 1) AS deleted_by_name,
                    (SELECT JSON_OBJECT(
                        'id', id, 'type', type, 'title', title, 'created_at', created_at, 'sms_sent', sms_sent
-                    ) FROM complaint_updates WHERE complaint_id = c.id ORDER BY created_at DESC LIMIT 1) as last_update
+                    ) FROM complaint_updates WHERE complaint_id = c.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update
             FROM complaints c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id

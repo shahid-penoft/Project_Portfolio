@@ -180,7 +180,7 @@ export const getIdeas = async (req, res) => {
                    au_updater.full_name AS updated_by_admin_name,
                    (SELECT JSON_OBJECT(
                        'id', id, 'type', type, 'title', title, 'created_at', created_at, 'sms_sent', sms_sent
-                    ) FROM idea_updates WHERE idea_id = i.id ORDER BY created_at DESC LIMIT 1) as last_update
+                    ) FROM idea_updates WHERE idea_id = i.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update
             FROM ideas i
             LEFT JOIN local_bodies     lb  ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON i.ward_id = lbw.id
