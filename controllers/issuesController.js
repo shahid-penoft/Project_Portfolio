@@ -135,6 +135,8 @@ export const getNextId = async (req, res) => {
 
 // Helper: fetch full issue with all sub-resources
 const fetchFullIssue = async (id) => {
+    const cleanId = (typeof id === 'string' && id.startsWith('P-')) ? id.replace(/^P-/, '') : id;
+
     const [[issue]] = await pool.query(`
         SELECT c.*,
                c.department AS department_name,
@@ -148,14 +150,16 @@ const fetchFullIssue = async (id) => {
         LEFT JOIN local_body_wards lbw ON c.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
         LEFT JOIN admin_users au_updater ON c.updated_by_admin_id = au_updater.id
-        WHERE c.id = ?
-    `, [id]);
+        WHERE c.id = ? OR c.reference_no = ? OR c.id = ?
+    `, [cleanId, id, id]);
 
     if (!issue) return null;
 
-    const [updates]        = await pool.query('SELECT * FROM issue_updates     WHERE issue_id = ? ORDER BY created_at ASC', [id]);
-    const [allMedia]       = await pool.query('SELECT * FROM issue_media       WHERE issue_id = ? ORDER BY created_at ASC', [id]);
-    const [allAttachments] = await pool.query('SELECT * FROM issue_attachments WHERE issue_id = ? ORDER BY created_at ASC', [id]);
+    const realId = issue.id;
+
+    const [updates]        = await pool.query('SELECT * FROM issue_updates     WHERE issue_id = ? ORDER BY created_at ASC', [realId]);
+    const [allMedia]       = await pool.query('SELECT * FROM issue_media       WHERE issue_id = ? ORDER BY created_at ASC', [realId]);
+    const [allAttachments] = await pool.query('SELECT * FROM issue_attachments WHERE issue_id = ? ORDER BY created_at ASC', [realId]);
 
     const mappedUpdates = updates.map(u => ({
         ...u,
@@ -187,14 +191,14 @@ const fetchFullIssue = async (id) => {
         JOIN admin_users au ON ct.admin_user_id = au.id
         WHERE ct.issue_id = ?
         ORDER BY ct.created_at ASC
-    `, [id]);
+    `, [realId]);
     const [activity]    = await pool.query(`
         SELECT ca.*, au.full_name as author_name 
         FROM issue_activity ca
         LEFT JOIN admin_users au ON ca.admin_user_id = au.id
         WHERE ca.issue_id = ? 
         ORDER BY ca.created_at DESC
-    `, [id]);
+    `, [realId]);
 
     return { ...issue, updates: mappedUpdates, media, attachments, team, activity };
 };

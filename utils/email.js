@@ -405,3 +405,13 @@ export const sendForgotPasswordOtpEmail = async ({ to, name, otp }) => {
     `,
   });
 };
+
+export const sendNotificationEmail = async ({ to, subject, message }) => {
+  await transporter.sendMail({
+    from: `"${APP_NAME}" <${MAIL_FROM}>`,
+    to,
+    subject: subject || `[${APP_NAME}] New Update`,
+    html: `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;"><div style="max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);"><div style="background:#035194;padding:28px 32px;"><h1 style="color:#fff;margin:0;font-size:22px;">${APP_NAME}</h1></div><div style="padding:32px;line-height:1.6;color:#333;font-size:15px;">${message.replace(/\n/g, '<br>')}<hr style="border:none;border-top:1px solid #eee;margin:32px 0 24px;"><p style="color:#999;font-size:12px;margin:0;">&copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.</p></div></div></body></html>`
+  });
+};
+

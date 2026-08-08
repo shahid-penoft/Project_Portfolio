@@ -53,6 +53,8 @@ export const getNextId = async (req, res) => {
 };
 
 const fetchFullIdea = async (id) => {
+    const cleanId = (typeof id === 'string' && id.startsWith('I-')) ? id.replace(/^I-/, '') : id;
+
     const [[idea]] = await pool.query(`
         SELECT i.*,
                i.department AS department_name,
@@ -66,14 +68,16 @@ const fetchFullIdea = async (id) => {
         LEFT JOIN local_body_wards lbw ON i.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON i.filed_by_admin_id = au.id
         LEFT JOIN admin_users au_updater ON i.updated_by_admin_id = au_updater.id
-        WHERE i.id = ?
-    `, [id]);
+        WHERE i.id = ? OR i.reference_no = ? OR i.id = ?
+    `, [cleanId, id, id]);
 
     if (!idea) return null;
 
-    const [updates]        = await pool.query('SELECT * FROM idea_updates     WHERE idea_id = ? ORDER BY created_at ASC', [id]);
-    const [allMedia]       = await pool.query('SELECT * FROM idea_media       WHERE idea_id = ? ORDER BY created_at ASC', [id]);
-    const [allAttachments] = await pool.query('SELECT * FROM idea_attachments WHERE idea_id = ? ORDER BY created_at ASC', [id]);
+    const realId = idea.id;
+
+    const [updates]        = await pool.query('SELECT * FROM idea_updates     WHERE idea_id = ? ORDER BY created_at ASC', [realId]);
+    const [allMedia]       = await pool.query('SELECT * FROM idea_media       WHERE idea_id = ? ORDER BY created_at ASC', [realId]);
+    const [allAttachments] = await pool.query('SELECT * FROM idea_attachments WHERE idea_id = ? ORDER BY created_at ASC', [realId]);
 
     const mappedUpdates = updates.map(u => ({
         ...u,
@@ -105,14 +109,14 @@ const fetchFullIdea = async (id) => {
         JOIN admin_users au ON it.admin_user_id = au.id
         WHERE it.idea_id = ?
         ORDER BY it.created_at ASC
-    `, [id]);
+    `, [realId]);
     const [activity]    = await pool.query(`
         SELECT ia.*, au.full_name as author_name 
         FROM idea_activity ia
         LEFT JOIN admin_users au ON ia.admin_user_id = au.id
         WHERE ia.idea_id = ? 
         ORDER BY ia.created_at DESC
-    `, [id]);
+    `, [realId]);
 
     return { ...idea, updates: mappedUpdates, media, attachments, team, activity };
 };

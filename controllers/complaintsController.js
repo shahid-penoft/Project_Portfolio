@@ -135,8 +135,11 @@ export const getNextId = async (req, res) => {
 
 // Helper: fetch full complaint with all sub-resources
 const fetchFullComplaint = async (id) => {
+    const cleanId = (typeof id === 'string' && id.startsWith('C-')) ? id.replace(/^C-/, '') : id;
+
     const [[complaint]] = await pool.query(`
         SELECT c.*,
+               c.category AS category_name,
                c.department AS department_name,
                lb.name AS local_body_name,
                lbw.ward_no,
@@ -148,14 +151,16 @@ const fetchFullComplaint = async (id) => {
         LEFT JOIN local_body_wards lbw ON c.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
         LEFT JOIN admin_users au_updater ON c.updated_by_admin_id = au_updater.id
-        WHERE c.id = ?
-    `, [id]);
+        WHERE c.id = ? OR c.reference_no = ? OR c.id = ?
+    `, [cleanId, id, id]);
 
     if (!complaint) return null;
 
-    const [updates] = await pool.query('SELECT * FROM complaint_updates     WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
-    const [allMedia] = await pool.query('SELECT * FROM complaint_media       WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
-    const [allAttachments] = await pool.query('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY created_at ASC', [id]);
+    const realId = complaint.id;
+
+    const [updates] = await pool.query('SELECT * FROM complaint_updates     WHERE complaint_id = ? ORDER BY created_at ASC', [realId]);
+    const [allMedia] = await pool.query('SELECT * FROM complaint_media       WHERE complaint_id = ? ORDER BY created_at ASC', [realId]);
+    const [allAttachments] = await pool.query('SELECT * FROM complaint_attachments WHERE complaint_id = ? ORDER BY created_at ASC', [realId]);
 
     const mappedUpdates = updates.map(u => ({
         ...u,
@@ -187,7 +192,7 @@ const fetchFullComplaint = async (id) => {
         JOIN admin_users au ON ct.admin_user_id = au.id
         WHERE ct.complaint_id = ?
         ORDER BY ct.created_at ASC
-    `, [id]);
+    `, [realId]);
     const [activity] = await pool.query(`
         SELECT ca.*, au.full_name as author_name 
         FROM complaint_activity ca

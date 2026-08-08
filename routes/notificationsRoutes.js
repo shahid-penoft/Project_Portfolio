@@ -1,5 +1,5 @@
 import express from 'express';
-import { sendSMSNotification, getSMSStatus } from '../controllers/notificationsController.js';
+import { sendSMSNotification, getSMSStatus, sendEmailNotification, sendWhatsAppNotification } from '../controllers/notificationsController.js';
 import {
   getAdminNotifications,
   markOneAsRead,
@@ -18,6 +18,8 @@ const router = express.Router();
 // ── SMS routes (existing) ──────────────────────────────────
 router.post('/sms', verifyToken, sendSMSNotification);
 router.get('/sms/status', verifyToken, getSMSStatus);
+router.post('/email', verifyToken, sendEmailNotification);
+router.post('/whatsapp', verifyToken, sendWhatsAppNotification);
 
 // ── Admin in-app notification routes ──────────────────────
 // GET  /api/notifications/admin

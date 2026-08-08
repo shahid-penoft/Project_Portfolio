@@ -55,6 +55,8 @@ export const getNextId = async (req, res) => {
 };
 
 const fetchFullSuggestion = async (id) => {
+    const cleanId = (typeof id === 'string' && id.startsWith('S-')) ? id.replace(/^S-/, '') : id;
+
     const [[suggestion]] = await pool.query(`
         SELECT i.*,
                i.department AS department_name,
@@ -68,14 +70,16 @@ const fetchFullSuggestion = async (id) => {
         LEFT JOIN local_body_wards lbw ON i.ward_id           = lbw.id
         LEFT JOIN admin_users      au  ON i.filed_by_admin_id = au.id
         LEFT JOIN admin_users au_updater ON i.updated_by_admin_id = au_updater.id
-        WHERE i.id = ?
-    `, [id]);
+        WHERE i.id = ? OR i.reference_no = ? OR i.id = ?
+    `, [cleanId, id, id]);
 
     if (!suggestion) return null;
 
-    const [updates]        = await pool.query('SELECT * FROM suggestion_updates     WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
-    const [allMedia]       = await pool.query('SELECT * FROM suggestion_media       WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
-    const [allAttachments] = await pool.query('SELECT * FROM suggestion_attachments WHERE suggestion_id = ? ORDER BY created_at ASC', [id]);
+    const realId = suggestion.id;
+
+    const [updates]        = await pool.query('SELECT * FROM suggestion_updates     WHERE suggestion_id = ? ORDER BY created_at ASC', [realId]);
+    const [allMedia]       = await pool.query('SELECT * FROM suggestion_media       WHERE suggestion_id = ? ORDER BY created_at ASC', [realId]);
+    const [allAttachments] = await pool.query('SELECT * FROM suggestion_attachments WHERE suggestion_id = ? ORDER BY created_at ASC', [realId]);
 
     const mappedUpdates = updates.map(u => ({
         ...u,
@@ -100,21 +104,21 @@ const fetchFullSuggestion = async (id) => {
     }));
     const media       = allMedia;
     const attachments = allAttachments;
-    const [team] = await pool.query(`
-        SELECT it.id, it.role_label, it.created_at,
+    const [team]        = await pool.query(`
+        SELECT st.id, st.role_label, st.created_at,
                au.id as admin_user_id, au.full_name as name, au.email
-        FROM suggestion_team it
-        JOIN admin_users au ON it.admin_user_id = au.id
-        WHERE it.suggestion_id = ?
-        ORDER BY it.created_at ASC
-    `, [id]);
-    const [activity] = await pool.query(`
+        FROM suggestion_team st
+        JOIN admin_users au ON st.admin_user_id = au.id
+        WHERE st.suggestion_id = ?
+        ORDER BY st.created_at ASC
+    `, [realId]);
+    const [activity]    = await pool.query(`
         SELECT sa.*, au.full_name as author_name 
         FROM suggestion_activity sa
         LEFT JOIN admin_users au ON sa.admin_user_id = au.id
         WHERE sa.suggestion_id = ? 
         ORDER BY sa.created_at DESC
-    `, [id]);
+    `, [realId]);
 
     return { ...suggestion, updates: mappedUpdates, media, attachments, team, activity };
 };
