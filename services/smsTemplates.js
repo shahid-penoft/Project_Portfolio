@@ -35,3 +35,30 @@ export const followUpUpdateSMS = ({ name, referenceNo, statusTitle, moduleLabel,
     const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
     return `Hi ${name},\n\nYour ${label} Update: ${dateStr}\nTracking ID: ${referenceNo}\nStatus: ${status}\n\nOffice of Kothamangalam MLA`;
 };
+
+/**
+ * Template 3 — WhatsApp Follow-up / Status Update
+ */
+export const followUpUpdateWhatsApp = ({ name, referenceNo, statusTitle, moduleLabel, updateDate }) => {
+    const d = new Date(updateDate || Date.now());
+    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
+    const label = moduleLabel || 'Application';
+    const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
+    return `*Hi ${name},*\n\nYour ${label} Update: ${dateStr}\nTracking ID: *${referenceNo}*\nStatus: ${status}\n\n_Office of Kothamangalam MLA_`;
+};
+
+/**
+ * Template 4 — Email Follow-up / Status Update
+ * Returns an object with { subject, body }
+ */
+export const followUpUpdateEmail = ({ name, referenceNo, statusTitle, moduleLabel, updateDate }) => {
+    const d = new Date(updateDate || Date.now());
+    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
+    const label = moduleLabel || 'Application';
+    const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
+    
+    return {
+        subject: `Update on your ${label} [${referenceNo}]`,
+        body: `Dear ${name},\n\nThis is an update regarding your ${label.toLowerCase()} on ${dateStr}.\n\nStatus Details:\n${status}\n\nBest Regards,\nOffice of Kothamangalam MLA`
+    };
+};
