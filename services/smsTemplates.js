@@ -56,7 +56,7 @@ export const followUpUpdateEmail = ({ name, referenceNo, statusTitle, moduleLabe
     const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
     const label = moduleLabel || 'Application';
     const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
-    
+
     return {
         subject: `Update on your ${label} [${referenceNo}]`,
         body: `Dear ${name},\n\nThis is an update regarding your ${label.toLowerCase()} on ${dateStr}.\n\nStatus Details:\n${status}\n\nBest Regards,\nOffice of Kothamangalam MLA`

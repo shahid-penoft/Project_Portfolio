@@ -356,7 +356,7 @@ export const createComplaint = async (req, res) => {
             title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
-            custom_sms_message, notify_complainant,
+            custom_sms_message, custom_email_message, notify_channels, notify_complainant,
         } = req.body;
 
         if (!title || !complainant_name || !phone) {
@@ -412,14 +412,44 @@ export const createComplaint = async (req, res) => {
           link_path: `/mlaconnect/complaints/${newId}`,
         });
 
-        // Fire-and-forget: SMS confirmation to complainant
-        if (notify_complainant === true || notify_complainant === 'true') {
-            const smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
+        // Fire-and-forget: SMS & Email confirmation to complainant
+        const dateStr = new Date(date_filed || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+        if (phone && phone.trim()) {
+            let smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
                 name: complainant_name,
                 dateFiled: date_filed || new Date().toISOString().split('T')[0],
                 referenceNo: reference_no,
             });
-            sendSMSSafe(phone, smsBody);
+
+            smsBody = smsBody
+                .replace(/\[Pending ID\]/gi, reference_no)
+                .replace(/\[PendingID\]/gi, reference_no)
+                .replace(/{reference_no}/g, reference_no)
+                .replace(/{date}/g, dateStr)
+                .replace(/{name}/g, complainant_name)
+                .replace(/^Hi Citizen,/m, `Hi ${complainant_name},`)
+                .replace(/^Hi Citizen /m, `Hi ${complainant_name} `);
+
+            sendSMSSafe(phone.trim(), smsBody);
+        }
+
+        if (email && email.trim()) {
+            let emailBody = custom_email_message?.trim() || `Hi ${complainant_name},\n\nApplication received: ${dateStr}\nWe are reviewing your submission.\nTracking ID: ${reference_no}\n\nOffice of Kothamangalam MLA`;
+            
+            emailBody = emailBody
+                .replace(/\[Pending ID\]/g, reference_no)
+                .replace(/{reference_no}/g, reference_no)
+                .replace(/{date}/g, dateStr)
+                .replace(/{name}/g, complainant_name)
+                .replace(/^Hi Citizen,/m, `Hi ${complainant_name},`)
+                .replace(/^Hi Citizen /m, `Hi ${complainant_name} `);
+
+            sendNotificationEmail({
+                to: email.trim(),
+                subject: `Application Received [${reference_no}]`,
+                message: emailBody,
+            }).catch(err => console.error('[createComplaint:email]', err.message));
         }
 
         const complaint = await fetchFullComplaint(newId);
