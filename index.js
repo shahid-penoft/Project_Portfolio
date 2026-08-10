@@ -29,6 +29,7 @@ import enteNaduTestimonialsRoutes from './routes/enteNaduTestimonialsRoutes.js';
 import manifestoRoutes from './routes/manifestoRoutes.js';
 import manifestoDevGoalsRoutes from './routes/manifestoDevGoalsRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
+import contactSettingsRoutes from './routes/contactSettingsRoutes.js';
 import templateRoutes from './routes/templateRoutes.js';
 import campaignRoutes from './routes/campaignRoutes.js';
 import peopleRoutes from './routes/peopleRoutes.js';
@@ -144,8 +145,8 @@ app.get('/api/r/:code', async (req, res) => {
 // ─── API Routes ───────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.get('/api/local-bodies-with-wards', getLocalBodiesWithWards);
-app.use('/api/local-bodies', localBodyRoutes);
 app.use('/api/local-bodies/:localBodyId/wards', wardRoutes);
+app.use('/api/local-bodies', localBodyRoutes);
 app.get('/api/wards/by-name/:name', getWardsByLocalBodyName);
 app.use('/api/sectors', sectorRoutes);
 app.use('/api/event-types', eventTypeRoutes);
@@ -169,6 +170,7 @@ app.use('/api/jobs', jobsRoutes);
 app.use('/api/manifesto/long-term-commitments', manifestoRoutes);
 app.use('/api/manifesto/development-goals', manifestoDevGoalsRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/contact-settings', contactSettingsRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/people', peopleRoutes);
