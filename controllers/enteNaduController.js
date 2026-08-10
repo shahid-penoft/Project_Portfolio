@@ -1,6 +1,13 @@
 import pool from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
+import { uploadImage, runMulter } from '../configs/multerS3.js';
 import path from 'path';
+
+const parseJson = (val, fallback = []) => {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    try { return JSON.parse(val); } catch { return fallback; }
+};
 
 export const getCards = async (req, res) => {
     const { search, page = 1, limit = 10 } = req.query;
@@ -106,5 +113,56 @@ export const deleteCard = async (req, res) => {
     } catch (err) {
         console.error(err);
         return errorResponse(res, 'Failed to delete card');
+    }
+};
+
+// ── Section Meta ────────────────────────────────────────────────
+
+// GET /api/ente-nadu/section (public)
+export const getSectionMeta = async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT * FROM ente_nadu_section WHERE id = 1');
+        if (!rows.length) return successResponse(res, { data: null });
+        const row = rows[0];
+        row.buttons = parseJson(row.buttons, []);
+        return successResponse(res, { data: row }, 'Ente Nadu section meta fetched.');
+    } catch (err) {
+        console.error('[getEnteNaduSectionMeta]', err);
+        return errorResponse(res, 'Failed to fetch ente-nadu section meta.');
+    }
+};
+
+// PUT /api/ente-nadu/section (protected)
+export const updateSectionMeta = async (req, res) => {
+    try {
+        const { title, highlight_text, description, image_url, buttons } = req.body;
+        const buttonsArr = Array.isArray(buttons) ? buttons.slice(0, 2) : [];
+
+        await pool.query(
+            `UPDATE ente_nadu_section SET title = ?, highlight_text = ?, description = ?, image_url = ?, buttons = ? WHERE id = 1`,
+            [title || null, highlight_text || null, description || null, image_url || null, JSON.stringify(buttonsArr)]
+        );
+
+        const [rows] = await pool.query('SELECT * FROM ente_nadu_section WHERE id = 1');
+        const row = rows[0];
+        row.buttons = parseJson(row.buttons, []);
+        return successResponse(res, { data: row }, 'Ente Nadu section meta updated.');
+    } catch (err) {
+        console.error('[updateEnteNaduSectionMeta]', err);
+        return errorResponse(res, 'Failed to update ente-nadu section meta.');
+    }
+};
+
+// POST /api/ente-nadu/section/upload (protected)
+export const uploadSectionImage = async (req, res) => {
+    try {
+        await runMulter(uploadImage, req, res);
+        if (!req.file) return errorResponse(res, 'No file provided.', 400);
+        const fileUrl = req.file.location || `/uploads/${req.file.filename}`;
+        return successResponse(res, { url: fileUrl }, 'Section image uploaded.');
+    } catch (err) {
+        console.error('[uploadSectionImage]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'Image too large (max 10 MB).', 413);
+        return errorResponse(res, err.message || 'Server error uploading image.');
     }
 };

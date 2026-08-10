@@ -8,6 +8,12 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(__dirname, '..', 'uploads');
 
+const parseJson = (val, fallback = []) => {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    try { return JSON.parse(val); } catch { return fallback; }
+};
+
 const deleteFile = (url) => {
     if (!url || !url.startsWith('/uploads/')) return;
     const filePath = path.join(uploadDir, path.basename(url));
@@ -133,5 +139,42 @@ export const promotePillar = async (req, res) => {
     } catch (err) {
         console.error(err);
         return errorResponse(res, 'Failed to promote pillar');
+    }
+};
+
+// ── Section Meta ────────────────────────────────────────────────
+
+// GET /api/core-vision/section (public)
+export const getSectionMeta = async (req, res) => {
+    try {
+        const [rows] = await pool.query('SELECT * FROM core_vision_section WHERE id = 1');
+        if (!rows.length) return successResponse(res, { data: null });
+        const row = rows[0];
+        row.buttons = parseJson(row.buttons, []);
+        return successResponse(res, { data: row }, 'Core vision section meta fetched.');
+    } catch (err) {
+        console.error('[getSectionMeta]', err);
+        return errorResponse(res, 'Failed to fetch core vision section meta.');
+    }
+};
+
+// PUT /api/core-vision/section (protected)
+export const updateSectionMeta = async (req, res) => {
+    try {
+        const { title, description, quote, buttons } = req.body;
+        const buttonsArr = Array.isArray(buttons) ? buttons.slice(0, 2) : [];
+
+        await pool.query(
+            `UPDATE core_vision_section SET title = ?, description = ?, quote = ?, buttons = ? WHERE id = 1`,
+            [title || null, description || null, quote || null, JSON.stringify(buttonsArr)]
+        );
+
+        const [rows] = await pool.query('SELECT * FROM core_vision_section WHERE id = 1');
+        const row = rows[0];
+        row.buttons = parseJson(row.buttons, []);
+        return successResponse(res, { data: row }, 'Core vision section meta updated.');
+    } catch (err) {
+        console.error('[updateSectionMeta]', err);
+        return errorResponse(res, 'Failed to update core vision section meta.');
     }
 };

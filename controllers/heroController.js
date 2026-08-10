@@ -7,7 +7,13 @@ export const getHero = async (req, res) => {
     try {
         const [rows] = await db.query('SELECT * FROM hero_sections WHERE id = 1');
         if (!rows.length) return errorResponse(res, 'Hero section not found.', 404);
-        return successResponse(res, { data: rows[0] }, 'Hero section fetched.');
+        const hero = rows[0];
+        // Parse buttons JSON safely
+        if (typeof hero.buttons === 'string') {
+            try { hero.buttons = JSON.parse(hero.buttons); } catch { hero.buttons = []; }
+        }
+        if (!Array.isArray(hero.buttons)) hero.buttons = [];
+        return successResponse(res, { data: hero }, 'Hero section fetched.');
     } catch (err) {
         console.error('[getHero]', err);
         return errorResponse(res, 'Server error fetching hero section.');
@@ -17,17 +23,26 @@ export const getHero = async (req, res) => {
 // PUT /api/hero (protected)
 export const updateHero = async (req, res) => {
     try {
-        const { welcome_text, title, subtitle, description, image_url } = req.body;
+        const { welcome_text, title, subtitle, description, image_url, alt_text, buttons } = req.body;
+
+        // Validate and serialize buttons
+        const buttonsArr = Array.isArray(buttons) ? buttons.slice(0, 2) : [];
+        const buttonsJson = JSON.stringify(buttonsArr);
 
         await db.query(
             `UPDATE hero_sections SET 
-             welcome_text = ?, title = ?, subtitle = ?, description = ?, image_url = ? 
+             welcome_text = ?, title = ?, subtitle = ?, description = ?, image_url = ?, alt_text = ?, buttons = ?
              WHERE id = 1`,
-            [welcome_text, title, subtitle, description, image_url]
+            [welcome_text, title, subtitle, description, image_url, alt_text || null, buttonsJson]
         );
 
         const [rows] = await db.query('SELECT * FROM hero_sections WHERE id = 1');
-        return successResponse(res, { data: rows[0] }, 'Hero section updated.');
+        const hero = rows[0];
+        if (typeof hero.buttons === 'string') {
+            try { hero.buttons = JSON.parse(hero.buttons); } catch { hero.buttons = []; }
+        }
+        if (!Array.isArray(hero.buttons)) hero.buttons = [];
+        return successResponse(res, { data: hero }, 'Hero section updated.');
     } catch (err) {
         console.error('[updateHero]', err);
         return errorResponse(res, 'Server error updating hero section.');
