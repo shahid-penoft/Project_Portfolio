@@ -280,6 +280,33 @@ const sendWithRetry = async (fn, contactId, channel, maxRetries = 2) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// logCommunication helper — writes to centralized polymorphic table
+// ─────────────────────────────────────────────────────────────────────────────
+const logCommunication = async (modulePrefix, entityId, channel, recipient, message) => {
+    try {
+        if (!modulePrefix || !entityId) return; // Cannot log without association
+
+        const moduleLabels = {
+            'C-': 'Complaint',
+            'P-': 'Issue',
+            'I-': 'Idea',
+            'S-': 'Suggestion',
+            'F-': 'Application' // CM Fund Request
+        };
+        const entityType = moduleLabels[modulePrefix];
+        if (!entityType) return; // Unknown module type
+
+        await pool.query(
+            `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [entityType, entityId, channel, recipient, message]
+        );
+    } catch (err) {
+        console.error(`[logCommunication] Error logging ${channel} to ${entityType} ${entityId}:`, err.message);
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // processBulkJob — core background processor
 //
 // Adaptive batching:
@@ -356,6 +383,7 @@ const processBulkJob = async ({ jobId, contacts, channels, messages, subject }) 
                         contact.id, 'sms'
                     );
                     contactSentAny = true;
+                    await logCommunication(contact.module, contact.id, 'SMS', phone, pSms);
                 } catch (err) {
                     const status = err?.response?.status || err?.status || err?.statusCode;
                     if (status === 429) batchHad429 = true;
@@ -376,6 +404,7 @@ const processBulkJob = async ({ jobId, contacts, channels, messages, subject }) 
                         contact.id, 'email'
                     );
                     contactSentAny = true;
+                    await logCommunication(contact.module, contact.id, 'Email', contact.email, emailObj.body);
                 } catch (err) {
                     const status = err?.response?.status || err?.status || err?.statusCode;
                     if (status === 429) batchHad429 = true;
@@ -394,6 +423,7 @@ const processBulkJob = async ({ jobId, contacts, channels, messages, subject }) 
                         contact.id, 'whatsapp'
                     );
                     contactSentAny = true;
+                    await logCommunication(contact.module, contact.id, 'WhatsApp', waPhone, pWhatsapp);
                 } catch (err) {
                     const status = err?.response?.status || err?.status || err?.statusCode;
                     if (status === 429) batchHad429 = true;

@@ -112,7 +112,23 @@ const fetchUpdates = async (source, petitionId) => {
             `SELECT * FROM \`${meta.table}\` WHERE \`${meta.fk}\` = ? ORDER BY created_at ASC LIMIT 15`,
             [petitionId]
         );
-        return rows;
+
+        // Fetch communications logs
+        let entityType = 'Complaint';
+        if (source === 'issue') entityType = 'Issue';
+        if (source === 'idea') entityType = 'Idea';
+        if (source === 'suggestion') entityType = 'Suggestion';
+        if (source === 'cm_fund') entityType = 'Application';
+
+        const [commLogs] = await pool.query(
+            `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
+             FROM communications_logs 
+             WHERE entity_type = ? AND entity_id = ?`,
+            [entityType, petitionId]
+        );
+
+        const combined = [...rows, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        return combined.slice(0, 15);
     } catch {
         return [];
     }

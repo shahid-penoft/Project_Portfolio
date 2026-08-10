@@ -76,10 +76,18 @@ const fetchFullIdea = async (id) => {
     const realId = idea.id;
 
     const [updates]        = await pool.query('SELECT * FROM idea_updates     WHERE idea_id = ? ORDER BY created_at ASC', [realId]);
+    const [commLogs] = await pool.query(
+        `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
+         FROM communications_logs 
+         WHERE entity_type = 'Idea' AND entity_id = ?`, 
+        [realId]
+    );
+    const combinedUpdatesRaw = [...updates, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
     const [allMedia]       = await pool.query('SELECT * FROM idea_media       WHERE idea_id = ? ORDER BY created_at ASC', [realId]);
     const [allAttachments] = await pool.query('SELECT * FROM idea_attachments WHERE idea_id = ? ORDER BY created_at ASC', [realId]);
 
-    const mappedUpdates = updates.map(u => ({
+    const mappedUpdates = combinedUpdatesRaw.map(u => ({
         ...u,
         gallery: allMedia
             .filter(m => m.update_id === u.id)
@@ -160,9 +168,9 @@ export const getIdeas = async (req, res) => {
         }
 
         if (search) {
-            conditions.push('(i.title LIKE ? OR i.complainant_name LIKE ? OR i.reference_no LIKE ?)');
+            conditions.push('(i.title LIKE ? OR i.complainant_name LIKE ? OR i.reference_no LIKE ? OR i.phone LIKE ?)');
             const q = `%${search}%`;
-            params.push(q, q, q);
+            params.push(q, q, q, q);
         }
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

@@ -119,10 +119,10 @@ export const getAllProjects = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p ${where}`, vals
         );
         const [rows] = await db.query(
-            `SELECT p.id, p.title, p.slug, p.description, p.short_description, p.project_content,
+            `SELECT p.id, p.title, p.slug, p.description, p.project_content,
                     p.images, p.videos, p.tags, p.year, p.sector_id, p.local_body_id,
                     p.display_order, p.is_active, p.status, p.start_date, p.end_date,
-                    p.created_at, p.updated_at, p.project_type, p.cover_image,
+                    p.created_at, p.updated_at, p.project_type,
                     s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
                     (IFNULL(JSON_LENGTH(p.images), 0) + IFNULL(JSON_LENGTH(p.videos), 0)) AS media_count
              FROM projects p
