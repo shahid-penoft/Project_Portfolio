@@ -1,5 +1,13 @@
 import express from 'express';
-import { sendSMSNotification, getSMSStatus, sendEmailNotification, sendWhatsAppNotification } from '../controllers/notificationsController.js';
+import {
+    sendSMSNotification,
+    getSMSStatus,
+    sendEmailNotification,
+    sendWhatsAppNotification,
+    sendBulkNotification,
+    getBulkJobStatus,
+    cancelBulkJob,
+} from '../controllers/notificationsController.js';
 import {
   getAdminNotifications,
   markOneAsRead,
@@ -20,6 +28,15 @@ router.post('/sms', verifyToken, sendSMSNotification);
 router.get('/sms/status', verifyToken, getSMSStatus);
 router.post('/email', verifyToken, sendEmailNotification);
 router.post('/whatsapp', verifyToken, sendWhatsAppNotification);
+
+// ── Bulk send routes ───────────────────────────────────────
+// POST   /api/notifications/bulk-send         → queue job, return jobId
+// GET    /api/notifications/bulk-send/:jobId  → poll progress
+// PATCH  /api/notifications/bulk-send/:jobId/cancel
+router.post('/bulk-send', verifyToken, sendBulkNotification);
+router.get('/bulk-send/:jobId', verifyToken, getBulkJobStatus);
+router.patch('/bulk-send/:jobId/cancel', verifyToken, cancelBulkJob);
+
 
 // ── Admin in-app notification routes ──────────────────────
 // GET  /api/notifications/admin
