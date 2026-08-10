@@ -3,7 +3,8 @@ import {
     getTestimonials, getTestimonialById,
     createTestimonial, updateTestimonial,
     deleteTestimonial, promoteTestimonial,
-    uploadTestimonialMedia,
+    uploadTestimonialMedia, uploadTestimonialMediaPublic,
+    createTestimonialRequest,
 } from '../controllers/enteNaduTestimonialsController.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
@@ -12,6 +13,8 @@ const router = express.Router();
 // Public
 router.get('/', getTestimonials);
 router.get('/:id', getTestimonialById);
+router.post('/request', createTestimonialRequest);
+router.post('/upload/public', uploadTestimonialMediaPublic);
 
 // Protected
 router.use(verifyToken, requirePermission('ente_nadu'));

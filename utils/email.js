@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import transporter from '../configs/mailer.js';
+import pool from '../configs/db.js';
 
 const APP_NAME = process.env.APP_NAME || 'Shibu Theckumpuram';
 const MAIL_FROM = process.env.MAIL_FROM || `"${APP_NAME}" <no-reply@shibu-theckumpuram.com>`;
@@ -406,12 +407,95 @@ export const sendForgotPasswordOtpEmail = async ({ to, name, otp }) => {
   });
 };
 
+
+const generateHtmlFromTemplate = (templateData, bodyContent) => {
+  const t = templateData || {};
+  const brandName = t.brandName || "MLA Connect";
+  
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
+        .container { max-width: 560px; margin: 40px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+        .header { background: linear-gradient(135deg, #743fd5, #5528b0); padding: 24px; text-align: center; color: #fff; }
+        .header-top { margin-bottom: 10px; }
+        .logo-circle { width: 48px; height: 48px; border-radius: 50%; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.3); display: inline-block; line-height: 44px; text-align: center; font-weight: bold; font-size: 20px; color: #fff; vertical-align: middle; }
+        .logo-img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; vertical-align: middle; }
+        .brand-name { font-size: 22px; font-weight: bold; vertical-align: middle; display: inline-block; margin-left: 10px; }
+        .tagline { font-size: 13px; color: rgba(255,255,255,0.9); margin: 4px 0; }
+        .constituency { font-size: 12px; color: rgba(255,255,255,0.7); margin: 0; }
+        .body-content { padding: 32px; font-size: 14px; line-height: 1.6; color: #333; min-height: 160px; }
+        .footer { background: #f8f9fa; border-top: 1px solid #eee; padding: 24px; text-align: center; }
+        .office-name { font-size: 13px; font-weight: bold; color: #444; margin: 0 0 4px; }
+        .address { font-size: 12px; color: #666; margin: 0 0 8px; }
+        .contact { font-size: 12px; color: #666; margin: 0 0 12px; }
+        .contact span { color: #743fd5; font-weight: bold; margin: 0 4px; }
+        .divider { width: 200px; border-top: 1px solid #eee; margin: 12px auto; }
+        .copyright { font-size: 11px; color: #999; margin: 4px 0 0; }
+        .website { font-size: 11px; color: #999; margin: 4px 0 0; }
+        .website a { color: #743fd5; text-decoration: underline; font-weight: bold; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <!-- Header -->
+        <div class="header">
+          <div class="header-top">
+            ${t.logoUrl 
+              ? `<div class="logo-circle" style="background:#fff;"><img src="${t.logoUrl}" class="logo-img" alt="Logo"/></div>`
+              : `<div class="logo-circle">${t.logoInitial || 'M'}</div>`
+            }
+            <span class="brand-name">${brandName}</span>
+          </div>
+          ${t.tagline ? `<p class="tagline">${t.tagline}</p>` : ''}
+          ${t.constituency ? `<p class="constituency">${t.constituency}</p>` : ''}
+        </div>
+        
+        <!-- Body -->
+        <div class="body-content">
+${bodyContent}
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+          ${t.officeName ? `<p class="office-name">${t.officeName}</p>` : ''}
+          ${t.address ? `<p class="address">${t.address}</p>` : ''}
+          ${(t.email || t.phone) ? `<p class="contact">
+            ${t.email ? `<span>${t.email}</span>` : ''}
+            ${t.phone ? `<span>${t.phone}</span>` : ''}
+          </p>` : ''}
+          
+          <div class="divider"></div>
+          
+          ${t.copyright ? `<p class="copyright">${t.copyright}</p>` : ''}
+          ${t.website ? `<p class="website">Sent through <a href="${t.website}">${t.website}</a></p>` : ''}
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
 export const sendNotificationEmail = async ({ to, subject, message }) => {
+  let finalHtml = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;"><div style="max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);"><div style="background:#035194;padding:28px 32px;"><h1 style="color:#fff;margin:0;font-size:22px;">${APP_NAME}</h1></div><div style="padding:32px;line-height:1.6;color:#333;font-size:15px;">${message.replace(/\n/g, '<br>')}<hr style="border:none;border-top:1px solid #eee;margin:32px 0 24px;"><p style="color:#999;font-size:12px;margin:0;">&copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.</p></div></div></body></html>`;
+
+  try {
+    const [rows] = await pool.query('SELECT setting_value FROM settings WHERE setting_key = "mla_email_template"');
+    if (rows.length > 0 && rows[0].setting_value) {
+      const templateObj = JSON.parse(rows[0].setting_value);
+      finalHtml = generateHtmlFromTemplate(templateObj, message.replace(/\n/g, '<br>'));
+    }
+  } catch (err) {
+    console.error("Error fetching mla_email_template:", err);
+  }
+
   await transporter.sendMail({
     from: `"${APP_NAME}" <${MAIL_FROM}>`,
     to,
     subject: subject || `[${APP_NAME}] New Update`,
-    html: `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0;"><div style="max-width:560px;margin:40px auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);"><div style="background:#035194;padding:28px 32px;"><h1 style="color:#fff;margin:0;font-size:22px;">${APP_NAME}</h1></div><div style="padding:32px;line-height:1.6;color:#333;font-size:15px;">${message.replace(/\n/g, '<br>')}<hr style="border:none;border-top:1px solid #eee;margin:32px 0 24px;"><p style="color:#999;font-size:12px;margin:0;">&copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.</p></div></div></body></html>`
+    html: finalHtml
   });
 };
 

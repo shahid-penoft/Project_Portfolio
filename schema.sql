@@ -263,12 +263,17 @@ CREATE TABLE IF NOT EXISTS ente_nadu_testimonials (
     video_url       VARCHAR(1000)   DEFAULT NULL,
     thumbnail_url   VARCHAR(500)    DEFAULT NULL,
     caption         VARCHAR(300)    DEFAULT NULL,
+    -- Moderation workflow (public request -> approved/rejected)
+    status          ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',
+    email           VARCHAR(150)    DEFAULT NULL,
+    source          ENUM('admin','public') NOT NULL DEFAULT 'admin',
     -- Common
     order_index     INT             NOT NULL DEFAULT 0,
     created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_type  (type),
-    INDEX idx_order (order_index)
+    INDEX idx_order (order_index),
+    INDEX idx_status (status)
 );
 
 -- ─────────────────────────────────────────────────────────────

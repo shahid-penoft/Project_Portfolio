@@ -6,6 +6,7 @@ import { sendSMSSafe } from '../services/smsService.js';
 import { submissionConfirmationSMS, followUpUpdateSMS } from '../services/smsTemplates.js';
 import { createNotification, broadcastNotification } from '../utils/notificationHelper.js';
 import { notifyUser } from '../utils/userNotificationHelper.js';
+import { sendNotificationEmail } from '../utils/email.js';
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -595,7 +596,7 @@ export const deleteComplaint = async (req, res) => {
 export const addComplaintUpdate = async (req, res) => {
     try {
         const { id } = req.params;
-        const { type, title, note, notify_complainant, custom_sms_message } = req.body;
+        const { type, title, note, notify_complainant, custom_sms_message, custom_email_message, notify_channels } = req.body;
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
@@ -649,12 +650,19 @@ export const addComplaintUpdate = async (req, res) => {
           });
         }
 
-        // Fire-and-forget: SMS follow-up if admin chose to notify complainant
+        // Fire-and-forget: SMS/Email follow-up if admin chose to notify complainant
         if (notify_complainant === 'true' || notify_complainant === true) {
+            let channels = [];
+            try {
+                if (notify_channels) channels = JSON.parse(notify_channels);
+            } catch (e) {}
+
             const [[rec]] = await pool.query(
-                'SELECT complainant_name, phone, reference_no FROM complaints WHERE id = ?', [id]
+                'SELECT complainant_name, email, phone, reference_no FROM complaints WHERE id = ?', [id]
             );
-            if (rec?.phone) {
+
+            // Send SMS if selected
+            if (rec?.phone && channels.includes('sms')) {
                 const finalSms = custom_sms_message?.trim() || followUpUpdateSMS({
                     name: rec.complainant_name,
                     referenceNo: rec.reference_no,
@@ -664,6 +672,15 @@ export const addComplaintUpdate = async (req, res) => {
                 });
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE complaint_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]);
+            }
+
+            // Send Email if selected
+            if (rec?.email && channels.includes('email') && custom_email_message?.trim()) {
+                sendNotificationEmail({
+                    to: rec.email,
+                    subject: `Update on your Complaint ${rec.reference_no || ''}`,
+                    message: custom_email_message.trim()
+                }).catch(err => console.error('[addComplaintUpdate Email Error]', err));
             }
         }
 

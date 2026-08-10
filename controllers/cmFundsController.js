@@ -4,6 +4,7 @@ import { logActivity as auditLog } from './teamsLogController.js';
 import { broadcastNotification, createNotification } from '../utils/notificationHelper.js';
 import { sendSMSSafe } from '../services/smsService.js';
 import { followUpUpdateSMS, submissionConfirmationSMS } from '../services/smsTemplates.js';
+import { sendNotificationEmail } from '../utils/email.js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 const s3Client = new S3Client({
@@ -883,7 +884,7 @@ export const addUpdate = async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const { id } = req.params;
-    const { type, title, note, notify_complainant, custom_sms_message } = req.body;
+    const { type, title, note, notify_complainant, custom_sms_message, custom_email_message, notify_channels } = req.body;
     const isNotify = notify_complainant === 'true' || notify_complainant === true;
 
     if (!title || !type) {
@@ -892,7 +893,7 @@ export const addUpdate = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const [requestRows] = await connection.query(`SELECT applicant_name, applicant_phone, status FROM cm_fund_requests WHERE id = ?`, [id]);
+    const [requestRows] = await connection.query(`SELECT applicant_name, email, applicant_phone, status FROM cm_fund_requests WHERE id = ?`, [id]);
     if (requestRows.length === 0) {
       await connection.rollback();
       return res.status(404).json({ error: 'Application not found' });
@@ -943,17 +944,33 @@ export const addUpdate = async (req, res) => {
 
     await connection.commit();
 
-    // Send SMS Notification
-    if (isNotify && application.applicant_phone) {
-      const smsMessage = custom_sms_message || followUpUpdateSMS({
-        name: application.applicant_name,
-        referenceNo: id,
-        statusTitle: title,
-        moduleLabel: 'Application',
-        updateDate: new Date(),
-      });
+    // Send SMS / Email Notification
+    if (isNotify) {
+      let channels = [];
+      try {
+          if (notify_channels) channels = JSON.parse(notify_channels);
+      } catch (e) {}
 
-      sendSMSSafe(application.applicant_phone, smsMessage);
+      // Send SMS if selected
+      if (application.applicant_phone && channels.includes('sms')) {
+        const smsMessage = custom_sms_message || followUpUpdateSMS({
+          name: application.applicant_name,
+          referenceNo: id,
+          statusTitle: title,
+          moduleLabel: 'Application',
+          updateDate: new Date(),
+        });
+        sendSMSSafe(application.applicant_phone, smsMessage);
+      }
+
+      // Send Email if selected
+      if (application.email && channels.includes('email') && custom_email_message?.trim()) {
+          sendNotificationEmail({
+              to: application.email,
+              subject: `Update on your CM Fund Application #${id}`,
+              message: custom_email_message.trim()
+          }).catch(err => console.error('[addCmFundUpdate Email Error]', err));
+      }
     }
 
     auditLog(req, { action: 'Updated', module: 'CM Funds', details: `Added follow-up to Application ${id}`, resource: `cm-funds/${id}`, severity: 'info' });
