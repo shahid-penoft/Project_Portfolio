@@ -624,13 +624,18 @@ export const getImagesBySource = async (req, res) => {
             }
 
             const formattedMedia = [
-                ...parsedImages.map((img, index) => ({
-                    id: `proj_img_${project.id}_${index}`,
-                    file_url: img,
-                    thumbnail_url: img,
-                    media_type: 'photo',
-                    caption: project.title,
-                })),
+                ...parsedImages.map((img, index) => {
+                    // img may be a plain URL string or an object like {url, caption}
+                    const fileUrl = typeof img === 'string' ? img : (img?.url || img?.file_url || '');
+                    const thumbUrl = typeof img === 'string' ? img : (img?.thumbnail_url || img?.thumbnail || fileUrl);
+                    return {
+                        id: `proj_img_${project.id}_${index}`,
+                        file_url: fileUrl,
+                        thumbnail_url: thumbUrl,
+                        media_type: 'photo',
+                        caption: (typeof img === 'object' && img?.caption) ? img.caption : project.title,
+                    };
+                }),
                 ...parsedVideos.map((vid, index) => ({
                     id: `proj_vid_${project.id}_${index}`,
                     file_url: typeof vid === 'string' ? vid : vid.url,

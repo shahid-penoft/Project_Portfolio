@@ -119,7 +119,12 @@ export const getAllProjects = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p ${where}`, vals
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name
+            `SELECT p.id, p.title, p.slug, p.description, p.short_description, p.project_content,
+                    p.images, p.videos, p.tags, p.year, p.sector_id, p.local_body_id,
+                    p.display_order, p.is_active, p.status, p.start_date, p.end_date,
+                    p.created_at, p.updated_at, p.project_type, p.cover_image,
+                    s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
+                    (IFNULL(JSON_LENGTH(p.images), 0) + IFNULL(JSON_LENGTH(p.videos), 0)) AS media_count
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
@@ -130,8 +135,15 @@ export const getAllProjects = async (req, res) => {
             [...vals, limit, offset]
         );
 
+        // Parse images/videos JSON for each row so frontend gets real arrays
+        const parsedRows = rows.map(r => ({
+            ...r,
+            images: (() => { try { return typeof r.images === 'string' ? JSON.parse(r.images) : (r.images || []); } catch { return []; } })(),
+            videos: (() => { try { return typeof r.videos === 'string' ? JSON.parse(r.videos) : (r.videos || []); } catch { return []; } })(),
+        }));
+
         return successResponse(res, {
-            data: rows,
+            data: parsedRows,
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
         }, 'Projects fetched.');
     } catch (err) {
