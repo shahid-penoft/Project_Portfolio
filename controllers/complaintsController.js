@@ -285,7 +285,18 @@ export const getComplaints = async (req, res) => {
                    (SELECT au2.full_name FROM complaint_activity ca LEFT JOIN admin_users au2 ON ca.admin_user_id = au2.id WHERE ca.complaint_id = c.id AND ca.text LIKE '%trash%' ORDER BY ca.created_at DESC LIMIT 1) AS deleted_by_name,
                    (SELECT JSON_OBJECT(
                        'id', id, 'type', type, 'title', title, 'created_at', created_at
-                    ) FROM complaint_updates WHERE complaint_id = c.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update
+                    ) FROM complaint_updates WHERE complaint_id = c.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update,
+                   (SELECT JSON_OBJECT(
+                       'id', cl1.id,
+                       'channels', (
+                           SELECT GROUP_CONCAT(DISTINCT cl2.channel)
+                           FROM communications_logs cl2
+                           WHERE cl2.entity_type = 'Complaint' AND cl2.entity_id = c.id
+                           AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                           AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                       ),
+                       'created_at', cl1.created_at
+                    ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Complaint' AND cl1.entity_id = c.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication
             FROM complaints c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id
@@ -403,6 +414,20 @@ export const createComplaint = async (req, res) => {
         const newId = result.insertId;
         await logActivity(newId, `Complaint "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
         auditLog(req, { action: 'Created', module: 'Complaints', details: `Complaint filed — "${title}" (${reference_no})`, resource: `complaints/${newId}`, severity: 'info' });
+
+        // Auto-insert initial review update for public/constituent submissions.
+        // Admin-panel creation already inserts this update via the UI — this covers the public path
+        // so the Overview Section shows "We are reviewing your submission." instead of "Status: <raw>"
+        // Use the x-app-portal header as the source of truth: only skip if the request
+        // explicitly comes from the admin panel (prevents admin_token cookie contamination).
+        const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        if (!isAdminCreation) {
+            await pool.query(
+                `INSERT INTO complaint_updates (complaint_id, type, title, note, created_at) VALUES (?, ?, ?, ?, NOW())`,
+                [newId, 'Status Update', 'We are reviewing your submission.', 'Your complaint has been registered and is under initial review by the MLA Office.']
+            );
+        }
+
         // Notify all admins about new complaint
         broadcastNotification({
           title: `New Complaint ${reference_no}`,
@@ -432,6 +457,12 @@ export const createComplaint = async (req, res) => {
                 .replace(/^Hi Citizen /m, `Hi ${complainant_name} `);
 
             sendSMSSafe(phone.trim(), smsBody);
+            
+            // Log SMS communication
+            await pool.query(
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                ['Complaint', newId, 'SMS', phone.trim(), smsBody]
+            ).catch(err => console.warn('[Log failed]', err.message));
         }
 
         if (email && email.trim()) {
@@ -450,6 +481,12 @@ export const createComplaint = async (req, res) => {
                 subject: `Application Received [${reference_no}]`,
                 message: emailBody,
             }).catch(err => console.error('[createComplaint:email]', err.message));
+
+            // Log Email communication
+            await pool.query(
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                ['Complaint', newId, 'Email', email.trim(), emailBody]
+            ).catch(err => console.warn('[Log failed]', err.message));
         }
 
         const complaint = await fetchFullComplaint(newId);

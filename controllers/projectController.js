@@ -105,7 +105,12 @@ export const getAllProjects = async (req, res) => {
         const conditions = [];
         const vals = [];
 
-        if (type) { conditions.push('p.project_type = ?'); vals.push(type); }
+        if (type === 'all') {
+            conditions.push("p.project_type != 'PORTFOLIO'");
+        } else if (type) {
+            conditions.push('p.project_type = ?'); 
+            vals.push(type);
+        }
 
         if (search) { conditions.push('(p.title LIKE ? OR p.tags LIKE ?)'); vals.push(`%${search}%`, `%${search}%`); }
         if (sector_id) { conditions.push('p.sector_id = ?'); vals.push(sector_id); }
@@ -122,7 +127,7 @@ export const getAllProjects = async (req, res) => {
             `SELECT p.id, p.title, p.slug, p.description, p.project_content,
                     p.images, p.videos, p.tags, p.year, p.sector_id, p.local_body_id,
                     p.display_order, p.is_active, p.status, p.start_date, p.end_date,
-                    p.created_at, p.updated_at, p.project_type,
+                    p.created_at, p.updated_at, p.project_type, p.project_sub_type,
                     s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
                     (IFNULL(JSON_LENGTH(p.images), 0) + IFNULL(JSON_LENGTH(p.videos), 0)) AS media_count
              FROM projects p
@@ -484,10 +489,9 @@ export const createProject = async (req, res) => {
             title, description, project_content, images = [], videos = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
-            // New fields
             status = 'In Progress', ward_id, start_date, end_date,
             actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00,
-            project_type = 'MLA'
+            project_type = 'MLA', project_sub_type
         } = req.body;
 
         if (!title?.trim()) return errorResponse(res, 'Title is required.', 400);
@@ -510,11 +514,11 @@ export const createProject = async (req, res) => {
         const adminId = req.admin ? req.admin.id : null;
 
         const [result] = await db.query(
-            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by, project_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by, project_type, project_sub_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
             sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0,
-            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, adminId, adminId, project_type]
+            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, adminId, adminId, project_type, project_sub_type || null]
         );
 
         const [rows] = await db.query(
@@ -544,10 +548,9 @@ export const updateProject = async (req, res) => {
             title, description, project_content, images = [], videos = [], tags,
             year, sector_id, local_body_id,
             display_order = 0, is_active = 1,
-            // New fields
             status = 'In Progress', ward_id, start_date, end_date,
             actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00,
-            project_type = 'MLA'
+            project_type = 'MLA', project_sub_type
         } = req.body;
 
         if (!title?.trim()) return errorResponse(res, 'Title is required.', 400);
@@ -577,11 +580,11 @@ export const updateProject = async (req, res) => {
         const [result] = await db.query(
             `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, videos=?, tags=?, year=?,
              sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(), updated_by=?,
-             status=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?, project_type=?
+             status=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?, project_type=?, project_sub_type=?
              WHERE id=?`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
             sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0, adminId,
-            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, project_type, id]
+            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, project_type, project_sub_type || null, id]
         );
 
         if (!result.affectedRows) return errorResponse(res, 'Project not found.', 404);

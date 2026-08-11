@@ -279,7 +279,18 @@ export const getIssues = async (req, res) => {
                    (SELECT au2.full_name FROM issue_activity ia LEFT JOIN admin_users au2 ON ia.admin_user_id = au2.id WHERE ia.issue_id = c.id AND ia.text LIKE '%trash%' ORDER BY ia.created_at DESC LIMIT 1) AS deleted_by_name,
                    (SELECT JSON_OBJECT(
                        'id', id, 'type', type, 'title', title, 'created_at', created_at
-                    ) FROM issue_updates WHERE issue_id = c.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update
+                    ) FROM issue_updates WHERE issue_id = c.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update,
+                   (SELECT JSON_OBJECT(
+                       'id', cl1.id,
+                       'channels', (
+                           SELECT GROUP_CONCAT(DISTINCT cl2.channel)
+                           FROM communications_logs cl2
+                           WHERE cl2.entity_type = 'Issue' AND cl2.entity_id = c.id
+                           AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                           AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                       ),
+                       'created_at', cl1.created_at
+                    ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Issue' AND cl1.entity_id = c.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication
             FROM issues c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id
@@ -399,6 +410,20 @@ export const createIssue = async (req, res) => {
         const newId = result.insertId;
         await logActivity(newId, `Issue "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
         auditLog(req, { action: 'Created', module: 'Issues', details: `Issue filed — "${title}" (${reference_no})`, resource: `issues/${newId}`, severity: 'info' });
+
+        // Auto-insert initial review update for public/constituent submissions.
+        // Admin-panel creation already inserts this update via the UI — this covers the public path
+        // so the Overview Section shows "We are reviewing your submission." instead of "Status: <raw>"
+        // Use the x-app-portal header as the source of truth: only skip if the request
+        // explicitly comes from the admin panel (prevents admin_token cookie contamination).
+        const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        if (!isAdminCreation) {
+            await pool.query(
+                `INSERT INTO issue_updates (issue_id, type, title, note, created_at) VALUES (?, ?, ?, ?, NOW())`,
+                [newId, 'Status Update', 'We are reviewing your submission.', 'Your public issue report has been registered and is under initial review by the MLA Office.']
+            );
+        }
+
         // Notify all admins about new issue
         broadcastNotification({
           title: `New Issue ${reference_no}`,
@@ -416,6 +441,12 @@ export const createIssue = async (req, res) => {
                 referenceNo: reference_no,
             });
             sendSMSSafe(phone, smsBody);
+
+            // Log SMS communication
+            await pool.query(
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                ['Issue', newId, 'SMS', phone, smsBody]
+            ).catch(err => console.warn('[Log failed]', err.message));
         }
 
         const issue = await fetchFullIssue(newId);

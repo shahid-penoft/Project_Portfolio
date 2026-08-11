@@ -14,6 +14,14 @@ export const dualAuth = async (req, res, next) => {
     const constituentToken = req.cookies?.constituent_token;
     const portal = req.headers['x-app-portal']; // 'admin' or 'constituent'
 
+    // ── 0. Explicitly public — reject (dualAuth requires authentication) ──
+    if (portal === 'public') {
+        return res.status(401).json({
+            success: false,
+            message: 'Authentication required. Please log in.',
+        });
+    }
+
     // ── 1. If portal explicitly requests constituent context ──
     if (portal === 'constituent' && constituentToken) {
         try {
@@ -117,6 +125,14 @@ export const optionalDualAuth = async (req, res, next) => {
     const adminToken = req.cookies?.admin_token;
     const constituentToken = req.cookies?.constituent_token;
     const portal = req.headers['x-app-portal'];
+
+    // ── 0. Explicitly public — treat as fully anonymous, ignore all cookies ──
+    if (portal === 'public') {
+        req.admin = null;
+        req.constituent = null;
+        req.isAdmin = false;
+        return next();
+    }
 
     if (portal === 'constituent' && constituentToken) {
         try {

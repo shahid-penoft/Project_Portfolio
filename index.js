@@ -73,6 +73,7 @@ import aboutSectionRoutes from './routes/aboutSectionRoutes.js';
 import homeSectionOrderRoutes from './routes/homeSectionOrderRoutes.js';
 import homeStatsRoutes from './routes/homeStatsRoutes.js';
 import { initTrashPurge } from './services/trashPurgeService.js';
+import { initScheduler } from './services/schedulerService.js';
 
 import { apiLimiter } from './middlewares/rateLimiter.js';
 
@@ -224,6 +225,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
     console.log(`🚀  Server running on http://localhost:${PORT}`);
     initTrashPurge();
+    initScheduler();
 });
 
 export default app;

@@ -120,7 +120,21 @@ export const listRequests = async (req, res) => {
              o.full_name as assigned_officer_name,
              d.full_name as deleted_by_name,
              lb.name as local_body_name,
-             CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name
+             CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name,
+             (SELECT JSON_OBJECT(
+                 'id', id, 'type', type, 'title', title, 'created_at', created_at
+              ) FROM cm_fund_updates WHERE request_id = r.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update,
+             (SELECT JSON_OBJECT(
+                 'id', cl1.id,
+                 'channels', (
+                     SELECT GROUP_CONCAT(DISTINCT cl2.channel)
+                     FROM communications_logs cl2
+                     WHERE cl2.entity_type = 'Application' AND cl2.entity_id = r.id
+                     AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                     AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                 ),
+                 'created_at', cl1.created_at
+              ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Application' AND cl1.entity_id = r.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication
       FROM cm_fund_requests r
       LEFT JOIN cm_fund_categories c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
@@ -360,7 +374,25 @@ export const createRequest = async (req, res) => {
 
     await connection.commit();
     auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds application submitted — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
-    
+
+    // Auto-insert initial review update for public/constituent submissions.
+    // When userId is null, there is no admin filing the record — this covers the public form path
+    // so the Overview Section shows "We are reviewing your submission." instead of "Status: <raw>"
+    // Use the x-app-portal header as the source of truth: only skip if the request
+    // explicitly comes from the admin panel (prevents admin_token cookie contamination).
+    const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (userId && !constituentId);
+    if (!isAdminCreation) {
+        try {
+            await pool.query(
+                `INSERT INTO cm_fund_updates (request_id, type, title, note, created_at) VALUES (?, ?, ?, ?, NOW())`,
+                [appId, 'Status Update', 'We are reviewing your submission.', 'Your application has been registered and is under initial review by the MLA Office.']
+            );
+        } catch (updateErr) {
+            // Non-fatal — log but don't fail the overall response
+            console.warn('[createRequest] Failed to insert initial review update:', updateErr.message);
+        }
+    }
+
     // Notify all admins
     broadcastNotification({
       title: `New CM Fund Request ${appId}`,
@@ -382,6 +414,12 @@ export const createRequest = async (req, res) => {
         module: 'cm-funds',
         recipientName: applicantName
       });
+
+      // Log SMS communication
+      await pool.query(
+          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+          ['Application', appId, 'SMS', applicantPhone, message]
+      ).catch(err => console.warn('[Log failed]', err.message));
     }
 
     res.status(201).json({ message: 'Application submitted successfully', id: appId });

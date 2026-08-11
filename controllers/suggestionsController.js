@@ -191,7 +191,18 @@ export const getSuggestions = async (req, res) => {
                    au_updater.full_name AS updated_by_admin_name,
                    (SELECT JSON_OBJECT(
                        'id', id, 'type', type, 'title', title, 'created_at', created_at
-                    ) FROM suggestion_updates WHERE suggestion_id = i.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update
+                    ) FROM suggestion_updates WHERE suggestion_id = i.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update,
+                   (SELECT JSON_OBJECT(
+                       'id', cl1.id,
+                       'channels', (
+                           SELECT GROUP_CONCAT(DISTINCT cl2.channel)
+                           FROM communications_logs cl2
+                           WHERE cl2.entity_type = 'Suggestion' AND cl2.entity_id = i.id
+                           AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                           AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                       ),
+                       'created_at', cl1.created_at
+                    ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Suggestion' AND cl1.entity_id = i.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication
             FROM suggestions i
             LEFT JOIN local_bodies     lb  ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON i.ward_id = lbw.id
@@ -306,6 +317,19 @@ export const createSuggestion = async (req, res) => {
           link_path: `/mlaconnect/suggestions/${newId}`,
         });
 
+        // Auto-insert initial review update for public/constituent submissions.
+        // Admin-panel creation already inserts this update via the UI — this covers the public path
+        // so the Overview Section shows "We are reviewing your submission." instead of "Status: <raw>"
+        // Use the x-app-portal header as the source of truth: only skip if the request
+        // explicitly comes from the admin panel (prevents admin_token cookie contamination).
+        const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        if (!isAdminCreation) {
+            await pool.query(
+                `INSERT INTO suggestion_updates (suggestion_id, type, title, note, created_at) VALUES (?, ?, ?, ?, NOW())`,
+                [newId, 'Status Update', 'We are reviewing your submission.', 'Your suggestion has been registered and is under initial review by the MLA Office.']
+            );
+        }
+
         // Fire-and-forget: SMS confirmation to complainant
         if (notify_complainant === true || notify_complainant === 'true') {
             const smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
@@ -314,6 +338,12 @@ export const createSuggestion = async (req, res) => {
                 referenceNo: reference_no,
             });
             sendSMSSafe(phone, smsBody);
+
+            // Log SMS communication
+            await pool.query(
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                ['Suggestion', newId, 'SMS', phone, smsBody]
+            ).catch(err => console.warn('[Log failed]', err.message));
         }
 
         const suggestion = await fetchFullSuggestion(newId);

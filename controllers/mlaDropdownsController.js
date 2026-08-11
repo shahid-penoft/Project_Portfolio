@@ -27,6 +27,8 @@ const CASCADE_MAP = {
     csr_org_type:        { table: 'csr_organisations', col: 'type',    module: 'CSR',          deletedCol: 'deleted'    },
     csr_followup_type:   { table: 'csr_followups',     col: 'type',    module: 'CSR',          deletedCol: null         },
     csr_report_type:     { table: 'csr_reports',       col: 'type',    module: 'CSR',          deletedCol: null         },
+    // Projects
+    project_sub_type_portfolio: { table: 'projects', col: 'project_sub_type', module: 'Projects', deletedCol: null },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

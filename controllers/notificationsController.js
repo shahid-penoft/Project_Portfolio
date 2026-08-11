@@ -126,7 +126,7 @@ export const sendWhatsAppNotification = async (req, res) => {
 // }
 // ─────────────────────────────────────────────────────────────────────────────
 export const sendBulkNotification = async (req, res) => {
-    const { contacts, channels } = req.body;
+    const { contacts, channels, scheduledAt } = req.body;
 
     // ── Validate ────────────────────────────────────────────────
     if (!Array.isArray(contacts) || contacts.length === 0) {
@@ -138,14 +138,23 @@ export const sendBulkNotification = async (req, res) => {
 
     const jobId   = randomUUID();
     const adminId = req.admin?.id || 0;
+    const payload = JSON.stringify({ contacts, channels });
+
+    let initialStatus = 'queued';
+    let queryParams = [jobId, adminId, initialStatus, JSON.stringify(channels), contacts.length, null, payload];
+    let queryStr = `
+        INSERT INTO bulk_send_jobs (id, admin_id, status, channels, total_count, scheduled_at, payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    if (scheduledAt) {
+        initialStatus = 'scheduled';
+        queryParams = [jobId, adminId, initialStatus, JSON.stringify(channels), contacts.length, new Date(scheduledAt), payload];
+    }
 
     // ── Persist job row ─────────────────────────────────────────
     try {
-        await pool.query(
-            `INSERT INTO bulk_send_jobs (id, admin_id, status, channels, total_count)
-             VALUES (?, ?, 'queued', ?, ?)`,
-            [jobId, adminId, JSON.stringify(channels), contacts.length]
-        );
+        await pool.query(queryStr, queryParams);
     } catch (err) {
         console.error('[BulkSend] Failed to create job row:', err.message);
         return res.status(500).json({ success: false, message: 'Failed to create bulk send job.' });
@@ -154,22 +163,24 @@ export const sendBulkNotification = async (req, res) => {
     // ── Return 202 immediately so the UI can start polling ──────
     res.status(202).json({
         success: true,
-        message: 'Bulk send job queued.',
+        message: scheduledAt ? 'Bulk send job scheduled.' : 'Bulk send job queued.',
         jobId,
         total: contacts.length,
     });
 
     // ── Process asynchronously (fire-and-forget) ────────────────
-    setImmediate(() =>
-        processBulkJob({ jobId, contacts, channels })
-            .catch(err => {
-                console.error('[BulkSend] Unhandled error in processBulkJob:', err.message);
-                pool.query(
-                    "UPDATE bulk_send_jobs SET status='failed', completed_at=NOW() WHERE id=?",
-                    [jobId]
-                ).catch(() => {});
-            })
-    );
+    if (!scheduledAt) {
+        setImmediate(() =>
+            processBulkJob({ jobId, contacts, channels })
+                .catch(err => {
+                    console.error('[BulkSend] Unhandled error in processBulkJob:', err.message);
+                    pool.query(
+                        "UPDATE bulk_send_jobs SET status='failed', completed_at=NOW() WHERE id=?",
+                        [jobId]
+                    ).catch(() => {});
+                })
+        );
+    }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -315,7 +326,7 @@ const logCommunication = async (modulePrefix, entityId, channel, recipient, mess
 //   • On any 429 in a batch → halve batchSize, double delay (capped)
 //   • After RECOVER_AFTER_CLEAN consecutive clean batches → recover size/delay
 // ─────────────────────────────────────────────────────────────────────────────
-const processBulkJob = async ({ jobId, contacts, channels, messages, subject }) => {
+export const processBulkJob = async ({ jobId, contacts, channels, messages, subject }) => {
     const INITIAL_BATCH_SIZE  = 10;
     const INITIAL_DELAY_MS    = 2_000;
     const MIN_BATCH_SIZE      = 1;
