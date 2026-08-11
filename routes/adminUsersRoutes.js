@@ -12,12 +12,12 @@ const requireSuperadmin = (req, res, next) => {
     next();
 };
 
-// Protect all routes with verifyToken and requireSuperadmin
-router.use(verifyToken, requireSuperadmin);
+// Protect all routes with verifyToken
+router.use(verifyToken);
 
-router.get('/', getAdminUsers);
-router.post('/', createAdminUser);
-router.put('/:id', updateAdminUser);
-router.delete('/:id', deleteAdminUser);
+router.get('/', getAdminUsers); // Accessible to all authenticated admins
+router.post('/', requireSuperadmin, createAdminUser);
+router.put('/:id', requireSuperadmin, updateAdminUser);
+router.delete('/:id', requireSuperadmin, deleteAdminUser);
 
 export default router;
