@@ -378,7 +378,8 @@ export const processBulkJob = async ({ jobId, contacts, channels, messages, subj
                 referenceNo: contact.trackingId || '—',
                 statusTitle: contact.statusText || 'We are reviewing your submission.',
                 moduleLabel: label,
-                updateDate: new Date()
+                updateDate: new Date(),
+                dateFiled: contact.dateFiled || null,
             };
 
             const pSms      = channels.sms      ? followUpUpdateSMS(templateData)      : '';

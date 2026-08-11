@@ -733,7 +733,7 @@ export const addComplaintUpdate = async (req, res) => {
             } catch (e) {}
 
             const [[rec]] = await pool.query(
-                'SELECT complainant_name, email, phone, reference_no FROM complaints WHERE id = ?', [id]
+                'SELECT complainant_name, email, phone, reference_no, COALESCE(date_filed, created_at) AS date_filed FROM complaints WHERE id = ?', [id]
             );
 
             // Send SMS if selected
@@ -744,6 +744,7 @@ export const addComplaintUpdate = async (req, res) => {
                     statusTitle: title,
                     moduleLabel: 'Complaint',
                     updateDate: new Date(),
+                    dateFiled: rec.date_filed,
                 });
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE complaint_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]);

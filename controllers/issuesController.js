@@ -694,7 +694,7 @@ export const addIssueUpdate = async (req, res) => {
             } catch (e) {}
 
             const [[rec]] = await pool.query(
-                'SELECT submitter_name, email, phone, reference_no FROM issues WHERE id = ?', [id]
+                'SELECT submitter_name, email, phone, reference_no, COALESCE(date_filed, created_at) AS date_filed FROM issues WHERE id = ?', [id]
             );
 
             // Send SMS if selected

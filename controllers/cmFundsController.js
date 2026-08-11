@@ -939,7 +939,7 @@ export const addUpdate = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const [requestRows] = await connection.query(`SELECT applicant_name, email, applicant_phone, status FROM cm_fund_requests WHERE id = ?`, [id]);
+    const [requestRows] = await connection.query(`SELECT applicant_name, email, applicant_phone, status, created_at as date_filed FROM cm_fund_requests WHERE id = ?`, [id]);
     if (requestRows.length === 0) {
       await connection.rollback();
       return res.status(404).json({ error: 'Application not found' });
@@ -1005,6 +1005,7 @@ export const addUpdate = async (req, res) => {
           statusTitle: title,
           moduleLabel: 'Application',
           updateDate: new Date(),
+          dateFiled: application.date_filed,
         });
         sendSMSSafe(application.applicant_phone, smsMessage);
       }

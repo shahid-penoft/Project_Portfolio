@@ -27,24 +27,33 @@ export const submissionConfirmationSMS = ({ name, dateFiled, referenceNo }) => {
  * @param {string} opts.statusTitle   - The title field of the follow-up update (e.g. "Letter submitted to Health Minister")
  * @param {string} opts.moduleLabel   - Human-readable module label: "Complaint", "Application", "Idea", "Suggestion", "Public Issue"
  * @param {Date|string} opts.updateDate - Date of this update (defaults to now)
+ * @param {Date|string} opts.dateFiled  - Date the original record was filed
  */
-export const followUpUpdateSMS = ({ name, referenceNo, statusTitle, moduleLabel, updateDate }) => {
+export const followUpUpdateSMS = ({ name, referenceNo, statusTitle, moduleLabel, updateDate, dateFiled }) => {
     const d = new Date(updateDate || Date.now());
     const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
+    
+    const dFiled = dateFiled ? new Date(dateFiled) : null;
+    const filedDateStr = (dFiled && !isNaN(dFiled)) ? dFiled.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (dateFiled || 'N/A');
+    
     const label = moduleLabel || 'Application';
     const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
-    return `Hi ${name},\n\nYour ${label} Update: ${dateStr}\nTracking ID: ${referenceNo}\nStatus: ${status}\n\nOffice of Kothamangalam MLA`;
+    return `Hi ${name},\n\nApplication Received: ${filedDateStr}\nYour ${label} Update: ${dateStr}\nTracking ID: ${referenceNo}\nStatus: ${status}\n\nOffice of Kothamangalam MLA`;
 };
 
 /**
  * Template 3 — WhatsApp Follow-up / Status Update
  */
-export const followUpUpdateWhatsApp = ({ name, referenceNo, statusTitle, moduleLabel, updateDate }) => {
+export const followUpUpdateWhatsApp = ({ name, referenceNo, statusTitle, moduleLabel, updateDate, dateFiled }) => {
     const d = new Date(updateDate || Date.now());
     const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
+    
+    const dFiled = dateFiled ? new Date(dateFiled) : null;
+    const filedDateStr = (dFiled && !isNaN(dFiled)) ? dFiled.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (dateFiled || 'N/A');
+    
     const label = moduleLabel || 'Application';
     const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
-    return `*Hi ${name},*\n\nYour ${label} Update: ${dateStr}\nTracking ID: *${referenceNo}*\nStatus: ${status}\n\n_Office of Kothamangalam MLA_`;
+    return `*Hi ${name},*\n\nApplication Received: ${filedDateStr}\nYour ${label} Update: ${dateStr}\nTracking ID: *${referenceNo}*\nStatus: ${status}\n\n_Office of Kothamangalam MLA_`;
 };
 
 /**
