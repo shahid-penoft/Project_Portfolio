@@ -202,7 +202,15 @@ export const getSuggestions = async (req, res) => {
                            AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
                        ),
                        'created_at', cl1.created_at
-                    ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Suggestion' AND cl1.entity_id = i.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication
+                    ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Suggestion' AND cl1.entity_id = i.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication,
+                   (SELECT JSON_OBJECT(
+                       'scheduled_at', j.scheduled_at,
+                       'channels', j.channels
+                    ) FROM bulk_send_jobs j 
+                      WHERE j.status = 'scheduled' 
+                      AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', i.id, 'module', 'S-'), '$.contacts') = 1
+                      ORDER BY j.scheduled_at ASC LIMIT 1
+                   ) as scheduled_communication
             FROM suggestions i
             LEFT JOIN local_bodies     lb  ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON i.ward_id = lbw.id

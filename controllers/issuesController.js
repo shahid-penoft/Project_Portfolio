@@ -290,7 +290,15 @@ export const getIssues = async (req, res) => {
                            AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
                        ),
                        'created_at', cl1.created_at
-                    ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Issue' AND cl1.entity_id = c.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication
+                    ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Issue' AND cl1.entity_id = c.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication,
+                   (SELECT JSON_OBJECT(
+                       'scheduled_at', j.scheduled_at,
+                       'channels', j.channels
+                    ) FROM bulk_send_jobs j 
+                      WHERE j.status = 'scheduled' 
+                      AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', c.id, 'module', 'P-'), '$.contacts') = 1
+                      ORDER BY j.scheduled_at ASC LIMIT 1
+                   ) as scheduled_communication
             FROM issues c
             LEFT JOIN local_bodies     lb  ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards lbw ON c.ward_id = lbw.id

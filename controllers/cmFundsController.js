@@ -134,7 +134,15 @@ export const listRequests = async (req, res) => {
                      AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
                  ),
                  'created_at', cl1.created_at
-              ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Application' AND cl1.entity_id = r.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication
+              ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Application' AND cl1.entity_id = r.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication,
+             (SELECT JSON_OBJECT(
+                 'scheduled_at', j.scheduled_at,
+                 'channels', j.channels
+              ) FROM bulk_send_jobs j 
+                WHERE j.status = 'scheduled' 
+                AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', r.id, 'module', 'F-'), '$.contacts') = 1
+                ORDER BY j.scheduled_at ASC LIMIT 1
+             ) as scheduled_communication
       FROM cm_fund_requests r
       LEFT JOIN cm_fund_categories c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id
