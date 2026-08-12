@@ -376,6 +376,7 @@ export const createComplaint = async (req, res) => {
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             custom_sms_message, custom_email_message, notify_channels, notify_complainant,
+            status_details,
         } = req.body;
 
         if (!title || !complainant_name || !phone) {
@@ -423,16 +424,18 @@ export const createComplaint = async (req, res) => {
         await logActivity(newId, `Complaint "${title}" filed. Reference: ${reference_no}`, req.admin?.id);
         auditLog(req, { action: 'Created', module: 'Complaints', details: `Complaint filed — "${title}" (${reference_no})`, resource: `complaints/${newId}`, severity: 'info' });
 
-        // Auto-insert initial review update for public/constituent submissions.
-        // Admin-panel creation already inserts this update via the UI — this covers the public path
-        // so the Overview Section shows "We are reviewing your submission." instead of "Status: <raw>"
-        // Use the x-app-portal header as the source of truth: only skip if the request
-        // explicitly comes from the admin panel (prevents admin_token cookie contamination).
+        // Auto-insert timeline update.
+        // - Public/constituent submission → auto-insert "We are reviewing your submission."
+        // - Admin creation with status_details → insert custom text
+        // - Admin creation without status_details → insert nothing (no regression)
         const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
-        if (!isAdminCreation) {
+        const sdTrimmed = status_details?.trim();
+        const updateTitle = sdTrimmed || (isAdminCreation ? null : 'We are reviewing your submission.');
+        const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : 'Your complaint has been registered and is under initial review by the MLA Office.');
+        if (updateTitle) {
             await pool.query(
-                `INSERT INTO complaint_updates (complaint_id, type, title, note, created_at) VALUES (?, ?, ?, ?, NOW())`,
-                [newId, 'Status Update', 'We are reviewing your submission.', 'Your complaint has been registered and is under initial review by the MLA Office.']
+                `INSERT INTO complaint_updates (complaint_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
+                [newId, updateTitle, updateNote]
             );
         }
 
@@ -447,12 +450,18 @@ export const createComplaint = async (req, res) => {
 
         // Fire-and-forget: SMS & Email confirmation to complainant
         const dateStr = new Date(date_filed || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        
+        const channels = Array.isArray(notify_channels) ? notify_channels : [];
+        const isLegacyNotify = notify_complainant === true || notify_complainant === 'true';
+        const shouldSendSMS = channels.includes('sms') || isLegacyNotify;
+        const shouldSendEmail = channels.includes('email') || isLegacyNotify;
 
-        if (phone && phone.trim()) {
+        if (shouldSendSMS && phone && phone.trim()) {
             let smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
                 name: complainant_name,
                 dateFiled: date_filed || new Date().toISOString().split('T')[0],
                 referenceNo: reference_no,
+                statusDetails: status_details,
             });
 
             smsBody = smsBody
@@ -473,8 +482,9 @@ export const createComplaint = async (req, res) => {
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
-        if (email && email.trim()) {
-            let emailBody = custom_email_message?.trim() || `Hi ${complainant_name},\n\nApplication received: ${dateStr}\nWe are reviewing your submission.\nTracking ID: ${reference_no}\n\nOffice of Kothamangalam MLA`;
+        if (shouldSendEmail && email && email.trim()) {
+            const reviewMsg = status_details?.trim() || "We are reviewing your submission.";
+            let emailBody = custom_email_message?.trim() || `Hi ${complainant_name},\n\nApplication received: ${dateStr}\n${reviewMsg}\nTracking ID: ${reference_no}\n\nOffice of Kothamangalam MLA`;
             
             emailBody = emailBody
                 .replace(/\[Pending ID\]/g, reference_no)
@@ -515,6 +525,7 @@ export const updateComplaint = async (req, res) => {
             title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
+            status_details,
         } = req.body;
 
         const [result] = await pool.query(`
@@ -549,6 +560,13 @@ export const updateComplaint = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
         await logActivity(id, `Complaint details updated by admin.`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Complaints', details: `Complaint ID ${id} details updated`, resource: `complaints/${id}`, severity: 'success' });
+        // If admin provided status_details, insert it as a new timeline entry
+        if (status_details?.trim()) {
+            await pool.query(
+                `INSERT INTO complaint_updates (complaint_id, type, title, note) VALUES (?, 'Status Update', ?, ?)`,
+                [id, status_details.trim(), null]
+            );
+        }
         const complaint = await fetchFullComplaint(id);
         res.json({ success: true, message: 'Complaint updated.', data: complaint });
     } catch (err) {
@@ -913,7 +931,7 @@ export const deleteComplaintMedia = async (req, res) => {
 export const uploadComplaintAttachment = async (req, res) => {
     try {
         const { id } = req.params;
-        if (!req.files?.length) return res.status(400).json({ success: false, message: 'No files uploaded.' });
+        if (!req.files?.length) return res.status(200).json({ success: true, data: [], message: 'No files uploaded.' });
 
         const rows = req.files.map(f => {
             const ext = f.originalname.split('.').pop()?.toLowerCase() || '';

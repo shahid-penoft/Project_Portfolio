@@ -272,6 +272,8 @@ export const createSuggestion = async (req, res) => {
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             custom_sms_message, notify_complainant,
+            notify_channels,
+            status_details,
         } = req.body;
 
         if (!title || !complainant_name || !phone) {
@@ -325,32 +327,79 @@ export const createSuggestion = async (req, res) => {
           link_path: `/mlaconnect/suggestions/${newId}`,
         });
 
-        // Auto-insert initial review update for public/constituent submissions.
-        // Admin-panel creation already inserts this update via the UI — this covers the public path
-        // so the Overview Section shows "We are reviewing your submission." instead of "Status: <raw>"
-        // Use the x-app-portal header as the source of truth: only skip if the request
-        // explicitly comes from the admin panel (prevents admin_token cookie contamination).
+        // Auto-insert timeline update.
+        // - Public/constituent submission → auto-insert "We are reviewing your submission."
+        // - Admin creation with status_details → insert custom text
+        // - Admin creation without status_details → insert nothing (no regression)
         const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
-        if (!isAdminCreation) {
+        const sdTrimmed = status_details?.trim();
+        const updateTitle = sdTrimmed || (isAdminCreation ? null : 'We are reviewing your submission.');
+        const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : 'Your suggestion has been registered and is under initial review by the MLA Office.');
+        if (updateTitle) {
             await pool.query(
-                `INSERT INTO suggestion_updates (suggestion_id, type, title, note, created_at) VALUES (?, ?, ?, ?, NOW())`,
-                [newId, 'Status Update', 'We are reviewing your submission.', 'Your suggestion has been registered and is under initial review by the MLA Office.']
+                `INSERT INTO suggestion_updates (suggestion_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
+                [newId, updateTitle, updateNote]
             );
         }
 
-        // Fire-and-forget: SMS confirmation to complainant
-        if (notify_complainant === true || notify_complainant === 'true') {
-            const smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
+        // Fire-and-forget: SMS & Email confirmation to complainant
+        const dateStr = new Date(date_filed || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        
+        const channels = Array.isArray(notify_channels) ? notify_channels : [];
+        const isLegacyNotify = notify_complainant === true || notify_complainant === 'true';
+        const shouldSendSMS = channels.includes('sms') || isLegacyNotify;
+        const shouldSendEmail = channels.includes('email') || isLegacyNotify;
+
+        if (shouldSendSMS && phone && phone.trim()) {
+            let smsBody = custom_sms_message?.trim() || submissionConfirmationSMS({
                 name: complainant_name,
                 dateFiled: date_filed || new Date().toISOString().split('T')[0],
                 referenceNo: reference_no,
+                statusDetails: status_details,
             });
-            sendSMSSafe(phone, smsBody);
+
+            smsBody = smsBody
+                .replace(/\[Pending ID\]/gi, reference_no)
+                .replace(/\[PendingID\]/gi, reference_no)
+                .replace(/{reference_no}/g, reference_no)
+                .replace(/{date}/g, dateStr)
+                .replace(/{name}/g, complainant_name)
+                .replace(/^Hi Citizen,/m, `Hi ${complainant_name},`)
+                .replace(/^Hi Citizen /m, `Hi ${complainant_name} `);
+
+            sendSMSSafe(phone.trim(), smsBody);
 
             // Log SMS communication
             await pool.query(
                 `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                ['Suggestion', newId, 'SMS', phone, smsBody]
+                ['Suggestion', newId, 'SMS', phone.trim(), smsBody]
+            ).catch(err => console.warn('[Log failed]', err.message));
+        }
+
+        if (shouldSendEmail && email && email.trim()) {
+            const reviewMsg = status_details?.trim() || "We are reviewing your submission.";
+            let emailBody = custom_email_message?.trim() || `Hi ${complainant_name},\n\nApplication received: ${dateStr}\n${reviewMsg}\nTracking ID: ${reference_no}\n\nOffice of Kothamangalam MLA`;
+            
+            emailBody = emailBody
+                .replace(/\[Pending ID\]/g, reference_no)
+                .replace(/{reference_no}/g, reference_no)
+                .replace(/{date}/g, dateStr)
+                .replace(/{name}/g, complainant_name)
+                .replace(/^Hi Citizen,/m, `Hi ${complainant_name},`)
+                .replace(/^Hi Citizen /m, `Hi ${complainant_name} `);
+
+            import('../utils/email.js').then(({ sendNotificationEmail }) => {
+                sendNotificationEmail({
+                    to: email.trim(),
+                    subject: `Application Received [${reference_no}]`,
+                    message: emailBody,
+                }).catch(err => console.error('[createSuggestion:email]', err.message));
+            });
+
+            // Log Email communication
+            await pool.query(
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                ['Suggestion', newId, 'Email', email.trim(), emailBody]
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
@@ -369,6 +418,7 @@ export const updateSuggestion = async (req, res) => {
             title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
+            status_details,
         } = req.body;
 
         const [result] = await pool.query(`
@@ -401,6 +451,13 @@ export const updateSuggestion = async (req, res) => {
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found.' });
         await logActivity(id, `Suggestion details updated by admin.`, req.admin?.id);
         auditLog(req, { action: 'Updated', module: 'Suggestions', details: `Suggestion ID ${id} updated`, resource: `suggestions/${id}`, severity: 'success' });
+        // If admin provided status_details, insert it as a new timeline entry
+        if (status_details?.trim()) {
+            await pool.query(
+                `INSERT INTO suggestion_updates (suggestion_id, type, title, note) VALUES (?, 'Status Update', ?, ?)`,
+                [id, status_details.trim(), null]
+            );
+        }
         const suggestion = await fetchFullSuggestion(id);
         res.json({ success: true, message: 'Suggestion updated.', data: suggestion });
     } catch (err) {

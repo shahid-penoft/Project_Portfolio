@@ -74,7 +74,7 @@ router.delete('/:id/updates/:updateId',   verifyToken, deleteComplaintUpdate);
 // ── Media sub-resource (upload: admin or owner; delete: admin) ─
 router.post(
     '/:id/media',
-    dualAuth,
+    optionalDualAuth,
     (req, res, next) => uploadComplaintMedia(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();

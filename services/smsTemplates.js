@@ -11,10 +11,11 @@
  * @param {string} opts.dateFiled     - Date the record was filed
  * @param {string} opts.referenceNo   - e.g. C-001, P-002, S-003, I-004
  */
-export const submissionConfirmationSMS = ({ name, dateFiled, referenceNo }) => {
+export const submissionConfirmationSMS = ({ name, dateFiled, referenceNo, statusDetails }) => {
     const d = new Date(dateFiled);
     const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : dateFiled;
-    return `Hi ${name},\n\nApplication received: ${dateStr}\nWe are reviewing your submission.\nTracking ID: ${referenceNo}\n\nOffice of Kothamangalam MLA`;
+    const reviewMsg = statusDetails?.trim() || "We are reviewing your submission.";
+    return `Hi ${name},\n\nApplication received: ${dateStr}\n${reviewMsg}\nTracking ID: ${referenceNo}\n\nOffice of Kothamangalam MLA`;
 };
 
 /**

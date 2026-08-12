@@ -29,6 +29,19 @@ const CASCADE_MAP = {
     csr_report_type:     { table: 'csr_reports',       col: 'type',    module: 'CSR',          deletedCol: null         },
     // Projects
     project_sub_type_portfolio: { table: 'projects', col: 'project_sub_type', module: 'Projects', deletedCol: null },
+    // CM Funds
+    cmfund_status:       { table: 'cm_fund_requests', col: 'status',         module: 'CM Funds',     deletedCol: 'is_deleted' },
+    cm_fund_district:    { table: 'cm_fund_requests', col: 'district',       module: 'CM Funds',     deletedCol: 'is_deleted' },
+    cm_fund_recommender: { table: 'cm_fund_requests', col: 'recommended_by', module: 'CM Funds',     deletedCol: 'is_deleted' },
+    // Governing Bodies
+    governing_designation:      { table: 'governing_body_staffs', col: 'designation', module: 'Governing Bodies', deletedCol: null },
+    governing_additional_roles: { table: 'governing_representatives', col: 'additional_roles', module: 'Governing Bodies', deletedCol: 'is_deleted', isJson: true },
+    // Information Center
+    information_center_domain:  { table: 'information_posts', col: 'domains', module: 'Information Center', deletedCol: null, isJson: true },
+    // CSR (Additional)
+    csr_focus_domain:           { table: 'csr_organisations', col: 'domains', module: 'CSR', deletedCol: 'deleted', isJson: true },
+    // Generics (Used globally but tracked where most critical)
+    state_district:             { table: 'local_bodies', col: 'district', module: 'System', deletedCol: null },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,10 +131,17 @@ async function getCascadeCount(connection, key, value) {
     const mapping = CASCADE_MAP[key];
     if (!mapping) return 0;
     const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
-    const [[{ count }]] = await connection.query(
-        `SELECT COUNT(*) AS count FROM \`${mapping.table}\` WHERE \`${mapping.col}\` = ? ${whereDeleted}`,
-        [value]
-    );
+    
+    let query, params;
+    if (mapping.isJson) {
+        query = `SELECT COUNT(*) AS count FROM \`${mapping.table}\` WHERE JSON_CONTAINS(\`${mapping.col}\`, ?) ${whereDeleted}`;
+        params = [JSON.stringify(value)];
+    } else {
+        query = `SELECT COUNT(*) AS count FROM \`${mapping.table}\` WHERE \`${mapping.col}\` = ? ${whereDeleted}`;
+        params = [value];
+    }
+    
+    const [[{ count }]] = await connection.query(query, params);
     return Number(count);
 }
 
@@ -132,11 +152,37 @@ async function applyCascadeRename(connection, key, oldValue, newValue) {
     const mapping = CASCADE_MAP[key];
     if (!mapping) return 0;
     const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
-    const [result] = await connection.query(
-        `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE \`${mapping.col}\` = ? ${whereDeleted}`,
-        [newValue, oldValue]
-    );
-    return result.affectedRows;
+    
+    if (mapping.isJson) {
+        // Fetch affected rows to modify JSON in JS (safest for MySQL 5.7+ JSON arrays)
+        const [rows] = await connection.query(
+            `SELECT id, \`${mapping.col}\` AS jsonCol FROM \`${mapping.table}\` WHERE JSON_CONTAINS(\`${mapping.col}\`, ?) ${whereDeleted}`,
+            [JSON.stringify(oldValue)]
+        );
+        let affected = 0;
+        for (const row of rows) {
+            let arr = [];
+            try {
+                arr = typeof row.jsonCol === 'string' ? JSON.parse(row.jsonCol) : (row.jsonCol || []);
+            } catch (e) { continue; }
+            
+            if (Array.isArray(arr)) {
+                const updatedArr = arr.map(v => v === oldValue ? newValue : v);
+                await connection.query(
+                    `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE id = ?`,
+                    [JSON.stringify(updatedArr), row.id]
+                );
+                affected++;
+            }
+        }
+        return affected;
+    } else {
+        const [result] = await connection.query(
+            `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE \`${mapping.col}\` = ? ${whereDeleted}`,
+            [newValue, oldValue]
+        );
+        return result.affectedRows;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

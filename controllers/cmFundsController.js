@@ -322,6 +322,7 @@ export const createRequest = async (req, res) => {
     const recommenderContact  = b.recommender_contact || b.recommenderContact || null;
     const remarks             = b.remarks             || null;
     const dateFiled           = b.date_filed          || null;
+    const statusDetails       = b.status_details      || null;
 
     if (!applicationType || !applicantName) {
       return res.status(400).json({ error: 'Missing required fields: Application Type or Applicant Name' });
@@ -383,17 +384,19 @@ export const createRequest = async (req, res) => {
     await connection.commit();
     auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds application submitted — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
 
-    // Auto-insert initial review update for public/constituent submissions.
-    // When userId is null, there is no admin filing the record — this covers the public form path
-    // so the Overview Section shows "We are reviewing your submission." instead of "Status: <raw>"
-    // Use the x-app-portal header as the source of truth: only skip if the request
-    // explicitly comes from the admin panel (prevents admin_token cookie contamination).
+    // Auto-insert timeline update.
+    // - Public/constituent submission → auto-insert "We are reviewing your submission."
+    // - Admin creation with status_details → insert custom text
+    // - Admin creation without status_details → insert nothing (no regression)
     const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (userId && !constituentId);
-    if (!isAdminCreation) {
+    const sdTrimmed = statusDetails?.trim();
+    const updateTitle = sdTrimmed || (isAdminCreation ? null : 'We are reviewing your submission.');
+    const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : 'Your application has been registered and is under initial review by the MLA Office.');
+    if (updateTitle) {
         try {
             await pool.query(
-                `INSERT INTO cm_fund_updates (request_id, type, title, note, created_at) VALUES (?, ?, ?, ?, NOW())`,
-                [appId, 'Status Update', 'We are reviewing your submission.', 'Your application has been registered and is under initial review by the MLA Office.']
+                `INSERT INTO cm_fund_updates (request_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
+                [appId, updateTitle, updateNote]
             );
         } catch (updateErr) {
             // Non-fatal — log but don't fail the overall response
@@ -416,6 +419,7 @@ export const createRequest = async (req, res) => {
         name: applicantName,
         dateFiled: dateFiled || new Date().toISOString().split('T')[0],
         referenceNo: appId,
+        statusDetails: statusDetails,
       });
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
@@ -642,6 +646,7 @@ export const updateRequest = async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const { id } = req.params;
+    const statusDetails = req.body.status_details || null;
     
     // Partial update allowed
     const updatableFields = [
@@ -767,6 +772,13 @@ export const updateRequest = async (req, res) => {
       INSERT INTO cm_fund_timeline_events (request_id, event_type, actor_id, note)
       VALUES (?, 'Application Updated', ?, 'Application details/documents were modified')
     `, [id, userId]);
+
+    if (statusDetails?.trim()) {
+      await connection.query(`
+        INSERT INTO cm_fund_updates (request_id, type, title, note)
+        VALUES (?, 'Status Update', ?, ?)
+      `, [id, statusDetails.trim(), null]);
+    }
 
     await connection.commit();
     auditLog(req, { action: 'Updated', module: 'CM Funds', details: `CM Funds application updated — ID ${id}`, resource: `cm-funds/${id}`, severity: 'success' });

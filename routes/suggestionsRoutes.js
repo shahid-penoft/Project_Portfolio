@@ -64,7 +64,7 @@ router.delete('/:id/updates/:updateId', verifyToken, deleteSuggestionUpdate);
 // ── Media ──────────────────────────────────────────────────────
 router.post(
     '/:id/media',
-    dualAuth,
+    optionalDualAuth,
     (req, res, next) => uploadSuggestionMedia(req, res, (err) => {
         if (err) return res.status(400).json({ success: false, message: err.message });
         next();
