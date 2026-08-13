@@ -1036,7 +1036,7 @@ export const removeComplaintTeamMember = async (req, res) => {
         `, [memberId, id]);
         if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
 
-        const [[cRef2]] = await pool.query('SELECT reference_no, id as cid FROM complaint_team ct JOIN complaints c ON c.id=ct.complaint_id WHERE ct.id = ?', [memberId]);
+        const [[cRef2]] = await pool.query('SELECT c.reference_no, c.id as cid FROM complaint_team ct JOIN complaints c ON c.id=ct.complaint_id WHERE ct.id = ?', [memberId]);
         const [[removedMember]] = await pool.query('SELECT admin_user_id FROM complaint_team WHERE id = ?', [memberId]);
         await pool.query('DELETE FROM complaint_team WHERE id = ?', [memberId]);
         await logActivity(id, `Team member "${row.full_name}" removed.`, req.admin?.id);

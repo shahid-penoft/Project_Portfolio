@@ -853,3 +853,18 @@ CREATE TABLE IF NOT EXISTS idea_activity (
     FOREIGN KEY (admin_user_id) REFERENCES admin_users(id) ON DELETE SET NULL,
     INDEX idx_idea_activity (idea_id)
 );
+
+-- ─────────────────────────────────────────────────────────────
+--  TABLE: cm_fund_team  (follow-up team — admin users only)
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS cm_fund_team (
+    id              INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    request_id      VARCHAR(50)     NOT NULL,
+    admin_user_id   INT UNSIGNED    NOT NULL,
+    role_label      VARCHAR(100)    DEFAULT NULL,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (request_id)    REFERENCES cm_fund_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (admin_user_id) REFERENCES admin_users(id)       ON DELETE CASCADE,
+    UNIQUE KEY uk_cm_fund_admin (request_id, admin_user_id),
+    INDEX idx_cm_fund_team (request_id)
+);

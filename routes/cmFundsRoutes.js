@@ -16,7 +16,9 @@ import {
   addUpdate,
   editUpdate,
   deleteUpdate,
-  getNextAppId
+  getNextAppId,
+  addCmFundTeamMember,
+  removeCmFundTeamMember
 } from '../controllers/cmFundsController.js';
 
 import {
@@ -77,6 +79,8 @@ router.get('/requests/:id/pdf', downloadPdf);
 router.post('/requests/:id/updates', uploadCMFundDocsS3, addUpdate);
 router.patch('/requests/:id/updates/:updateId', uploadCMFundDocsS3, editUpdate);
 router.delete('/requests/:id/updates/:updateId', deleteUpdate);
+router.post('/requests/:id/team', addCmFundTeamMember);
+router.delete('/requests/:id/team/:memberId', removeCmFundTeamMember);
 
 // ==========================================
 // Document Master (Checklists)

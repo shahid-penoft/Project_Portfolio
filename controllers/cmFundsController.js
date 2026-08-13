@@ -635,7 +635,16 @@ export const getRequest = async (req, res) => {
     // Convert map to array and sort DESC
     const updatesArray = Object.values(formattedUpdatesMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
-    res.json({ data: { ...request, documents: docs, timeline, updates: updatesArray } });
+    const [team] = await pool.query(`
+      SELECT ct.id, ct.role_label, ct.created_at,
+             au.id as admin_user_id, au.full_name as name, au.email
+      FROM cm_fund_team ct
+      JOIN admin_users au ON ct.admin_user_id = au.id
+      WHERE ct.request_id = ?
+      ORDER BY ct.created_at ASC
+    `, [id]);
+
+    res.json({ data: { ...request, documents: docs, timeline, updates: updatesArray, team } });
   } catch (err) {
     console.error('Error in getRequest:', err);
     res.status(500).json({ error: 'Failed to fetch request' });
@@ -1114,5 +1123,59 @@ export const deleteUpdate = async (req, res) => {
   } catch (err) {
     console.error('Error deleting update:', err);
     res.status(500).json({ error: 'Failed to delete update' });
+  }
+};
+
+export const addCmFundTeamMember = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { admin_user_id, role_label } = req.body;
+    if (!admin_user_id) return res.status(400).json({ success: false, message: 'admin_user_id is required.' });
+
+    const [[adminUser]] = await pool.query('SELECT id, full_name FROM admin_users WHERE id = ?', [admin_user_id]);
+    if (!adminUser) return res.status(404).json({ success: false, message: 'Admin user not found.' });
+
+    try {
+      const [result] = await pool.query(
+        'INSERT INTO cm_fund_team (request_id, admin_user_id, role_label) VALUES (?,?,?)',
+        [id, admin_user_id, role_label || null]
+      );
+      auditLog(req, { action: 'Updated', module: 'CM Funds', details: `Added team member "${adminUser.full_name}" to Application ID ${id}`, resource: `cm-funds/${id}`, severity: 'info' });
+      const [[row]] = await pool.query(`
+        SELECT ct.id, ct.role_label, ct.created_at,
+               au.id as admin_user_id, au.full_name as name, au.email
+        FROM cm_fund_team ct
+        JOIN admin_users au ON ct.admin_user_id = au.id
+        WHERE ct.id = ?
+      `, [result.insertId]);
+      res.status(201).json({ success: true, data: row });
+    } catch (dupErr) {
+      if (dupErr.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ success: false, message: 'This admin is already in the team.' });
+      }
+      throw dupErr;
+    }
+  } catch (err) {
+    console.error('[addCmFundTeamMember]', err);
+    res.status(500).json({ success: false, message: 'Failed to add team member.' });
+  }
+};
+
+export const removeCmFundTeamMember = async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    const [[row]] = await pool.query(`
+      SELECT ct.id, au.full_name
+      FROM cm_fund_team ct JOIN admin_users au ON ct.admin_user_id = au.id
+      WHERE ct.id = ? AND ct.request_id = ?
+    `, [memberId, id]);
+    if (!row) return res.status(404).json({ success: false, message: 'Team member not found.' });
+
+    await pool.query('DELETE FROM cm_fund_team WHERE id = ?', [memberId]);
+    auditLog(req, { action: 'Updated', module: 'CM Funds', details: `Removed team member "${row.full_name}" from Application ID ${id}`, resource: `cm-funds/${id}`, severity: 'warning' });
+    res.json({ success: true, message: 'Team member removed.' });
+  } catch (err) {
+    console.error('[removeCmFundTeamMember]', err);
+    res.status(500).json({ success: false, message: 'Failed to remove team member.' });
   }
 };
