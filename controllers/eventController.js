@@ -762,9 +762,13 @@ function normaliseYouTubeUrl(input) {
 // ─────────────────────────────────────────────────────────────
 export const deleteEventMedia = async (req, res) => {
     try {
-        const { mediaId } = req.params;
-        const [rows] = await db.query('SELECT * FROM event_media WHERE id = ?', [mediaId]);
+        const mediaIdentifier = req.params.mediaId || req.query.id || req.query.file_url || req.body?.id || req.body?.file_url;
+        if (!mediaIdentifier) return errorResponse(res, 'Media identifier is required.', 400);
+
+        const [rows] = await db.query('SELECT * FROM event_media WHERE id = ? OR file_url = ?', [mediaIdentifier, mediaIdentifier]);
         if (!rows.length) return errorResponse(res, 'Media item not found.', 404);
+
+        const mediaId = rows[0].id;
 
         // Delete physical file (main + thumbnail)
         const deleteFile = (relPath) => {
