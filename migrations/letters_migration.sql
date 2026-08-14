@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS mla_letters (
   closing               VARCHAR(100) DEFAULT 'Yours faithfully,',
   body                  LONGTEXT,
   tags                  JSON,
+  remarks               TEXT DEFAULT NULL,
   prepared_by_user_id   INT UNSIGNED,
   prepared_on           DATETIME    DEFAULT CURRENT_TIMESTAMP,
   sent_on               DATETIME,

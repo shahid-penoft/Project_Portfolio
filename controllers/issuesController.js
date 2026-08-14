@@ -209,7 +209,7 @@ const fetchFullIssue = async (id) => {
         ORDER BY ca.created_at DESC
     `, [realId]);
 
-    return { ...issue, updates: mappedUpdates, media, attachments, team, activity };
+    return { ...issue, remarks: issue.internal_note || '', updates: mappedUpdates, media, attachments, team, activity };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -366,13 +366,17 @@ export const getIssueById = async (req, res) => {
 export const createIssue = async (req, res) => {
     try {
         const {
-            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             address_line1, custom_sms_message, notify_complainant,
             notify_channels,
             status_details,
         } = req.body;
+
+        const internal_note = req.body.internal_note !== undefined 
+            ? req.body.internal_note 
+            : (req.body.remarks !== undefined ? req.body.remarks : (req.body.notes !== undefined ? req.body.notes : (req.body.remark !== undefined ? req.body.remark : null)));
 
         if (!title || !submitter_name || !phone) {
             return res.status(400).json({ success: false, message: 'title, submitter_name and phone are required.' });
@@ -425,7 +429,7 @@ export const createIssue = async (req, res) => {
         // - Public/constituent submission → auto-insert "We are reviewing your submission."
         // - Admin creation with status_details → insert custom text
         // - Admin creation without status_details → insert nothing (no regression)
-        const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        const isAdminCreation = req.headers?.['x-app-portal'] === 'admin' || (adminId && !constituentId);
         const sdTrimmed = status_details?.trim();
         const updateTitle = sdTrimmed || (isAdminCreation ? null : 'We are reviewing your submission.');
         const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : 'Your public issue report has been registered and is under initial review by the MLA Office.');
@@ -521,11 +525,15 @@ export const updateIssue = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed, address_line1,
             status_details,
         } = req.body;
+
+        const internal_note = req.body.internal_note !== undefined 
+            ? req.body.internal_note 
+            : (req.body.remarks !== undefined ? req.body.remarks : (req.body.notes !== undefined ? req.body.notes : (req.body.remark !== undefined ? req.body.remark : undefined)));
 
         const [result] = await pool.query(`
             UPDATE issues SET
@@ -540,7 +548,7 @@ export const updateIssue = async (req, res) => {
               address = COALESCE(?, address),
               latitude = COALESCE(?, latitude),
               longitude = COALESCE(?, longitude),
-              internal_note = COALESCE(?, internal_note),
+              internal_note = ${internal_note !== undefined ? '?' : 'internal_note'},
               submitter_name = COALESCE(?, submitter_name),
               phone = COALESCE(?, phone),
               alternative_phone = COALESCE(?, alternative_phone),
@@ -553,7 +561,8 @@ export const updateIssue = async (req, res) => {
               updated_by_admin_id = ?
             WHERE id = ?
         `, [
-            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
+            title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude,
+            ...(internal_note !== undefined ? [internal_note] : []),
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, address_line1, date_filed, req.admin?.id || null, id,
         ]);

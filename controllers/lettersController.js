@@ -193,6 +193,10 @@ export const createLetter = async (req, res) => {
             reference, salutation, closing, body, tags,
         } = req.body;
 
+        const remarks = req.body.remarks !== undefined
+            ? req.body.remarks
+            : (req.body.notes !== undefined ? req.body.notes : (req.body.internal_note !== undefined ? req.body.internal_note : null));
+
         // Validation
         if (!subject?.trim())        return res.status(400).json({ success: false, message: 'subject is required.' });
         if (!type)                   return res.status(400).json({ success: false, message: 'type is required.' });
@@ -211,9 +215,9 @@ export const createLetter = async (req, res) => {
             INSERT INTO mla_letters
               (letter_id, subject, type, priority, status,
                recipient_name, recipient_designation, recipient_org, recipient_address, recipient_email,
-               reference, salutation, closing, body, tags,
+               reference, salutation, closing, body, tags, remarks,
                prepared_by_user_id, sent_on, year_seq)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             letterId,
             subject.trim(),
@@ -230,6 +234,7 @@ export const createLetter = async (req, res) => {
             closing || 'Yours faithfully,',
             body || null,
             tagsJson,
+            remarks || null,
             req.admin?.id || null,
             sentOn,
             yearSeq,
@@ -272,6 +277,10 @@ export const updateLetter = async (req, res) => {
             reference, salutation, closing, body, tags,
         } = req.body;
 
+        const remarks = req.body.remarks !== undefined
+            ? req.body.remarks
+            : (req.body.notes !== undefined ? req.body.notes : (req.body.internal_note !== undefined ? req.body.internal_note : undefined));
+
         // Check exists
         const [[existing]] = await pool.query('SELECT id, status FROM mla_letters WHERE id = ?', [id]);
         if (!existing) return res.status(404).json({ success: false, message: 'Letter not found.' });
@@ -298,6 +307,7 @@ export const updateLetter = async (req, res) => {
         addField('closing',               closing);
         addField('body',                  body);
         addField('tags',                  tagsJson);
+        addField('remarks',               remarks);
         if (sentOn !== undefined) { setClauses.push('sent_on = ?'); params.push(sentOn); }
 
         if (setClauses.length === 0) return res.status(400).json({ success: false, message: 'No fields to update.' });

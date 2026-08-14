@@ -45,7 +45,7 @@ function computeStatus(event_date, event_time) {
 export const getAllEvents = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.min(50, parseInt(req.query.limit) || 10);
+        const limit = Math.min(100, parseInt(req.query.limit) || 10);
         const offset = (page - 1) * limit;
 
         const { status, event_type_id, local_body_id, sector_id, search, year } = req.query;
@@ -80,7 +80,7 @@ export const getAllEvents = async (req, res) => {
             [...params, limit, offset]
         );
 
-        // Fetch media for these events
+        // Fetch media and content for these events
         let eventsWithMedia = rows;
         if (rows.length > 0) {
             const eventIds = rows.map(r => r.id);
@@ -92,9 +92,19 @@ export const getAllEvents = async (req, res) => {
                 [eventIds]
             );
 
+            const [contentRows] = await db.query(
+                `SELECT event_id, paragraph_text 
+                 FROM event_content 
+                 WHERE event_id IN (?) 
+                 ORDER BY content_order ASC`,
+                [eventIds]
+            );
+
             // Group media by event_id
             const photosByEvent = {};
             const videosByEvent = {};
+            const contentByEvent = {};
+
             media.forEach(m => {
                 if (m.media_type === 'photo') {
                     if (!photosByEvent[m.event_id]) photosByEvent[m.event_id] = [];
@@ -105,11 +115,20 @@ export const getAllEvents = async (req, res) => {
                 }
             });
 
+            contentRows.forEach(c => {
+                if (!contentByEvent[c.event_id]) contentByEvent[c.event_id] = [];
+                contentByEvent[c.event_id].push(c.paragraph_text);
+            });
+
             eventsWithMedia = rows.map(event => {
                 const eventPhotos = photosByEvent[event.id] || [];
                 const eventVideos = videosByEvent[event.id] || [];
+                const eventParagraphs = contentByEvent[event.id] || [];
+                const paragraphText = eventParagraphs.join('\n\n') || null;
+
                 return {
                     ...event,
+                    paragraph_text: paragraphText,
                     cover_image: eventPhotos.length > 0
                         ? eventPhotos[0].file_url
                         : (eventVideos.length > 0 && eventVideos[0].thumbnail_url
@@ -150,7 +169,7 @@ export const getEventsByStatus = async (req, res) => {
         }
 
         const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.min(50, parseInt(req.query.limit) || 10);
+        const limit = Math.min(100, parseInt(req.query.limit) || 10);
         const offset = (page - 1) * limit;
 
         const [[{ total }]] = await db.query(
@@ -172,7 +191,7 @@ export const getEventsByStatus = async (req, res) => {
             [status, limit, offset]
         );
 
-        // Fetch media for these events
+        // Fetch media and content for these events
         let eventsWithMedia = rows;
         if (rows.length > 0) {
             const eventIds = rows.map(r => r.id);
@@ -184,9 +203,19 @@ export const getEventsByStatus = async (req, res) => {
                 [eventIds]
             );
 
+            const [contentRows] = await db.query(
+                `SELECT event_id, paragraph_text 
+                 FROM event_content 
+                 WHERE event_id IN (?) 
+                 ORDER BY content_order ASC`,
+                [eventIds]
+            );
+
             // Group media by event_id
             const photosByEvent = {};
             const videosByEvent = {};
+            const contentByEvent = {};
+
             media.forEach(m => {
                 if (m.media_type === 'photo') {
                     if (!photosByEvent[m.event_id]) photosByEvent[m.event_id] = [];
@@ -197,11 +226,20 @@ export const getEventsByStatus = async (req, res) => {
                 }
             });
 
+            contentRows.forEach(c => {
+                if (!contentByEvent[c.event_id]) contentByEvent[c.event_id] = [];
+                contentByEvent[c.event_id].push(c.paragraph_text);
+            });
+
             eventsWithMedia = rows.map(event => {
                 const eventPhotos = photosByEvent[event.id] || [];
                 const eventVideos = videosByEvent[event.id] || [];
+                const eventParagraphs = contentByEvent[event.id] || [];
+                const paragraphText = eventParagraphs.join('\n\n') || null;
+
                 return {
                     ...event,
+                    paragraph_text: paragraphText,
                     cover_image: eventPhotos.length > 0
                         ? eventPhotos[0].file_url
                         : (eventVideos.length > 0 && eventVideos[0].thumbnail_url
@@ -259,9 +297,12 @@ export const getEventById = async (req, res) => {
             [id]
         );
 
+        const paragraphText = content.map(c => c.paragraph_text).join('\n\n') || null;
+
         return successResponse(res, {
             data: {
                 ...event,
+                paragraph_text: paragraphText,
                 content,
                 media: {
                     photos: media.filter(m => m.media_type === 'photo'),
@@ -312,9 +353,12 @@ export const getEventBySlug = async (req, res) => {
             [id]
         );
 
+        const paragraphText = content.map(c => c.paragraph_text).join('\n\n') || null;
+
         return successResponse(res, {
             data: {
                 ...event,
+                paragraph_text: paragraphText,
                 content,
                 media: {
                     photos: media.filter(m => m.media_type === 'photo'),
@@ -336,7 +380,7 @@ export const getEventsBySectorName = async (req, res) => {
     try {
         const { sectorName } = req.params;
         const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.min(50, parseInt(req.query.limit) || 10);
+        const limit = Math.min(100, parseInt(req.query.limit) || 10);
         const offset = (page - 1) * limit;
 
         const [[{ total }]] = await db.query(
@@ -361,7 +405,7 @@ export const getEventsBySectorName = async (req, res) => {
             [sectorName, limit, offset]
         );
 
-        // Fetch media for these events
+        // Fetch media and content for these events
         let eventsWithMedia = rows;
         if (rows.length > 0) {
             const eventIds = rows.map(r => r.id);
@@ -373,9 +417,19 @@ export const getEventsBySectorName = async (req, res) => {
                 [eventIds]
             );
 
+            const [contentRows] = await db.query(
+                `SELECT event_id, paragraph_text 
+                 FROM event_content 
+                 WHERE event_id IN (?) 
+                 ORDER BY content_order ASC`,
+                [eventIds]
+            );
+
             // Group media by event_id
             const photosByEvent = {};
             const videosByEvent = {};
+            const contentByEvent = {};
+
             media.forEach(m => {
                 if (m.media_type === 'photo') {
                     if (!photosByEvent[m.event_id]) photosByEvent[m.event_id] = [];
@@ -386,11 +440,20 @@ export const getEventsBySectorName = async (req, res) => {
                 }
             });
 
+            contentRows.forEach(c => {
+                if (!contentByEvent[c.event_id]) contentByEvent[c.event_id] = [];
+                contentByEvent[c.event_id].push(c.paragraph_text);
+            });
+
             eventsWithMedia = rows.map(event => {
                 const eventPhotos = photosByEvent[event.id] || [];
                 const eventVideos = videosByEvent[event.id] || [];
+                const eventParagraphs = contentByEvent[event.id] || [];
+                const paragraphText = eventParagraphs.join('\n\n') || null;
+
                 return {
                     ...event,
+                    paragraph_text: paragraphText,
                     cover_image: eventPhotos.length > 0
                         ? eventPhotos[0].file_url
                         : (eventVideos.length > 0 && eventVideos[0].thumbnail_url

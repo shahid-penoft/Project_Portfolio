@@ -210,7 +210,7 @@ const fetchFullComplaint = async (id) => {
         ORDER BY ca.created_at DESC
     `, [id]);
 
-    return { ...complaint, updates: mappedUpdates, media, attachments, team, activity };
+    return { ...complaint, remarks: complaint.internal_note || '', updates: mappedUpdates, media, attachments, team, activity };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -372,12 +372,16 @@ export const getComplaintById = async (req, res) => {
 export const createComplaint = async (req, res) => {
     try {
         const {
-            title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, address_line1, latitude, longitude,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             custom_sms_message, custom_email_message, notify_channels, notify_complainant,
             status_details,
         } = req.body;
+
+        const internal_note = req.body.internal_note !== undefined 
+            ? req.body.internal_note 
+            : (req.body.remarks !== undefined ? req.body.remarks : (req.body.notes !== undefined ? req.body.notes : (req.body.remark !== undefined ? req.body.remark : null)));
 
         if (!title || !complainant_name || !phone) {
             return res.status(400).json({ success: false, message: 'title, complainant_name and phone are required.' });
@@ -522,11 +526,15 @@ export const updateComplaint = async (req, res) => {
     try {
         const { id } = req.params;
         const {
-            title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, address_line1, latitude, longitude,
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
             status_details,
         } = req.body;
+
+        const internal_note = req.body.internal_note !== undefined 
+            ? req.body.internal_note 
+            : (req.body.remarks !== undefined ? req.body.remarks : (req.body.notes !== undefined ? req.body.notes : (req.body.remark !== undefined ? req.body.remark : undefined)));
 
         const [result] = await pool.query(`
             UPDATE complaints SET
@@ -540,7 +548,7 @@ export const updateComplaint = async (req, res) => {
               address_line1 = COALESCE(?, address_line1),
               latitude = COALESCE(?, latitude),
               longitude = COALESCE(?, longitude),
-              internal_note = COALESCE(?, internal_note),
+              internal_note = ${internal_note !== undefined ? '?' : 'internal_note'},
               complainant_name = COALESCE(?, complainant_name),
               phone = COALESCE(?, phone),
               alternative_phone = COALESCE(?, alternative_phone),
@@ -552,7 +560,8 @@ export const updateComplaint = async (req, res) => {
               updated_by_admin_id = ?
             WHERE id = ?
         `, [
-            title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
+            title, category, priority, status, description, location, address, address_line1, latitude, longitude,
+            ...(internal_note !== undefined ? [internal_note] : []),
             complainant_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed, req.admin?.id || null, id,
         ]);
