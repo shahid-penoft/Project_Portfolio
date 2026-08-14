@@ -537,6 +537,12 @@ export const createDraftRequest = async (req, res) => {
         module: 'cm-funds',
         recipientName: applicantName
       });
+
+      // Log SMS communication so it shows in the Communications tab
+      await pool.query(
+        `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+        ['Application', appId, 'SMS', applicantPhone, message]
+      ).catch(err => console.warn('[createDraftRequest SMS Log failed]', err.message));
     }
 
     await connection.commit();
@@ -632,8 +638,28 @@ export const getRequest = async (req, res) => {
       }
     });
     
-    // Convert map to array and sort DESC
-    const updatesArray = Object.values(formattedUpdatesMap).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const [commLogs] = await pool.query(
+      `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
+       FROM communications_logs 
+       WHERE (entity_type = 'Application' OR entity_type = 'CM_Fund' OR entity_type = 'cm_fund') AND (entity_id = ? OR message LIKE ?)`,
+      [id, `%${id}%`]
+    );
+
+    const commLogsMapped = commLogs.map(cl => ({
+      id: `comm_${cl.id}`,
+      rawId: cl.id,
+      request_id: id,
+      type: 'Communication',
+      title: cl.title,
+      note: cl.note,
+      created_at: cl.created_at,
+      _source: 'communications_logs',
+      gallery: [],
+      attachments: []
+    }));
+
+    // Convert map to array and merge with commLogs, then sort DESC
+    const updatesArray = [...Object.values(formattedUpdatesMap), ...commLogsMapped].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     const [team] = await pool.query(`
       SELECT ct.id, ct.role_label, ct.created_at,
@@ -1029,6 +1055,12 @@ export const addUpdate = async (req, res) => {
           dateFiled: application.date_filed,
         });
         sendSMSSafe(application.applicant_phone, smsMessage);
+
+        // Log SMS communication
+        await pool.query(
+          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+          ['Application', id, 'SMS', application.applicant_phone, smsMessage]
+        ).catch(err => console.warn('[addCmFundUpdate SMS Log failed]', err.message));
       }
 
       // Send Email if selected
@@ -1038,6 +1070,12 @@ export const addUpdate = async (req, res) => {
               subject: `Update on your CM Fund Application #${id}`,
               message: custom_email_message.trim()
           }).catch(err => console.error('[addCmFundUpdate Email Error]', err));
+
+          // Log Email communication
+          await pool.query(
+            `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+            ['Application', id, 'Email', application.email, custom_email_message.trim()]
+          ).catch(err => console.warn('[addCmFundUpdate Email Log failed]', err.message));
       }
     }
 
