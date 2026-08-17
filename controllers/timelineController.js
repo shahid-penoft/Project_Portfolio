@@ -4,7 +4,6 @@ import { uploadImage, runMulter } from '../configs/multerS3.js';
 import fs from 'fs';
 import path from 'path';
 
-
 // @desc    Get all timelines
 // @route   GET /api/timeline
 // @access  Public
@@ -25,10 +24,14 @@ export const createTimeline = async (req, res) => {
     try {
         await runMulter(uploadImage, req, res);
 
-        const { year, title } = req.body;
+        const { year, title, description, new_title } = req.body;
 
-        if (!year || !title) {
-            return res.status(400).json({ success: false, message: 'Year and title are required' });
+        // Resolve title and description supporting both new format and legacy aliases
+        let finalTitle = (title || new_title || '').trim();
+        let finalDesc = (description || '').trim();
+
+        if (!year) {
+            return res.status(400).json({ success: false, message: 'Year is required' });
         }
 
         let image_url = null;
@@ -37,7 +40,7 @@ export const createTimeline = async (req, res) => {
                 image_url = req.file.location;
             } else {
                 const ext = path.extname(req.file.originalname) || '.jpg';
-                const seoName = `shibu-kothamangalam-timeline-${year}-${slugify(title)}${ext}`;
+                const seoName = `shibu-kothamangalam-timeline-${year}-${slugify(finalTitle || 'milestone')}${ext}`;
                 const oldPath = req.file.path;
                 const newPath = path.join(path.dirname(oldPath), seoName);
                 if (fs.existsSync(newPath)) fs.unlinkSync(newPath);
@@ -47,14 +50,14 @@ export const createTimeline = async (req, res) => {
         }
 
         const [result] = await db.query(
-            'INSERT INTO timelines (year, title, image_url) VALUES (?, ?, ?)',
-            [year, title, image_url]
+            'INSERT INTO timelines (year, title, description, image_url) VALUES (?, ?, ?, ?)',
+            [year, finalTitle, finalDesc, image_url]
         );
 
         res.status(201).json({
             success: true,
             message: 'Timeline created successfully',
-            data: { id: result.insertId, year, title, image_url }
+            data: { id: result.insertId, year, title: finalTitle, description: finalDesc, image_url }
         });
     } catch (error) {
         console.error('Error creating timeline:', error);
@@ -70,7 +73,7 @@ export const updateTimeline = async (req, res) => {
         await runMulter(uploadImage, req, res);
 
         const { id } = req.params;
-        const { year, title } = req.body;
+        const { year, title, description, new_title } = req.body;
 
         const [existing] = await db.query('SELECT * FROM timelines WHERE id = ?', [id]);
         if (existing.length === 0) {
@@ -79,6 +82,9 @@ export const updateTimeline = async (req, res) => {
 
         const timeline = existing[0];
         let image_url = timeline.image_url;
+
+        let finalTitle = title !== undefined ? title : (new_title !== undefined ? new_title : timeline.title);
+        let finalDesc = description !== undefined ? description : timeline.description;
 
         if (req.file) {
             if (req.file.location) {
@@ -89,9 +95,8 @@ export const updateTimeline = async (req, res) => {
                 }
             } else {
                 const updatedYear = year || timeline.year;
-                const updatedTitle = title || timeline.title;
                 const ext = path.extname(req.file.originalname) || '.jpg';
-                const seoName = `shibu-kothamangalam-timeline-${updatedYear}-${slugify(updatedTitle)}${ext}`;
+                const seoName = `shibu-kothamangalam-timeline-${updatedYear}-${slugify(finalTitle || 'milestone')}${ext}`;
                 const newFilePath = path.join(path.dirname(req.file.path), seoName);
                 if (fs.existsSync(newFilePath)) fs.unlinkSync(newFilePath);
                 fs.renameSync(req.file.path, newFilePath);
@@ -105,14 +110,14 @@ export const updateTimeline = async (req, res) => {
         }
 
         await db.query(
-            'UPDATE timelines SET year = ?, title = ?, image_url = ? WHERE id = ?',
-            [year || timeline.year, title || timeline.title, image_url, id]
+            'UPDATE timelines SET year = ?, title = ?, description = ?, image_url = ? WHERE id = ?',
+            [year !== undefined ? year : timeline.year, finalTitle, finalDesc, image_url, id]
         );
 
         res.status(200).json({
             success: true,
             message: 'Timeline updated successfully',
-            data: { id, year: year || timeline.year, title: title || timeline.title, image_url }
+            data: { id, year: year || timeline.year, title: finalTitle, description: finalDesc, image_url }
         });
     } catch (error) {
         console.error('Error updating timeline:', error);

@@ -18,25 +18,28 @@ export const getAllRecognitions = async (req, res) => {
 // @access  Private (Admin)
 export const createRecognition = async (req, res) => {
     try {
-        const { description, icon_name, order_index } = req.body || {};
+        const { title, year, description, icon_name, order_index } = req.body || {};
 
-        if (!description) {
-            return res.status(400).json({ success: false, message: 'Description is required' });
+        if (!description && !title) {
+            return res.status(400).json({ success: false, message: 'Title or description is required' });
         }
 
+        const safeTitle = (title || '').trim();
+        const safeYear = (year || '').trim();
+        const safeDesc = (description || '').trim();
         const safeIcon = icon_name || 'Activity';
-        const safeOrder = order_index || 0;
-        const iconUrl = req.file ? (req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`) : null;
+        const safeOrder = parseInt(order_index) || 0;
+        const iconUrl = req.file ? (req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`) : (req.body.icon_url || null);
 
         const [result] = await db.query(
-            'INSERT INTO recognitions (description, icon_name, icon_url, order_index) VALUES (?, ?, ?, ?)',
-            [description, safeIcon, iconUrl, safeOrder]
+            'INSERT INTO recognitions (title, year, description, icon_name, icon_url, order_index) VALUES (?, ?, ?, ?, ?, ?)',
+            [safeTitle, safeYear, safeDesc, safeIcon, iconUrl, safeOrder]
         );
 
         res.status(201).json({
             success: true,
             message: 'Recognition created successfully',
-            data: { id: result.insertId, description, icon_name: safeIcon, icon_url: iconUrl, order_index: safeOrder }
+            data: { id: result.insertId, title: safeTitle, year: safeYear, description: safeDesc, icon_name: safeIcon, icon_url: iconUrl, order_index: safeOrder }
         });
     } catch (error) {
         console.error('Error creating recognition:', error);
@@ -50,7 +53,7 @@ export const createRecognition = async (req, res) => {
 export const updateRecognition = async (req, res) => {
     try {
         const { id } = req.params;
-        const { description, icon_name, order_index } = req.body || {};
+        const { title, year, description, icon_name, order_index } = req.body || {};
 
         const [existing] = await db.query('SELECT * FROM recognitions WHERE id = ?', [id]);
         if (existing.length === 0) {
@@ -58,11 +61,13 @@ export const updateRecognition = async (req, res) => {
         }
         const rec = existing[0];
 
-        const iconUrl = req.file ? (req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`) : rec.icon_url;
+        const iconUrl = req.file ? (req.file.location || `/uploads/ente-nadu-icons/${req.file.filename}`) : (req.body.icon_url !== undefined ? req.body.icon_url : rec.icon_url);
 
         await db.query(
-            'UPDATE recognitions SET description = ?, icon_name = ?, icon_url = ?, order_index = ? WHERE id = ?',
+            'UPDATE recognitions SET title = ?, year = ?, description = ?, icon_name = ?, icon_url = ?, order_index = ? WHERE id = ?',
             [
+                title !== undefined ? title : rec.title,
+                year !== undefined ? year : rec.year,
                 description !== undefined ? description : rec.description,
                 icon_name !== undefined ? icon_name : rec.icon_name,
                 iconUrl,
