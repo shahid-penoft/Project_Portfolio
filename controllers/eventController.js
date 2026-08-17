@@ -48,7 +48,7 @@ export const getAllEvents = async (req, res) => {
         const limit = Math.min(100, parseInt(req.query.limit) || 10);
         const offset = (page - 1) * limit;
 
-        const { status, event_type_id, local_body_id, sector_id, search, year } = req.query;
+        const { status, event_type_id, local_body_id, ward_id, sector_id, search, year } = req.query;
 
         let where = 'WHERE 1=1';
         const params = [];
@@ -56,6 +56,7 @@ export const getAllEvents = async (req, res) => {
         if (status) { where += ' AND e.status = ?'; params.push(status); }
         if (event_type_id) { where += ' AND e.event_type_id = ?'; params.push(event_type_id); }
         if (local_body_id) { where += ' AND e.local_body_id = ?'; params.push(local_body_id); }
+        if (ward_id) { where += ' AND e.ward_id = ?'; params.push(ward_id); }
         if (sector_id) { where += ' AND e.sector_id = ?'; params.push(sector_id); }
         if (search) { where += ' AND e.event_name LIKE ?'; params.push(`%${search}%`); }
         if (year) { where += ' AND YEAR(e.event_date) = ?'; params.push(year); }
@@ -69,11 +70,15 @@ export const getAllEvents = async (req, res) => {
               et.id as eventtype_id,
               et.type_name,
               lb.name AS local_body_name,
+              w.ward_no,
+              w.place_name,
+              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) AS ward_name,
               s.name  AS sector_name
        FROM events e
-       LEFT JOIN event_types  et ON et.id = e.event_type_id
-       LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
-       LEFT JOIN sectors       s ON  s.id = e.sector_id
+       LEFT JOIN event_types      et ON et.id = e.event_type_id
+       LEFT JOIN local_bodies     lb ON lb.id = e.local_body_id
+       LEFT JOIN local_body_wards  w ON  w.id = e.ward_id
+       LEFT JOIN sectors           s ON  s.id = e.sector_id
        ${where}
        ORDER BY e.event_date DESC
        LIMIT ? OFFSET ?`,
@@ -180,11 +185,15 @@ export const getEventsByStatus = async (req, res) => {
             `SELECT e.*,
               et.type_name,
               lb.name AS local_body_name,
+              w.ward_no,
+              w.place_name,
+              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) AS ward_name,
               s.name  AS sector_name
        FROM events e
-       LEFT JOIN event_types  et ON et.id = e.event_type_id
-       LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
-       LEFT JOIN sectors       s ON  s.id = e.sector_id
+       LEFT JOIN event_types      et ON et.id = e.event_type_id
+       LEFT JOIN local_bodies     lb ON lb.id = e.local_body_id
+       LEFT JOIN local_body_wards  w ON  w.id = e.ward_id
+       LEFT JOIN sectors           s ON  s.id = e.sector_id
        WHERE e.status = ?
        ORDER BY e.event_date DESC
        LIMIT ? OFFSET ?`,
@@ -273,11 +282,15 @@ export const getEventById = async (req, res) => {
             `SELECT e.*,
               et.type_name,
               lb.name AS local_body_name,
+              w.ward_no,
+              w.place_name,
+              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) AS ward_name,
               s.name  AS sector_name
        FROM events e
-       LEFT JOIN event_types  et ON et.id = e.event_type_id
-       LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
-       LEFT JOIN sectors       s ON  s.id = e.sector_id
+       LEFT JOIN event_types      et ON et.id = e.event_type_id
+       LEFT JOIN local_bodies     lb ON lb.id = e.local_body_id
+       LEFT JOIN local_body_wards  w ON  w.id = e.ward_id
+       LEFT JOIN sectors           s ON  s.id = e.sector_id
        WHERE e.id = ?`,
             [id]
         );
@@ -328,11 +341,15 @@ export const getEventBySlug = async (req, res) => {
             `SELECT e.*,
               et.type_name,
               lb.name AS local_body_name,
+              w.ward_no,
+              w.place_name,
+              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) AS ward_name,
               s.name  AS sector_name
        FROM events e
-       LEFT JOIN event_types  et ON et.id = e.event_type_id
-       LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
-       LEFT JOIN sectors       s ON  s.id = e.sector_id
+       LEFT JOIN event_types      et ON et.id = e.event_type_id
+       LEFT JOIN local_bodies     lb ON lb.id = e.local_body_id
+       LEFT JOIN local_body_wards  w ON  w.id = e.ward_id
+       LEFT JOIN sectors           s ON  s.id = e.sector_id
        WHERE e.slug = ?`,
             [slug]
         );
@@ -394,11 +411,15 @@ export const getEventsBySectorName = async (req, res) => {
             `SELECT e.*,
               et.type_name,
               lb.name AS local_body_name,
+              w.ward_no,
+              w.place_name,
+              CONCAT('Ward ', w.ward_no, ' - ', w.place_name) AS ward_name,
               s.name  AS sector_name
        FROM events e
-       LEFT JOIN event_types  et ON et.id = e.event_type_id
-       LEFT JOIN local_bodies lb ON lb.id = e.local_body_id
-       LEFT JOIN sectors       s ON  s.id = e.sector_id
+       LEFT JOIN event_types      et ON et.id = e.event_type_id
+       LEFT JOIN local_bodies     lb ON lb.id = e.local_body_id
+       LEFT JOIN local_body_wards  w ON  w.id = e.ward_id
+       LEFT JOIN sectors           s ON  s.id = e.sector_id
        WHERE s.name = ?
        ORDER BY e.event_date DESC
        LIMIT ? OFFSET ?`,
@@ -485,7 +506,7 @@ export const createEvent = async (req, res) => {
         const {
             event_name, event_date, event_time, event_time_to, venue,
             short_description,
-            event_type_id, local_body_id, sector_id,
+            event_type_id, local_body_id, ward_id, sector_id,
         } = req.body;
 
         if (!event_name || !event_date || !event_time || !venue)
@@ -506,12 +527,12 @@ export const createEvent = async (req, res) => {
 
         const [result] = await db.query(
             `INSERT INTO events
-         (event_name, slug, event_date, event_time, event_time_to, venue, short_description, status, event_type_id, local_body_id, sector_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (event_name, slug, event_date, event_time, event_time_to, venue, short_description, status, event_type_id, local_body_id, ward_id, sector_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 event_name, slug, event_date, event_time, event_time_to || null, venue,
                 short_description || null, status,
-                event_type_id || null, local_body_id || null, sector_id || null,
+                event_type_id || null, local_body_id || null, ward_id || null, sector_id || null,
             ]
         );
 
@@ -535,7 +556,7 @@ export const updateEvent = async (req, res) => {
         const {
             event_name, event_date, event_time, event_time_to, venue,
             short_description,
-            event_type_id, local_body_id, sector_id,
+            event_type_id, local_body_id, ward_id, sector_id,
         } = req.body;
 
         if (!event_name || !event_date || !event_time || !venue)
@@ -564,12 +585,12 @@ export const updateEvent = async (req, res) => {
             `UPDATE events SET
          event_name = ?, slug = ?, event_date = ?, event_time = ?, event_time_to = ?, venue = ?,
          short_description = ?, status = ?,
-         event_type_id = ?, local_body_id = ?, sector_id = ?
+         event_type_id = ?, local_body_id = ?, ward_id = ?, sector_id = ?
        WHERE id = ?`,
             [
                 event_name, slug, event_date, event_time, event_time_to || null, venue,
                 short_description || null, status,
-                event_type_id || null, local_body_id || null, sector_id || null,
+                event_type_id || null, local_body_id || null, ward_id || null, sector_id || null,
                 id,
             ]
         );

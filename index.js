@@ -72,6 +72,7 @@ import volunteerCategoriesRoutes from './routes/volunteerCategoriesRoutes.js';
 import aboutSectionRoutes from './routes/aboutSectionRoutes.js';
 import homeSectionOrderRoutes from './routes/homeSectionOrderRoutes.js';
 import homeStatsRoutes from './routes/homeStatsRoutes.js';
+import homeEventsSectionRoutes from './routes/homeEventsSectionRoutes.js';
 import { initTrashPurge } from './services/trashPurgeService.js';
 import { initScheduler } from './services/schedulerService.js';
 
@@ -161,6 +162,7 @@ app.use('/api/core-vision', coreVisionRoutes);
 app.use('/api/about-section', aboutSectionRoutes);
 app.use('/api/home/section-order', homeSectionOrderRoutes);
 app.use('/api/home/stats', homeStatsRoutes);
+app.use('/api/home/events-section', homeEventsSectionRoutes);
 app.use('/api/timeline', timelineRoutes);
 app.use('/api/recognitions', recognitionRoutes);
 app.use('/api/about-settings', aboutSettingsRoutes);
@@ -229,3 +231,4 @@ app.listen(PORT, () => {
 });
 
 export default app;
+// nodemon trigger
