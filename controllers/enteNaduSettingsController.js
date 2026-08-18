@@ -32,12 +32,15 @@ export const getEnteNaduSettings = async (req, res) => {
         const rawVis   = typeof row.section_visibility === 'string' ? JSON.parse(row.section_visibility) : row.section_visibility;
 
         const { sectionOrder, sectionVisibility } = filterForSite(rawOrder, rawVis, site);
+        const pageVisibility = (rawVis || {})['page-header'] || (rawData || {}).page_visibility || 'both';
 
         return res.status(200).json({
             success: true,
             data: rawData,
             section_order: sectionOrder,
             section_visibility: sectionVisibility,
+            page_visibility: pageVisibility,
+            is_visible_on_site: pageVisibility === 'both' || pageVisibility === site,
             updated_at: row.updated_at,
         });
     } catch (error) {
@@ -49,12 +52,17 @@ export const getEnteNaduSettings = async (req, res) => {
 // ─── PUT /api/ente-nadu-settings ──────────────────────────────────────────────
 export const updateEnteNaduSettings = async (req, res) => {
     try {
-        const { data, section_order, section_visibility } = req.body;
+        const { data, section_order, section_visibility, page_visibility } = req.body;
         if (!data) return res.status(400).json({ success: false, message: 'data is required' });
 
-        const dataJson       = typeof data               === 'string' ? data               : JSON.stringify(data);
-        const orderJson      = typeof section_order      === 'string' ? section_order      : JSON.stringify(section_order      || ALL_SECTION_IDS);
-        const visibilityJson = typeof section_visibility === 'string' ? section_visibility : JSON.stringify(section_visibility || {});
+        let parsedVis = typeof section_visibility === 'string' ? JSON.parse(section_visibility) : (section_visibility || {});
+        if (page_visibility) {
+            parsedVis['page-header'] = page_visibility;
+        }
+
+        const dataJson       = typeof data === 'string' ? data : JSON.stringify(data);
+        const orderJson      = typeof section_order === 'string' ? section_order : JSON.stringify(section_order || ALL_SECTION_IDS);
+        const visibilityJson = JSON.stringify(parsedVis);
 
         await db.query(`
             INSERT INTO ente_nadu_settings (id, data, section_order, section_visibility)
