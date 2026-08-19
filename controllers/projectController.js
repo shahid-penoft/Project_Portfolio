@@ -745,7 +745,41 @@ export const getProjectById = async (req, res) => {
     }
 };
 
-// ── POST /api/projects  ────────────────────────────────────────
+const sanitizeDate = (val) => {
+    if (!val) return null;
+    if (typeof val !== 'string') return null;
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === 'null' || trimmed === 'undefined' || trimmed === 'Invalid Date') return null;
+    const d = new Date(trimmed);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString().split('T')[0];
+};
+
+const sanitizeNumber = (val, defaultVal = 0) => {
+    if (val === null || val === undefined || val === '') return defaultVal;
+    if (typeof val === 'string') {
+        const cleaned = val.replace(/[^0-9.-]+/g, '');
+        const parsed = parseFloat(cleaned);
+        return isNaN(parsed) ? defaultVal : parsed;
+    }
+    const parsed = Number(val);
+    return isNaN(parsed) ? defaultVal : parsed;
+};
+
+const sanitizeId = (val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const num = Number(val);
+    return isNaN(num) || num <= 0 ? null : num;
+};
+
+const sanitizeProjectType = (type) => {
+    if (!type) return 'MLA';
+    const upper = String(type).trim().toUpperCase();
+    if (upper === 'PORTFOLIO' || upper.includes('PORTFOLIO')) return 'PORTFOLIO';
+    return 'MLA';
+};
+
+// ── POST /api/projects  (admin) ────────────────────────────────
 export const createProject = async (req, res) => {
     try {
         const {
@@ -776,12 +810,27 @@ export const createProject = async (req, res) => {
         
         const adminId = req.admin ? req.admin.id : null;
 
+        const cleanStartDate = sanitizeDate(start_date);
+        const cleanEndDate = sanitizeDate(end_date);
+        const cleanActualStartDate = sanitizeDate(actual_start_date);
+        const cleanActualEndDate = sanitizeDate(actual_end_date);
+        const cleanBudget = sanitizeNumber(budget, 0.00);
+        const cleanSectorId = sanitizeId(sector_id);
+        const cleanLocalBodyId = sanitizeId(local_body_id);
+        const cleanWardId = sanitizeId(ward_id);
+        const cleanDeptId = sanitizeId(department_id);
+        const cleanYear = sanitizeId(year);
+        const cleanDisplayOrder = sanitizeNumber(display_order, 0);
+        const cleanIsActive = (is_active == 1 || is_active === true || is_active === '1') ? 1 : 0;
+        const cleanProjectType = sanitizeProjectType(project_type);
+        const cleanProjectSubType = project_sub_type ? String(project_sub_type).trim() : null;
+
         const [result] = await db.query(
             `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, category, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by, project_type, project_sub_type)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
-            sector_id || null, category || null, local_body_id || null, display_order, is_active ? 1 : 0,
-            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, adminId, adminId, project_type, project_sub_type || null]
+            [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, cleanYear,
+            cleanSectorId, category || null, cleanLocalBodyId, cleanDisplayOrder, cleanIsActive,
+            status || 'In Progress', cleanWardId, cleanStartDate, cleanEndDate, cleanActualStartDate, cleanActualEndDate, location || null, depsJson, cleanDeptId, cleanBudget, adminId, adminId, cleanProjectType, cleanProjectSubType]
         );
 
         const newProjectId = result.insertId;
@@ -794,7 +843,7 @@ export const createProject = async (req, res) => {
                     await db.query(
                         `INSERT INTO project_milestones (project_id, title, status, target_date, display_order)
                          VALUES (?, ?, ?, ?, ?)`,
-                        [newProjectId, m.title.trim(), m.status || 'Pending', m.target_date || null, i]
+                        [newProjectId, m.title.trim(), m.status || 'Pending', sanitizeDate(m.target_date), i]
                     );
                 }
             }
@@ -892,14 +941,29 @@ export const updateProject = async (req, res) => {
         
         const adminId = req.admin ? req.admin.id : null;
 
+        const cleanStartDate = sanitizeDate(start_date);
+        const cleanEndDate = sanitizeDate(end_date);
+        const cleanActualStartDate = sanitizeDate(actual_start_date);
+        const cleanActualEndDate = sanitizeDate(actual_end_date);
+        const cleanBudget = sanitizeNumber(budget, 0.00);
+        const cleanSectorId = sanitizeId(sector_id);
+        const cleanLocalBodyId = sanitizeId(local_body_id);
+        const cleanWardId = sanitizeId(ward_id);
+        const cleanDeptId = sanitizeId(department_id);
+        const cleanYear = sanitizeId(year);
+        const cleanDisplayOrder = sanitizeNumber(display_order, 0);
+        const cleanIsActive = (is_active == 1 || is_active === true || is_active === '1') ? 1 : 0;
+        const cleanProjectType = sanitizeProjectType(project_type);
+        const cleanProjectSubType = project_sub_type ? String(project_sub_type).trim() : null;
+
         const [result] = await db.query(
             `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, videos=?, tags=?, year=?,
              sector_id=?, category=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(), updated_by=?,
              status=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?, project_type=?, project_sub_type=?
              WHERE id=?`,
-            [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
-            sector_id || null, category || null, local_body_id || null, display_order, is_active ? 1 : 0, adminId,
-            status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, project_type, project_sub_type || null, id]
+            [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, cleanYear,
+            cleanSectorId, category || null, cleanLocalBodyId, cleanDisplayOrder, cleanIsActive, adminId,
+            status || 'In Progress', cleanWardId, cleanStartDate, cleanEndDate, cleanActualStartDate, cleanActualEndDate, location || null, depsJson, cleanDeptId, cleanBudget, cleanProjectType, cleanProjectSubType, id]
         );
 
         if (!result.affectedRows) return errorResponse(res, 'Project not found.', 404);
@@ -916,7 +980,7 @@ export const updateProject = async (req, res) => {
         p.videos = parseVideos(p.videos);
         p.departments = typeof p.departments === 'string' ? JSON.parse(p.departments) : (p.departments || []);
 
-        return successResponse(res, { data: p }, 'Project fetched.');
+        return successResponse(res, { data: p }, 'Project updated.');
     } catch (err) {
         console.error('[updateProject]', err);
         return errorResponse(res, 'Server error updating project.');
