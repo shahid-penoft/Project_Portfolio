@@ -100,16 +100,24 @@ export const getAllProjects = async (req, res) => {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(50, parseInt(req.query.limit) || 12);
         const offset = (page - 1) * limit;
-        const { search, sector_id, local_body_id, year, is_active, type } = req.query;
+        const { search, sector_id, local_body_id, year, is_active, type, category, project_sub_type, sub_type } = req.query;
 
         const conditions = [];
         const vals = [];
 
-        if (type === 'all') {
-            conditions.push("p.project_type != 'PORTFOLIO'");
-        } else if (type) {
+        if (type === 'MLA') {
+            conditions.push("p.project_type = 'MLA'");
+        } else if (type === 'PORTFOLIO' || type === 'other') {
+            conditions.push("p.project_type != 'MLA'");
+        } else if (type && type !== 'all') {
             conditions.push('p.project_type = ?'); 
             vals.push(type);
+        }
+
+        const effectiveSubType = project_sub_type || sub_type || (category && category !== 'all' ? category : null);
+        if (effectiveSubType) {
+            conditions.push('p.project_sub_type = ?');
+            vals.push(effectiveSubType);
         }
 
         if (search) { conditions.push('(p.title LIKE ? OR p.tags LIKE ?)'); vals.push(`%${search}%`, `%${search}%`); }
@@ -125,15 +133,17 @@ export const getAllProjects = async (req, res) => {
         );
         const [rows] = await db.query(
             `SELECT p.id, p.title, p.slug, p.description, p.project_content,
-                    p.images, p.videos, p.tags, p.year, p.sector_id, p.local_body_id,
+                    p.images, p.videos, p.tags, p.year, p.sector_id, p.category, p.local_body_id, p.ward_id,
                     p.display_order, p.is_active, p.status, p.start_date, p.end_date,
                     p.created_at, p.updated_at, p.project_type, p.project_sub_type,
                     s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
+                    w.ward_no, w.place_name AS ward_name,
                     (IFNULL(JSON_LENGTH(p.images), 0) + IFNULL(JSON_LENGTH(p.videos), 0)) AS media_count
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              LEFT JOIN departments d ON d.id = p.department_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              ${where}
              ORDER BY p.display_order ASC, p.created_at DESC
              LIMIT ? OFFSET ?`,
@@ -169,10 +179,11 @@ export const getProjectsByYear = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.year = ?`, [year]
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              WHERE p.is_active = 1 AND p.year = ?
              ORDER BY p.display_order ASC, p.created_at DESC
              LIMIT ? OFFSET ?`,
@@ -201,10 +212,11 @@ export const getProjectsByLocalBody = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.local_body_id = ?`, [id]
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              WHERE p.is_active = 1 AND p.local_body_id = ?
              ORDER BY p.display_order ASC, p.created_at DESC
              LIMIT ? OFFSET ?`,
@@ -233,10 +245,11 @@ export const getProjectsBySector = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.sector_id = ?`, [id]
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              WHERE p.is_active = 1 AND p.sector_id = ?
              ORDER BY p.display_order ASC, p.created_at DESC
              LIMIT ? OFFSET ?`,
@@ -296,12 +309,25 @@ export const searchPublicProjects = async (req, res) => {
         const limit = Math.min(50, parseInt(req.query.limit) || 12);
         const offset = (page - 1) * limit;
         const search = req.query.q || req.query.search || '';
-        const { sector_id, local_body_id, year, type } = req.query;
+        const { sector_id, local_body_id, year, type, category, project_sub_type, sub_type } = req.query;
 
         const conditions = ['p.is_active = 1'];
         const vals = [];
 
-        if (type) { conditions.push('p.project_type = ?'); vals.push(type); }
+        if (type === 'MLA') {
+            conditions.push("p.project_type = 'MLA'");
+        } else if (type === 'PORTFOLIO' || type === 'other') {
+            conditions.push("p.project_type != 'MLA'");
+        } else if (type && type !== 'all') {
+            conditions.push('p.project_type = ?'); 
+            vals.push(type);
+        }
+
+        const effectiveSubType = project_sub_type || sub_type || (category && category !== 'all' ? category : null);
+        if (effectiveSubType) {
+            conditions.push('p.project_sub_type = ?');
+            vals.push(effectiveSubType);
+        }
 
         if (search) {
             conditions.push('(p.title LIKE ? OR p.tags LIKE ?)');
@@ -317,10 +343,11 @@ export const searchPublicProjects = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p ${where}`, vals
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              ${where}
              ORDER BY p.display_order ASC, p.created_at DESC
              LIMIT ? OFFSET ?`,
@@ -343,11 +370,13 @@ export const getProjectBySlug = async (req, res) => {
     try {
         const [rows] = await db.query(
             `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
+                    w.ward_no, w.place_name AS ward_name,
                     au1.full_name AS created_by_name, au2.full_name AS updated_by_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              LEFT JOIN departments d ON d.id = p.department_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              LEFT JOIN admin_users au1 ON p.created_by = au1.id
              LEFT JOIN admin_users au2 ON p.updated_by = au2.id
              WHERE p.slug = ?`, [req.params.slug]
@@ -416,11 +445,13 @@ export const getProjectById = async (req, res) => {
         const { id } = req.params;
         const [rows] = await db.query(
             `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name, p.images, p.videos,
+                    w.ward_no, w.place_name AS ward_name,
                     au1.full_name AS created_by_name, au2.full_name AS updated_by_name
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              LEFT JOIN departments d ON d.id = p.department_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              LEFT JOIN admin_users au1 ON p.created_by = au1.id
              LEFT JOIN admin_users au2 ON p.updated_by = au2.id
              WHERE p.id = ?`,
@@ -487,7 +518,7 @@ export const createProject = async (req, res) => {
     try {
         const {
             title, description, project_content, images = [], videos = [], tags,
-            year, sector_id, local_body_id,
+            year, sector_id, category, local_body_id,
             display_order = 0, is_active = 1,
             status = 'In Progress', ward_id, start_date, end_date,
             actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00,
@@ -514,18 +545,19 @@ export const createProject = async (req, res) => {
         const adminId = req.admin ? req.admin.id : null;
 
         const [result] = await db.query(
-            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by, project_type, project_sub_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, category, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by, project_type, project_sub_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
-            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0,
+            sector_id || null, category || null, local_body_id || null, display_order, is_active ? 1 : 0,
             status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, adminId, adminId, project_type, project_sub_type || null]
         );
 
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, p.images, p.videos
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name, p.images, p.videos
              FROM projects p
              LEFT JOIN sectors s ON s.id = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              WHERE p.id = ?`, [result.insertId]
         );
         const p = rows[0];
@@ -546,7 +578,7 @@ export const updateProject = async (req, res) => {
         const { id } = req.params;
         const {
             title, description, project_content, images = [], videos = [], tags,
-            year, sector_id, local_body_id,
+            year, sector_id, category, local_body_id,
             display_order = 0, is_active = 1,
             status = 'In Progress', ward_id, start_date, end_date,
             actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00,
@@ -579,20 +611,21 @@ export const updateProject = async (req, res) => {
 
         const [result] = await db.query(
             `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, videos=?, tags=?, year=?,
-             sector_id=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(), updated_by=?,
+             sector_id=?, category=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(), updated_by=?,
              status=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?, project_type=?, project_sub_type=?
              WHERE id=?`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, year || null,
-            sector_id || null, local_body_id || null, display_order, is_active ? 1 : 0, adminId,
+            sector_id || null, category || null, local_body_id || null, display_order, is_active ? 1 : 0, adminId,
             status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, project_type, project_sub_type || null, id]
         );
 
         if (!result.affectedRows) return errorResponse(res, 'Project not found.', 404);
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, p.images, p.videos
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name, p.images, p.videos
              FROM projects p
              LEFT JOIN sectors s ON s.id = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
              WHERE p.id = ?`, [id]
         );
         const p = rows[0];
