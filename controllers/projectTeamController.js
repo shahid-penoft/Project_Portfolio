@@ -54,7 +54,10 @@ export const addTeamMember = async (req, res) => {
 export const removeTeamMember = async (req, res) => {
     try {
         const { id, uid } = req.params;
-        const [result] = await db.query('DELETE FROM project_team_members WHERE project_id = ? AND admin_user_id = ?', [id, uid]);
+        const [result] = await db.query(
+            'DELETE FROM project_team_members WHERE project_id = ? AND (admin_user_id = ? OR id = ?)',
+            [id, uid, uid]
+        );
         if (!result.affectedRows) return errorResponse(res, 'Team member not found.', 404);
         return successResponse(res, {}, 'Team member removed.');
     } catch (err) {

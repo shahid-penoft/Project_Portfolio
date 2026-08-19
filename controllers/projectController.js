@@ -94,42 +94,239 @@ export const uploadProjectInlineImage = async (req, res) => {
     }
 };
 
+// ── Helper: Build dynamic filters & sorting for projects ──────────
+function buildProjectFiltersAndSort(query, defaultConditions = []) {
+    const conditions = [...defaultConditions];
+    const vals = [];
+
+    const {
+        search, q,
+        type, project_type,
+        project_sub_type, sub_type,
+        category,
+        department_id, department,
+        sector_id, sector,
+        local_body_id, local_body,
+        ward_id, ward,
+        status,
+        year,
+        is_active, visibility,
+        sortBy, sort_by,
+        sortOrder, sort_order, order
+    } = query;
+
+    // Helper for multi-value / array / comma-separated parameters
+    const parseValues = (val) => {
+        if (!val) return [];
+        if (Array.isArray(val)) return val.map(v => String(v).trim()).filter(Boolean);
+        if (typeof val === 'string') return val.split(',').map(v => v.trim()).filter(Boolean);
+        return [String(val).trim()];
+    };
+
+    // Project Type (MLA vs Portfolio vs specific)
+    const effectiveType = type || project_type;
+    if (effectiveType === 'MLA') {
+        conditions.push("p.project_type = 'MLA'");
+    } else if (effectiveType === 'PORTFOLIO' || effectiveType === 'other') {
+        conditions.push("p.project_type != 'MLA'");
+    } else if (effectiveType && effectiveType !== 'all') {
+        conditions.push('p.project_type = ?');
+        vals.push(effectiveType);
+    }
+
+    // Project Sub Type (e.g. MLA Projects, Ente Nadu Projects, etc.)
+    const subTypeVals = parseValues(project_sub_type || sub_type).filter(v => v !== 'all');
+    if (subTypeVals.length === 1) {
+        conditions.push('p.project_sub_type = ?');
+        vals.push(subTypeVals[0]);
+    } else if (subTypeVals.length > 1) {
+        conditions.push(`p.project_sub_type IN (${subTypeVals.map(() => '?').join(',')})`);
+        vals.push(...subTypeVals);
+    }
+
+    // System Category (p.category)
+    const catVals = parseValues(category).filter(v => v !== 'all');
+    if (catVals.length === 1) {
+        conditions.push('p.category = ?');
+        vals.push(catVals[0]);
+    } else if (catVals.length > 1) {
+        conditions.push(`p.category IN (${catVals.map(() => '?').join(',')})`);
+        vals.push(...catVals);
+    }
+
+    // Department (p.department_id or d.name or JSON departments)
+    const deptVals = parseValues(department_id || department).filter(v => v !== 'all');
+    if (deptVals.length === 1) {
+        if (!isNaN(deptVals[0])) {
+            conditions.push('(p.department_id = ? OR JSON_CONTAINS(p.departments, ?))');
+            vals.push(deptVals[0], JSON.stringify(Number(deptVals[0])));
+        } else {
+            conditions.push('(d.name = ? OR JSON_CONTAINS(p.departments, ?))');
+            vals.push(deptVals[0], JSON.stringify(deptVals[0]));
+        }
+    } else if (deptVals.length > 1) {
+        const numericIds = deptVals.filter(v => !isNaN(v)).map(Number);
+        const stringNames = deptVals.filter(v => isNaN(v));
+        const orClauses = [];
+        if (numericIds.length > 0) {
+            orClauses.push(`p.department_id IN (${numericIds.map(() => '?').join(',')})`);
+            vals.push(...numericIds);
+        }
+        if (stringNames.length > 0) {
+            orClauses.push(`d.name IN (${stringNames.map(() => '?').join(',')})`);
+            vals.push(...stringNames);
+        }
+        conditions.push(`(${orClauses.join(' OR ')})`);
+    }
+
+    // Sector (p.sector_id)
+    const sectorVals = parseValues(sector_id || sector).filter(v => v !== 'all');
+    if (sectorVals.length === 1) {
+        if (!isNaN(sectorVals[0])) {
+            conditions.push('p.sector_id = ?');
+            vals.push(Number(sectorVals[0]));
+        } else {
+            conditions.push('s.name = ?');
+            vals.push(sectorVals[0]);
+        }
+    } else if (sectorVals.length > 1) {
+        const numSectors = sectorVals.filter(v => !isNaN(v)).map(Number);
+        if (numSectors.length > 0) {
+            conditions.push(`p.sector_id IN (${numSectors.map(() => '?').join(',')})`);
+            vals.push(...numSectors);
+        } else {
+            conditions.push(`s.name IN (${sectorVals.map(() => '?').join(',')})`);
+            vals.push(...sectorVals);
+        }
+    }
+
+    // Local Body (p.local_body_id)
+    const lbVals = parseValues(local_body_id || local_body).filter(v => v !== 'all');
+    if (lbVals.length === 1) {
+        if (!isNaN(lbVals[0])) {
+            conditions.push('p.local_body_id = ?');
+            vals.push(Number(lbVals[0]));
+        } else {
+            conditions.push('lb.name = ?');
+            vals.push(lbVals[0]);
+        }
+    } else if (lbVals.length > 1) {
+        const numLb = lbVals.filter(v => !isNaN(v)).map(Number);
+        if (numLb.length > 0) {
+            conditions.push(`p.local_body_id IN (${numLb.map(() => '?').join(',')})`);
+            vals.push(...numLb);
+        } else {
+            conditions.push(`lb.name IN (${lbVals.map(() => '?').join(',')})`);
+            vals.push(...lbVals);
+        }
+    }
+
+    // Ward (p.ward_id)
+    const wardVals = parseValues(ward_id || ward).filter(v => v !== 'all');
+    if (wardVals.length === 1) {
+        conditions.push('p.ward_id = ?');
+        vals.push(wardVals[0]);
+    } else if (wardVals.length > 1) {
+        conditions.push(`p.ward_id IN (${wardVals.map(() => '?').join(',')})`);
+        vals.push(...wardVals);
+    }
+
+    // Status (p.status)
+    const statusVals = parseValues(status).filter(v => v !== 'all');
+    if (statusVals.length === 1) {
+        conditions.push('p.status = ?');
+        vals.push(statusVals[0]);
+    } else if (statusVals.length > 1) {
+        conditions.push(`p.status IN (${statusVals.map(() => '?').join(',')})`);
+        vals.push(...statusVals);
+    }
+
+    // Visibility / is_active
+    const effectiveActive = is_active !== undefined && is_active !== '' ? is_active : (
+        visibility === 'active' ? 1 : (visibility === 'hidden' ? 0 : undefined)
+    );
+    if (effectiveActive !== undefined) {
+        conditions.push('p.is_active = ?');
+        vals.push(effectiveActive == 1 || effectiveActive === '1' || effectiveActive === 'true' ? 1 : 0);
+    }
+
+    // Year
+    const yearVals = parseValues(year).filter(v => v !== 'all');
+    if (yearVals.length === 1) {
+        conditions.push('(p.year = ? OR YEAR(p.created_at) = ?)');
+        vals.push(yearVals[0], yearVals[0]);
+    } else if (yearVals.length > 1) {
+        conditions.push(`(p.year IN (${yearVals.map(() => '?').join(',')}) OR YEAR(p.created_at) IN (${yearVals.map(() => '?').join(',')}))`);
+        vals.push(...yearVals, ...yearVals);
+    }
+
+    // Search query (title, tags, description)
+    const searchTerm = search || q;
+    if (searchTerm) {
+        conditions.push('(p.title LIKE ? OR p.tags LIKE ? OR p.description LIKE ?)');
+        vals.push(`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Sorting
+    const activeSortBy = (sortBy || sort_by || '').toLowerCase();
+    const activeSortOrder = (sortOrder || sort_order || order || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    let orderBy = 'ORDER BY p.display_order ASC, p.created_at DESC';
+    switch (activeSortBy) {
+        case 'created_at':
+            orderBy = `ORDER BY p.created_at ${activeSortOrder}`;
+            break;
+        case 'title':
+            orderBy = `ORDER BY p.title ${activeSortOrder}`;
+            break;
+        case 'budget':
+            orderBy = `ORDER BY p.budget ${activeSortOrder}`;
+            break;
+        case 'year':
+            orderBy = `ORDER BY p.year ${activeSortOrder}, p.created_at DESC`;
+            break;
+        case 'start_date':
+            orderBy = `ORDER BY p.start_date ${activeSortOrder}`;
+            break;
+        case 'end_date':
+            orderBy = `ORDER BY p.end_date ${activeSortOrder}`;
+            break;
+        case 'display_order':
+            orderBy = `ORDER BY p.display_order ${activeSortOrder}`;
+            break;
+        case 'progress':
+            orderBy = `ORDER BY progress ${activeSortOrder}`;
+            break;
+        case 'status':
+            orderBy = `ORDER BY p.status ${activeSortOrder}`;
+            break;
+        default:
+            orderBy = 'ORDER BY p.display_order ASC, p.created_at DESC';
+            break;
+    }
+
+    return { where, vals, orderBy };
+}
+
 // ── GET /api/projects/all  (admin, paginated) ──────────────────
 export const getAllProjects = async (req, res) => {
     try {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(50, parseInt(req.query.limit) || 12);
         const offset = (page - 1) * limit;
-        const { search, sector_id, local_body_id, year, is_active, type, category, project_sub_type, sub_type } = req.query;
 
-        const conditions = [];
-        const vals = [];
-
-        if (type === 'MLA') {
-            conditions.push("p.project_type = 'MLA'");
-        } else if (type === 'PORTFOLIO' || type === 'other') {
-            conditions.push("p.project_type != 'MLA'");
-        } else if (type && type !== 'all') {
-            conditions.push('p.project_type = ?'); 
-            vals.push(type);
-        }
-
-        const effectiveSubType = project_sub_type || sub_type || (category && category !== 'all' ? category : null);
-        if (effectiveSubType) {
-            conditions.push('p.project_sub_type = ?');
-            vals.push(effectiveSubType);
-        }
-
-        if (search) { conditions.push('(p.title LIKE ? OR p.tags LIKE ?)'); vals.push(`%${search}%`, `%${search}%`); }
-        if (sector_id) { conditions.push('p.sector_id = ?'); vals.push(sector_id); }
-        if (local_body_id) { conditions.push('p.local_body_id = ?'); vals.push(local_body_id); }
-        if (year) { conditions.push('p.year = ?'); vals.push(year); }
-        if (is_active !== undefined && is_active !== '') { conditions.push('p.is_active = ?'); vals.push(is_active); }
-
-        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+        const { where, vals, orderBy } = buildProjectFiltersAndSort(req.query);
 
         const [[{ total }]] = await db.query(
-            `SELECT COUNT(*) AS total FROM projects p ${where}`, vals
+            `SELECT COUNT(*) AS total 
+             FROM projects p 
+             LEFT JOIN sectors s ON s.id = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN departments d ON d.id = p.department_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
+             ${where}`, vals
         );
         const [rows] = await db.query(
             `SELECT p.id, p.title, p.slug, p.description, p.project_content,
@@ -138,14 +335,22 @@ export const getAllProjects = async (req, res) => {
                     p.created_at, p.updated_at, p.project_type, p.project_sub_type,
                     s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
                     w.ward_no, w.place_name AS ward_name,
-                    (IFNULL(JSON_LENGTH(p.images), 0) + IFNULL(JSON_LENGTH(p.videos), 0)) AS media_count
+                    (IFNULL(JSON_LENGTH(p.images), 0) + IFNULL(JSON_LENGTH(p.videos), 0)) AS media_count,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
+                    (CASE 
+                        WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
+                        THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
+                        WHEN p.status = 'Completed' THEN 100
+                        ELSE 0
+                    END) AS progress
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              LEFT JOIN departments d ON d.id = p.department_id
              LEFT JOIN local_body_wards w ON w.id = p.ward_id
              ${where}
-             ORDER BY p.display_order ASC, p.created_at DESC
+             ${orderBy}
              LIMIT ? OFFSET ?`,
             [...vals, limit, offset]
         );
@@ -179,7 +384,15 @@ export const getProjectsByYear = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.year = ?`, [year]
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
+                    (CASE 
+                        WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
+                        THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
+                        WHEN p.status = 'Completed' THEN 100
+                        ELSE 0
+                    END) AS progress
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
@@ -212,7 +425,15 @@ export const getProjectsByLocalBody = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.local_body_id = ?`, [id]
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
+                    (CASE 
+                        WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
+                        THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
+                        WHEN p.status = 'Completed' THEN 100
+                        ELSE 0
+                    END) AS progress
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
@@ -245,7 +466,15 @@ export const getProjectsBySector = async (req, res) => {
             `SELECT COUNT(*) AS total FROM projects p WHERE p.is_active = 1 AND p.sector_id = ?`, [id]
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
+                    (CASE 
+                        WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
+                        THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
+                        WHEN p.status = 'Completed' THEN 100
+                        ELSE 0
+                    END) AS progress
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
@@ -308,48 +537,35 @@ export const searchPublicProjects = async (req, res) => {
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(50, parseInt(req.query.limit) || 12);
         const offset = (page - 1) * limit;
-        const search = req.query.q || req.query.search || '';
-        const { sector_id, local_body_id, year, type, category, project_sub_type, sub_type } = req.query;
 
-        const conditions = ['p.is_active = 1'];
-        const vals = [];
-
-        if (type === 'MLA') {
-            conditions.push("p.project_type = 'MLA'");
-        } else if (type === 'PORTFOLIO' || type === 'other') {
-            conditions.push("p.project_type != 'MLA'");
-        } else if (type && type !== 'all') {
-            conditions.push('p.project_type = ?'); 
-            vals.push(type);
-        }
-
-        const effectiveSubType = project_sub_type || sub_type || (category && category !== 'all' ? category : null);
-        if (effectiveSubType) {
-            conditions.push('p.project_sub_type = ?');
-            vals.push(effectiveSubType);
-        }
-
-        if (search) {
-            conditions.push('(p.title LIKE ? OR p.tags LIKE ?)');
-            vals.push(`%${search}%`, `%${search}%`);
-        }
-        if (sector_id) { conditions.push('p.sector_id = ?'); vals.push(sector_id); }
-        if (local_body_id) { conditions.push('p.local_body_id = ?'); vals.push(local_body_id); }
-        if (year) { conditions.push('(p.year = ? OR YEAR(p.created_at) = ?)'); vals.push(year, year); }
-
-        const where = `WHERE ${conditions.join(' AND ')}`;
+        const { where, vals, orderBy } = buildProjectFiltersAndSort(req.query, ['p.is_active = 1']);
 
         const [[{ total }]] = await db.query(
-            `SELECT COUNT(*) AS total FROM projects p ${where}`, vals
+            `SELECT COUNT(*) AS total 
+             FROM projects p 
+             LEFT JOIN sectors s ON s.id = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN departments d ON d.id = p.department_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
+             ${where}`, vals
         );
         const [rows] = await db.query(
-            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name
+            `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name, w.ward_no, w.place_name AS ward_name,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
+                    (CASE 
+                        WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
+                        THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
+                        WHEN p.status = 'Completed' THEN 100
+                        ELSE 0
+                    END) AS progress
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN departments d ON d.id = p.department_id
              LEFT JOIN local_body_wards w ON w.id = p.ward_id
              ${where}
-             ORDER BY p.display_order ASC, p.created_at DESC
+             ${orderBy}
              LIMIT ? OFFSET ?`,
             [...vals, limit, offset]
         );
@@ -371,7 +587,15 @@ export const getProjectBySlug = async (req, res) => {
         const [rows] = await db.query(
             `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
                     w.ward_no, w.place_name AS ward_name,
-                    au1.full_name AS created_by_name, au2.full_name AS updated_by_name
+                    au1.full_name AS created_by_name, au2.full_name AS updated_by_name,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
+                    (CASE 
+                        WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
+                        THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
+                        WHEN p.status = 'Completed' THEN 100
+                        ELSE 0
+                    END) AS progress
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
@@ -446,7 +670,15 @@ export const getProjectById = async (req, res) => {
         const [rows] = await db.query(
             `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name, p.images, p.videos,
                     w.ward_no, w.place_name AS ward_name,
-                    au1.full_name AS created_by_name, au2.full_name AS updated_by_name
+                    au1.full_name AS created_by_name, au2.full_name AS updated_by_name,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
+                    (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
+                    (CASE 
+                        WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
+                        THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
+                        WHEN p.status = 'Completed' THEN 100
+                        ELSE 0
+                    END) AS progress
              FROM projects p
              LEFT JOIN sectors s     ON s.id  = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
@@ -522,7 +754,7 @@ export const createProject = async (req, res) => {
             display_order = 0, is_active = 1,
             status = 'In Progress', ward_id, start_date, end_date,
             actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00,
-            project_type = 'MLA', project_sub_type
+            project_type = 'MLA', project_sub_type, milestones = [], team = [], contractors = []
         } = req.body;
 
         if (!title?.trim()) return errorResponse(res, 'Title is required.', 400);
@@ -552,13 +784,64 @@ export const createProject = async (req, res) => {
             status, ward_id || null, start_date || null, end_date || null, actual_start_date || null, actual_end_date || null, location || null, depsJson, department_id || null, budget, adminId, adminId, project_type, project_sub_type || null]
         );
 
+        const newProjectId = result.insertId;
+
+        // Batch insert milestones if provided
+        if (Array.isArray(milestones) && milestones.length > 0) {
+            for (let i = 0; i < milestones.length; i++) {
+                const m = milestones[i];
+                if (m && m.title && m.title.trim()) {
+                    await db.query(
+                        `INSERT INTO project_milestones (project_id, title, status, target_date, display_order)
+                         VALUES (?, ?, ?, ?, ?)`,
+                        [newProjectId, m.title.trim(), m.status || 'Pending', m.target_date || null, i]
+                    );
+                }
+            }
+        }
+
+        // Batch insert team members if provided
+        if (Array.isArray(team) && team.length > 0) {
+            for (const t of team) {
+                const adminUserId = t.admin_user_id || (typeof t.id === 'number' ? t.id : null);
+                if (adminUserId) {
+                    await db.query(
+                        `INSERT INTO project_team_members (project_id, admin_user_id, role_in_project)
+                         VALUES (?, ?, ?)`,
+                        [newProjectId, adminUserId, t.role_in_project || t.role_label || t.role || 'Member']
+                    );
+                }
+            }
+        }
+
+        // Batch insert contractors if provided
+        if (Array.isArray(contractors) && contractors.length > 0) {
+            for (const c of contractors) {
+                if (c && c.name && c.name.trim()) {
+                    await db.query(
+                        `INSERT INTO project_contractors (project_id, name, contact_person, role, phone, email, description)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                        [
+                            newProjectId,
+                            c.name.trim(),
+                            (c.contactPerson || c.contact_person || '').trim(),
+                            (c.role || '').trim(),
+                            (c.phone || '').trim(),
+                            (c.email || '').trim(),
+                            (c.description || '').trim()
+                        ]
+                    );
+                }
+            }
+        }
+
         const [rows] = await db.query(
             `SELECT p.*, s.name AS sector_name, lb.name AS local_body_name, w.ward_no, w.place_name AS ward_name, p.images, p.videos
              FROM projects p
              LEFT JOIN sectors s ON s.id = p.sector_id
              LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
              LEFT JOIN local_body_wards w ON w.id = p.ward_id
-             WHERE p.id = ?`, [result.insertId]
+             WHERE p.id = ?`, [newProjectId]
         );
         const p = rows[0];
         p.images = parseImages(p.images);
