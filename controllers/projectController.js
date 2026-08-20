@@ -9,17 +9,37 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(__dirname, '..', 'uploads');
 
+const filterValidMediaUrls = (items) => {
+    if (!Array.isArray(items)) return [];
+    return items.filter(item => {
+        if (!item) return false;
+        const url = typeof item === 'string' ? item : (item.url || item.file_url || '');
+        if (typeof url !== 'string') return false;
+        const trimmed = url.trim();
+        if (!trimmed || trimmed.startsWith('blob:') || trimmed.startsWith('data:')) return false;
+        return true;
+    });
+};
+
 // ── Helpers ────────────────────────────────────────────────────
 const parseImages = (raw) => {
     if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    try { return JSON.parse(raw); } catch { return []; }
+    let parsed = [];
+    if (Array.isArray(raw)) parsed = raw;
+    else {
+        try { parsed = JSON.parse(raw); } catch { parsed = []; }
+    }
+    return filterValidMediaUrls(parsed);
 };
 
 const parseVideos = (raw) => {
     if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    try { return JSON.parse(raw); } catch { return []; }
+    let parsed = [];
+    if (Array.isArray(raw)) parsed = raw;
+    else {
+        try { parsed = JSON.parse(raw); } catch { parsed = []; }
+    }
+    return filterValidMediaUrls(parsed);
 };
 
 const deleteFile = (url) => {
@@ -803,9 +823,11 @@ export const createProject = async (req, res) => {
             slug = `${baseSlug}-${counter++}`;
         }
 
-        const seoImages = renameMediaToSeoFriendly(images, title);
+        const validImages = filterValidMediaUrls(Array.isArray(images) ? images : []);
+        const validVideos = filterValidMediaUrls(Array.isArray(videos) ? videos : []);
+        const seoImages = renameMediaToSeoFriendly(validImages, title);
         const imagesJson = JSON.stringify(Array.isArray(seoImages) ? seoImages : []);
-        const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
+        const videosJson = JSON.stringify(validVideos);
         const depsJson = JSON.stringify(Array.isArray(departments) ? departments : []);
         
         const adminId = req.admin ? req.admin.id : null;
@@ -935,8 +957,11 @@ export const updateProject = async (req, res) => {
             }
         }
 
-        const imagesJson = JSON.stringify(Array.isArray(images) ? images : []);
-        const videosJson = JSON.stringify(Array.isArray(videos) ? videos : []);
+        const validImages = filterValidMediaUrls(Array.isArray(images) ? images : []);
+        const validVideos = filterValidMediaUrls(Array.isArray(videos) ? videos : []);
+        const seoImages = renameMediaToSeoFriendly(validImages, title);
+        const imagesJson = JSON.stringify(Array.isArray(seoImages) ? seoImages : []);
+        const videosJson = JSON.stringify(validVideos);
         const depsJson = JSON.stringify(Array.isArray(departments) ? departments : []);
         
         const adminId = req.admin ? req.admin.id : null;
