@@ -9,9 +9,10 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(__dirname, '..', 'uploads');
 
-const filterValidMediaUrls = (items) => {
+const filterValidMediaUrls = (items, preserveCoverSlot = false) => {
     if (!Array.isArray(items)) return [];
-    return items.filter(item => {
+    return items.filter((item, idx) => {
+        if (preserveCoverSlot && idx === 0 && (item === null || item === '')) return true;
         if (!item) return false;
         const url = typeof item === 'string' ? item : (item.url || item.file_url || '');
         if (typeof url !== 'string') return false;
@@ -29,7 +30,7 @@ const parseImages = (raw) => {
     else {
         try { parsed = JSON.parse(raw); } catch { parsed = []; }
     }
-    return filterValidMediaUrls(parsed);
+    return filterValidMediaUrls(parsed, true);
 };
 
 const parseVideos = (raw) => {
@@ -42,8 +43,10 @@ const parseVideos = (raw) => {
     return filterValidMediaUrls(parsed);
 };
 
-const deleteFile = (url) => {
-    if (!url || !url.startsWith('/uploads/')) return;
+const deleteFile = (item) => {
+    if (!item) return;
+    const url = typeof item === 'string' ? item : (item?.url || item?.path || '');
+    if (!url || typeof url !== 'string' || !url.startsWith('/uploads/')) return;
     const filePath = path.join(uploadDir, path.basename(url));
     fs.unlink(filePath, () => { }); // best-effort
 };
@@ -115,7 +118,7 @@ export const uploadProjectInlineImage = async (req, res) => {
 };
 
 // ── Helper: Build dynamic filters & sorting for projects ──────────
-function buildProjectFiltersAndSort(query, defaultConditions = []) {
+function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_deleted, 0) = 0']) {
     const conditions = [...defaultConditions];
     const vals = [];
 
@@ -823,8 +826,8 @@ export const createProject = async (req, res) => {
             slug = `${baseSlug}-${counter++}`;
         }
 
-        const validImages = filterValidMediaUrls(Array.isArray(images) ? images : []);
-        const validVideos = filterValidMediaUrls(Array.isArray(videos) ? videos : []);
+        const validImages = filterValidMediaUrls(Array.isArray(images) ? images : [], true);
+        const validVideos = filterValidMediaUrls(Array.isArray(videos) ? videos : [], false);
         const seoImages = renameMediaToSeoFriendly(validImages, title);
         const imagesJson = JSON.stringify(Array.isArray(seoImages) ? seoImages : []);
         const videosJson = JSON.stringify(validVideos);
@@ -957,8 +960,8 @@ export const updateProject = async (req, res) => {
             }
         }
 
-        const validImages = filterValidMediaUrls(Array.isArray(images) ? images : []);
-        const validVideos = filterValidMediaUrls(Array.isArray(videos) ? videos : []);
+        const validImages = filterValidMediaUrls(Array.isArray(images) ? images : [], true);
+        const validVideos = filterValidMediaUrls(Array.isArray(videos) ? videos : [], false);
         const seoImages = renameMediaToSeoFriendly(validImages, title);
         const imagesJson = JSON.stringify(Array.isArray(seoImages) ? seoImages : []);
         const videosJson = JSON.stringify(validVideos);
@@ -1012,19 +1015,335 @@ export const updateProject = async (req, res) => {
     }
 };
 
-// ── DELETE /api/projects/:id  ──────────────────────────────────
-export const deleteProject = async (req, res) => {
+// ── GET /api/projects/trash  (admin, paginated & filtered) ────
+export const getTrashProjects = async (req, res) => {
     try {
-        const [rows] = await db.query('SELECT images FROM projects WHERE id = ?', [req.params.id]);
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(50, parseInt(req.query.limit) || 15);
+        const offset = (page - 1) * limit;
+
+        const {
+            search = '',
+            module = 'all',
+            type = '',
+            daysLeft = '',
+            datePreset = '',
+            startDate = '',
+            endDate = '',
+            localBody = '',
+            ward = '',
+            createdBy = '',
+            deletedBy = '',
+            sortBy = 'Expiring Soon'
+        } = req.query;
+
+        const conditions = ['p.is_deleted = 1'];
+        const vals = [];
+
+        // Search (by title, slug, PRJ-id, or user name)
+        if (search && search.trim()) {
+            const s = `%${search.trim()}%`;
+            conditions.push('(p.title LIKE ? OR p.slug LIKE ? OR CONCAT("PRJ-", LPAD(p.id, 4, "0")) LIKE ? OR del_u.full_name LIKE ? OR cr_u.full_name LIKE ?)');
+            vals.push(s, s, s, s, s);
+        }
+
+        // Module / Project Type Filter (All, MLA Projects, Other Projects)
+        const effectiveMod = module !== 'all' ? module : (type && type !== 'all' ? type : '');
+        if (effectiveMod === 'MLA Projects' || effectiveMod === 'MLA') {
+            conditions.push("p.project_type = 'MLA'");
+        } else if (effectiveMod === 'Other Projects' || effectiveMod === 'PORTFOLIO' || effectiveMod === 'other') {
+            conditions.push("p.project_type != 'MLA'");
+        }
+
+        // Days Left Filter
+        if (daysLeft) {
+            const dList = daysLeft.split(',').map(d => d.trim().toLowerCase()).filter(Boolean);
+            const orDays = [];
+            dList.forEach(d => {
+                if (d === 'critical') orDays.push('DATEDIFF(NOW(), p.deleted_at) >= 27'); // <= 3 days left out of 30
+                else if (d === 'warning') orDays.push('(DATEDIFF(NOW(), p.deleted_at) >= 15 AND DATEDIFF(NOW(), p.deleted_at) < 27)'); // 4-15 days left
+                else if (d === 'safe') orDays.push('DATEDIFF(NOW(), p.deleted_at) < 15'); // > 15 days left
+            });
+            if (orDays.length > 0) conditions.push(`(${orDays.join(' OR ')})`);
+        }
+
+        // Date Preset / Custom Range for deleted_at
+        if (datePreset) {
+            const preset = datePreset.trim();
+            if (preset === 'Today') {
+                conditions.push('DATE(p.deleted_at) = CURDATE()');
+            } else if (preset === 'Yesterday') {
+                conditions.push('DATE(p.deleted_at) = SUBDATE(CURDATE(), 1)');
+            } else if (preset === 'Last 7 Days') {
+                conditions.push('p.deleted_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)');
+            } else if (preset === 'Last 30 Days') {
+                conditions.push('p.deleted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
+            } else if (preset === 'This Month') {
+                conditions.push('YEAR(p.deleted_at) = YEAR(CURDATE()) AND MONTH(p.deleted_at) = MONTH(CURDATE())');
+            } else if (preset === 'This Year') {
+                conditions.push('YEAR(p.deleted_at) = YEAR(CURDATE())');
+            }
+        } else {
+            if (startDate) {
+                conditions.push('DATE(p.deleted_at) >= ?');
+                vals.push(startDate);
+            }
+            if (endDate) {
+                conditions.push('DATE(p.deleted_at) <= ?');
+                vals.push(endDate);
+            }
+        }
+
+        // Local Body
+        if (localBody) {
+            const lbs = localBody.split(',').map(l => l.trim()).filter(Boolean);
+            if (lbs.length > 0) {
+                conditions.push(`(lb.name IN (${lbs.map(() => '?').join(',')}) OR p.local_body_id IN (${lbs.filter(v => !isNaN(v)).map(() => '?').join(',') || 'NULL'}))`);
+                vals.push(...lbs, ...lbs.filter(v => !isNaN(v)));
+            }
+        }
+
+        // Ward
+        if (ward) {
+            const wards = ward.split(',').map(w => w.trim()).filter(Boolean);
+            if (wards.length > 0) {
+                conditions.push(`(w.place_name IN (${wards.map(() => '?').join(',')}) OR CONCAT("Ward ", w.ward_no) IN (${wards.map(() => '?').join(',')}))`);
+                vals.push(...wards, ...wards);
+            }
+        }
+
+        // Created By
+        if (createdBy) {
+            const users = createdBy.split(',').map(u => u.trim()).filter(Boolean);
+            if (users.length > 0) {
+                conditions.push(`(cr_u.full_name IN (${users.map(() => '?').join(',')}) OR cr_u.email IN (${users.map(() => '?').join(',')}))`);
+                vals.push(...users, ...users);
+            }
+        }
+
+        // Deleted By
+        if (deletedBy) {
+            const users = deletedBy.split(',').map(u => u.trim()).filter(Boolean);
+            if (users.length > 0) {
+                conditions.push(`(del_u.full_name IN (${users.map(() => '?').join(',')}) OR del_u.email IN (${users.map(() => '?').join(',')}))`);
+                vals.push(...users, ...users);
+            }
+        }
+
+        // Sorting
+        let orderClause = 'ORDER BY p.deleted_at ASC'; // default Expiring Soon
+        switch (sortBy) {
+            case 'Expiring Soon':
+                orderClause = 'ORDER BY p.deleted_at ASC';
+                break;
+            case 'Expiring Last':
+                orderClause = 'ORDER BY p.deleted_at DESC';
+                break;
+            case 'Title A–Z':
+            case 'Title A-Z':
+                orderClause = 'ORDER BY p.title ASC';
+                break;
+            case 'Title Z–A':
+            case 'Title Z-A':
+                orderClause = 'ORDER BY p.title DESC';
+                break;
+            case 'Recently Deleted':
+                orderClause = 'ORDER BY p.deleted_at DESC';
+                break;
+            default:
+                orderClause = 'ORDER BY p.deleted_at ASC';
+        }
+
+        const whereSql = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        const [[{ total }]] = await db.query(
+            `SELECT COUNT(*) AS total 
+             FROM projects p 
+             LEFT JOIN sectors s ON s.id = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
+             LEFT JOIN admin_users cr_u ON cr_u.id = p.created_by
+             LEFT JOIN admin_users del_u ON del_u.id = p.deleted_by
+             ${whereSql}`, vals
+        );
+
+        const [rows] = await db.query(
+            `SELECT p.id, p.title, p.slug, p.description, p.images, p.videos,
+                    p.year, p.sector_id, p.category, p.local_body_id, p.ward_id,
+                    p.status, p.project_type, p.project_sub_type,
+                    p.created_at, p.updated_at, p.deleted_at,
+                    s.name AS sector_name, lb.name AS local_body_name,
+                    w.ward_no, w.place_name AS ward_name,
+                    cr_u.full_name AS created_by_name,
+                    del_u.full_name AS deleted_by_name
+             FROM projects p
+             LEFT JOIN sectors s ON s.id = p.sector_id
+             LEFT JOIN local_bodies lb ON lb.id = p.local_body_id
+             LEFT JOIN local_body_wards w ON w.id = p.ward_id
+             LEFT JOIN admin_users cr_u ON cr_u.id = p.created_by
+             LEFT JOIN admin_users del_u ON del_u.id = p.deleted_by
+             ${whereSql}
+             ${orderClause}
+             LIMIT ? OFFSET ?`,
+            [...vals, limit, offset]
+        );
+
+        const items = rows.map(r => {
+            const deletedAtTime = r.deleted_at ? new Date(r.deleted_at).getTime() : Date.now();
+            const daysSinceDeleted = Math.floor((Date.now() - deletedAtTime) / (1000 * 60 * 60 * 24));
+            const daysLeft = Math.max(0, 30 - daysSinceDeleted);
+            const expiresOnTime = new Date(deletedAtTime + 30 * 24 * 60 * 60 * 1000);
+
+            return {
+                id: `projects-${r.id}`,
+                rawId: r.id,
+                module: r.project_type === 'MLA' ? 'MLA Projects' : 'Other Projects',
+                projectType: r.project_type,
+                projectSubType: r.project_sub_type,
+                displayId: `PRJ-${String(r.id).padStart(4, '0')}`,
+                title: r.title || 'Untitled Project',
+                daysLeft,
+                expiresOn: expiresOnTime.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+                deletedBy: r.deleted_by_name || 'Admin User',
+                deletedOn: r.deleted_at ? `${new Date(r.deleted_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} · ${new Date(r.deleted_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}` : '—',
+                deletedAt: r.deleted_at,
+                sectorName: r.sector_name,
+                localBodyName: r.local_body_name,
+                wardName: r.ward_name,
+                status: r.status,
+            };
+        });
+
+        return successResponse(res, {
+            data: items,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit) || 1
+            }
+        }, 'Trash projects fetched.');
+    } catch (err) {
+        console.error('[getTrashProjects]', err);
+        return errorResponse(res, 'Server error fetching trash projects.');
+    }
+};
+
+// ── PATCH /api/projects/:id/trash  (soft-delete → trash) ───────
+export const trashProject = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const adminId = req.admin ? req.admin.id : null;
+
+        const [[proj]] = await db.query('SELECT id, title FROM projects WHERE id = ?', [id]);
+        if (!proj) return errorResponse(res, 'Project not found.', 404);
+
+        await db.query(
+            'UPDATE projects SET is_deleted = 1, deleted_at = NOW(), deleted_by = ? WHERE id = ?',
+            [adminId, id]
+        );
+
+        return successResponse(res, { id }, `Project "${proj.title}" moved to trash.`);
+    } catch (err) {
+        console.error('[trashProject]', err);
+        return errorResponse(res, 'Server error moving project to trash.');
+    }
+};
+
+// ── PATCH /api/projects/:id/restore  (restore from trash) ──────
+export const restoreProject = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [result] = await db.query(
+            'UPDATE projects SET is_deleted = 0, deleted_at = NULL, deleted_by = NULL WHERE id = ? AND is_deleted = 1',
+            [id]
+        );
+
+        if (result.affectedRows === 0) return errorResponse(res, 'Trashed project not found.', 404);
+
+        return successResponse(res, { id }, 'Project restored successfully.');
+    } catch (err) {
+        console.error('[restoreProject]', err);
+        return errorResponse(res, 'Server error restoring project.');
+    }
+};
+
+// ── DELETE /api/projects/:id/permanent  (force hard-delete) ─────
+export const permanentDeleteProject = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [rows] = await db.query('SELECT images, videos FROM projects WHERE id = ?', [id]);
         if (!rows.length) return errorResponse(res, 'Project not found.', 404);
 
-        // Delete image files from disk
+        // Delete image & video files from disk
         parseImages(rows[0].images).forEach(deleteFile);
+        parseVideos(rows[0].videos).forEach(deleteFile);
 
-        await db.query('DELETE FROM projects WHERE id = ?', [req.params.id]);
-        return successResponse(res, {}, 'Project deleted.');
+        await db.query('DELETE FROM projects WHERE id = ?', [id]);
+        return successResponse(res, { id }, 'Project permanently deleted.');
     } catch (err) {
-        console.error('[deleteProject]', err);
-        return errorResponse(res, 'Server error deleting project.');
+        console.error('[permanentDeleteProject]', err);
+        return errorResponse(res, 'Server error permanently deleting project.');
     }
+};
+
+// ── POST /api/projects/trash/bulk-restore ──────────────────────
+export const bulkRestoreProjects = async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return errorResponse(res, 'ids array is required.', 400);
+        }
+
+        const numericIds = ids.map(id => typeof id === 'string' ? parseInt(id.replace(/[^0-9]/g, '')) : id).filter(Boolean);
+        if (numericIds.length === 0) return errorResponse(res, 'No valid project IDs provided.', 400);
+
+        const [result] = await db.query(
+            `UPDATE projects SET is_deleted = 0, deleted_at = NULL, deleted_by = NULL WHERE id IN (${numericIds.map(() => '?').join(',')}) AND is_deleted = 1`,
+            numericIds
+        );
+
+        return successResponse(res, { restoredCount: result.affectedRows }, `Restored ${result.affectedRows} project(s).`);
+    } catch (err) {
+        console.error('[bulkRestoreProjects]', err);
+        return errorResponse(res, 'Server error bulk restoring projects.');
+    }
+};
+
+// ── POST /api/projects/trash/bulk-delete ───────────────────────
+export const bulkPermanentDeleteProjects = async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return errorResponse(res, 'ids array is required.', 400);
+        }
+
+        const numericIds = ids.map(id => typeof id === 'string' ? parseInt(id.replace(/[^0-9]/g, '')) : id).filter(Boolean);
+        if (numericIds.length === 0) return errorResponse(res, 'No valid project IDs provided.', 400);
+
+        const [rows] = await db.query(
+            `SELECT images, videos FROM projects WHERE id IN (${numericIds.map(() => '?').join(',')})`,
+            numericIds
+        );
+
+        rows.forEach(r => {
+            parseImages(r.images).forEach(deleteFile);
+            parseVideos(r.videos).forEach(deleteFile);
+        });
+
+        const [result] = await db.query(
+            `DELETE FROM projects WHERE id IN (${numericIds.map(() => '?').join(',')})`,
+            numericIds
+        );
+
+        return successResponse(res, { deletedCount: result.affectedRows }, `Permanently deleted ${result.affectedRows} project(s).`);
+    } catch (err) {
+        console.error('[bulkPermanentDeleteProjects]', err);
+        return errorResponse(res, 'Server error bulk permanently deleting projects.');
+    }
+};
+
+// ── DELETE /api/projects/:id  (default to soft-delete) ─────────
+export const deleteProject = async (req, res) => {
+    return trashProject(req, res);
 };

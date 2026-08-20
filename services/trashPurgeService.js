@@ -33,6 +33,9 @@ const runPurge = async () => {
     await purgeTable(connection, 'cm_fund_requests',
       `DELETE FROM cm_fund_requests WHERE is_deleted = 1 AND deleted_at < ${THIRTY_DAYS_AGO}`);
 
+    await purgeTable(connection, 'projects',
+      `DELETE FROM projects WHERE is_deleted = 1 AND deleted_at < ${THIRTY_DAYS_AGO}`);
+
     console.log('[TrashPurge] Purge cycle complete.');
   } finally {
     connection.release();

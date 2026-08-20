@@ -6,6 +6,12 @@ import {
     createProject,
     updateProject,
     deleteProject,
+    getTrashProjects,
+    trashProject,
+    restoreProject,
+    permanentDeleteProject,
+    bulkRestoreProjects,
+    bulkPermanentDeleteProjects,
     uploadProjectImage,
     uploadProjectVideo,
     uploadProjectInlineImage,
@@ -39,19 +45,26 @@ router.get('/public/local-body/:id', getProjectsByLocalBody);
 router.get('/public/sector/:id', getProjectsBySector);
 router.get('/public/sector-name/:sectorName', getProjectsBySectorName);
 
-
-
 // All project routes are protected (admin only)
 router.use(verifyToken, requirePermission('projects'));
 
 router.post('/upload', uploadProjectImage);
 router.post('/upload-video', uploadProjectVideo);
 router.post('/:id/upload-inline-image', uploadProjectInlineImage);
+
+// ── Trash Routes (must be before /:id) ──
+router.get('/trash', getTrashProjects);
+router.post('/trash/bulk-restore', bulkRestoreProjects);
+router.post('/trash/bulk-delete', bulkPermanentDeleteProjects);
+
 router.get('/all', getAllProjects);
 router.get('/:id', getProjectById);
 router.post('/', createProject);
 router.put('/:id', updateProject);
 router.delete('/:id', deleteProject);
+router.patch('/:id/trash', trashProject);
+router.patch('/:id/restore', restoreProject);
+router.delete('/:id/permanent', permanentDeleteProject);
 
 // ── Sub-entities ───────────────────────────────────────────────
 // Milestones
