@@ -65,7 +65,7 @@ const validateBody = (body) => {
 export const getGoverningBodies = async (req, res) => {
     try {
         console.log('[getGoverningBodies] query:', req.query);
-        const { type, localBodyId, wardId, roleId, search, bookmarked, sortBy, page, limit, trash } = req.query;
+        const { type, localBodyId, wardId, roleId, party, search, bookmarked, sortBy, page, limit, trash } = req.query;
 
         let query = `
             SELECT 
@@ -82,6 +82,7 @@ export const getGoverningBodies = async (req, res) => {
                 gr.office_address  AS officeAddress,
                 gr.office_phone    AS officePhone,
                 gr.notes           AS otherDetails,
+                gr.party           AS party,
                 gr.role_id         AS roleId,
                 gr.local_body_id   AS localBodyId,
                 gr.ward_id         AS wardId,
@@ -148,6 +149,11 @@ export const getGoverningBodies = async (req, res) => {
             query += ' AND gr.role_id = ?';
             countQuery += ' AND gr.role_id = ?';
             params.push(roleId);
+        }
+        if (party) {
+            query += ' AND gr.party = ?';
+            countQuery += ' AND gr.party = ?';
+            params.push(party);
         }
         if (bookmarked !== undefined) {
             const isBookmarked = bookmarked === 'true' || bookmarked === '1';
@@ -289,7 +295,7 @@ export const createGoverningBody = async (req, res) => {
         if (errorMsg) return errorResponse(res, errorMsg, 400);
 
         const {
-            governing_body_type, local_body_id, ward_id, name, role_id, gender, age, 
+            governing_body_type, local_body_id, ward_id, name, role_id, party, gender, age, 
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
@@ -300,18 +306,19 @@ export const createGoverningBody = async (req, res) => {
 
         const [result] = await db.query(`
             INSERT INTO governing_representatives (
-                governing_body_type, local_body_id, ward_id, name, role_id, gender, age,
+                governing_body_type, local_body_id, ward_id, name, role_id, party, gender, age,
                 phone, alternative_phone, email, whatsapp_number, house_name, home_address, location,
                 bio, office_name, office_phone, office_email, office_address, office_location,
                 additional_roles, achievements, notes, bookmarked, photo_url,
                 department, category, head_name, hours, avatar_color, officer_phone, officer_email, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             governing_body_type, 
             local_body_id, 
             ward_id || null, 
             name, 
             role_id || null, 
+            party || null,
             gender || null, 
             age ? parseInt(age) : null,
             phone, 
@@ -392,7 +399,7 @@ export const updateGoverningBody = async (req, res) => {
         if (errorMsg) return errorResponse(res, errorMsg, 400);
 
         const {
-            governing_body_type, local_body_id, ward_id, name, role_id, gender, age, 
+            governing_body_type, local_body_id, ward_id, name, role_id, party, gender, age, 
             phone, alternative_phone, email, house_name, home_address, location, 
             bio, office_name, office_phone, office_email, office_address, office_location, 
             additional_roles, achievements, notes, bookmarked,
@@ -408,7 +415,7 @@ export const updateGoverningBody = async (req, res) => {
 
         await db.query(`
             UPDATE governing_representatives SET
-                governing_body_type = ?, local_body_id = ?, ward_id = ?, name = ?, role_id = ?, gender = ?, age = ?,
+                governing_body_type = ?, local_body_id = ?, ward_id = ?, name = ?, role_id = ?, party = ?, gender = ?, age = ?,
                 phone = ?, alternative_phone = ?, email = ?, whatsapp_number = ?, house_name = ?, home_address = ?, location = ?,
                 bio = ?, office_name = ?, office_phone = ?, office_email = ?, office_address = ?, office_location = ?,
                 additional_roles = ?, achievements = ?, notes = ?, bookmarked = ?, photo_url = ?,
@@ -420,6 +427,7 @@ export const updateGoverningBody = async (req, res) => {
             ward_id || null, 
             name, 
             role_id || null, 
+            party !== undefined ? (party || null) : existing.party,
             gender || null, 
             age ? parseInt(age) : null,
             phone, 

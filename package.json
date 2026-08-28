@@ -30,10 +30,10 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^8.0.1",
     "pdfkit": "^0.19.1",
-    "sharp": "^0.35.3",
-    "xlsx": "^0.18.5"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.13"
+    "nodemon": "^3.1.13",
+    "xlsx": "^0.18.5"
   }
 }
