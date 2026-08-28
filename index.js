@@ -85,8 +85,7 @@ const PORT = process.env.PORT || 5000;
 // Trust proxy if you are behind a load balancer (Cloudflare, Nginx, Heroku, etc.)
 app.set('trust proxy', 1);
 
-// ─── Global Middleware ────────────────────────────────────────
-app.use(apiLimiter);
+// ─── Global CORS Middleware ────────────────────────────────────
 app.use(cors({
     origin: function (origin, callback) {
         // Extract strictly the origin (e.g., scheme://domain:port) from the configured URLs
@@ -109,20 +108,22 @@ app.use(cors({
     },
     credentials: true,
 }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(cookieParser());
 
-// ─── Static: serve uploaded media files ──────────────────────
+// ─── Static: serve uploaded media files (exempt from API rate limiting) ──────
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ─── Health Check ─────────────────────────────────────────────
+// ─── Health Check (exempt from API rate limiting) ───────────────
 app.get('/health', (_, res) =>
     res.json({ success: true, message: 'Server is running', timestamp: new Date() })
 );
 
-// ─── End of Server Initialization ───
-// Nodemon trigger — restart server now
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(cookieParser());
+
+// ─── API Rate Limiting ────────────────────────────────────────
+app.use(apiLimiter);
+
 // ─── URL Shortener Redirection ────────────────────────────────
 app.get('/api/r/:code', async (req, res) => {
     try {
@@ -212,6 +213,7 @@ app.use('/api/notifications',  notificationsRoutes);
 app.use('/api/bus-timings', busTimingsRoutes);
 app.use('/api/information-center', informationCenterRoutes);
 app.use('/api/admin/quick-actions', quickActionsRoutes);
+
 // ─── 404 Handler ─────────────────────────────────────────────
 app.use((req, res) =>
     res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found` })
@@ -230,5 +232,5 @@ app.listen(PORT, () => {
     initScheduler();
 });
 
+// Geo filterCounts enabled
 export default app;
-// nodemon trigger

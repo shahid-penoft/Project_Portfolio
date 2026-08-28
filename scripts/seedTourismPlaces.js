@@ -93,7 +93,7 @@ async function seedTourismPlaces() {
       if (existingGeo) {
         await db.query(
           `UPDATE geo_locations 
-           SET category = ?, sub_category = ?, is_tourist_place = 1, status = 'published', description = ?, updated_at = NOW()
+           SET category = ?, sub_category = ?, local_body_id = COALESCE(local_body_id, 1), is_tourist_place = 1, status = 'published', description = ?, updated_at = NOW()
            WHERE id = ?`,
           [category, subCategory, description, existingGeo.id]
         );
@@ -101,8 +101,8 @@ async function seedTourismPlaces() {
       } else {
         await db.query(
           `INSERT INTO geo_locations 
-           (type, name, category, sub_category, landmark, full_address, description, is_operational, is_public_access, is_tourist_place, status, created_at, updated_at)
-           VALUES ('Detailed Location', ?, ?, ?, 'Kothamangalam', 'Kothamangalam, Ernakulam, Kerala', ?, 1, 1, 1, 'published', NOW(), NOW())`,
+           (type, name, category, sub_category, local_body_id, landmark, full_address, description, is_operational, is_public_access, is_tourist_place, status, created_at, updated_at)
+           VALUES ('Detailed Location', ?, ?, ?, 1, 'Kothamangalam', 'Kothamangalam, Ernakulam, Kerala', ?, 1, 1, 1, 'published', NOW(), NOW())`,
           [placeName, category, subCategory, description]
         );
         insertedGeo++;

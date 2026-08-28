@@ -4,11 +4,33 @@ import { logActivity as auditLog } from './teamsLogController.js';
 import { broadcastNotification } from '../utils/notificationHelper.js';
 
 // ── Internal helper ────────────────────────────────────────────
-const logActivity = async (connection, user_name, action, initials = 'MC') => {
+const safeJsonStringify = (val, fallback = '[]') => {
+    if (val === null || val === undefined) return fallback;
+    if (typeof val === 'string') {
+        try {
+            JSON.parse(val);
+            return val;
+        } catch {
+            return JSON.stringify(val);
+        }
+    }
+    try {
+        return JSON.stringify(val);
+    } catch {
+        return fallback;
+    }
+};
+
+const logActivity = async (connection, user_name, action) => {
+    const finalUserName = user_name || 'Admin';
+    const words = finalUserName.trim().split(/\s+/);
+    const initials = words.length >= 2
+        ? (words[0][0] + words[1][0]).toUpperCase()
+        : finalUserName.slice(0, 2).toUpperCase();
     await connection.query(
         `INSERT INTO csr_activities (user_name, action, time_label, initials)
          VALUES (?, ?, 'Just now', ?)`,
-        [user_name || 'MLA Cell', action, initials]
+        [finalUserName, action, initials]
     );
 };
 
@@ -74,7 +96,13 @@ export const getCSROrganisations = async (req, res) => {
             `SELECT o.* FROM csr_organisations o ${where} ORDER BY o.created_at DESC LIMIT ? OFFSET ?`,
             [...vals, limit, offset]
         );
-        rows.forEach(r => { try { r.domains = JSON.parse(r.domains || '[]'); } catch { r.domains = []; } });
+        rows.forEach(r => {
+            r.domains = typeof r.domains === 'string' ? JSON.parse(r.domains || '[]') : (r.domains || []);
+            r.documents = typeof r.documents === 'string' ? JSON.parse(r.documents || '[]') : (r.documents || []);
+            r.section_80g = Boolean(r.section_80g);
+            r.fcra_registered = Boolean(r.fcra_registered);
+            r.csr_policy = Boolean(r.csr_policy);
+        });
 
         return successResponse(res, { data: { data: rows, total: Number(total) } }, 'Organisations fetched.');
     } catch (err) {
@@ -87,12 +115,31 @@ export const getCSROrganisations = async (req, res) => {
 export const getCSROrganisationById = async (req, res) => {
     try {
         const { id } = req.params;
-        const [rows] = await db.query('SELECT * FROM csr_organisations WHERE id = ? AND deleted = 0', [id]);
+        const [rows] = await db.query(
+            `SELECT o.*, 
+                    cr_u.full_name AS created_by_name,
+                    up_u.full_name AS updated_by_name
+             FROM csr_organisations o
+             LEFT JOIN admin_users cr_u ON cr_u.id = o.created_by
+             LEFT JOIN admin_users up_u ON up_u.id = o.updated_by
+             WHERE o.id = ? AND o.deleted = 0`,
+            [id]
+        );
         if (!rows.length) return errorResponse(res, 'Organisation not found.', 404);
         const org = rows[0];
-        try { org.domains = JSON.parse(org.domains || '[]'); } catch { org.domains = []; }
-        const [contacts] = await db.query('SELECT * FROM csr_organisation_contacts WHERE org_id = ?', [id]);
-        org.contacts = contacts;
+        org.domains = typeof org.domains === 'string' ? JSON.parse(org.domains || '[]') : (org.domains || []);
+        org.documents = typeof org.documents === 'string' ? JSON.parse(org.documents || '[]') : (org.documents || []);
+        org.section_80g = Boolean(org.section_80g);
+        org.fcra_registered = Boolean(org.fcra_registered);
+        org.csr_policy = Boolean(org.csr_policy);
+        const [contacts] = await db.query(
+            'SELECT * FROM csr_organisation_contacts WHERE org_id = ? ORDER BY is_primary DESC, id ASC',
+            [id]
+        );
+        org.contacts = contacts.map(c => ({
+            ...c,
+            is_primary: Boolean(c.is_primary)
+        }));
         return successResponse(res, { data: { data: org } }, 'Organisation fetched.');
     } catch (err) {
         console.error('[getCSROrganisationById]', err);
@@ -108,56 +155,87 @@ export const createCSROrganisation = async (req, res) => {
             name, type, responsible_person, phone, email, domains = [],
             contribution = 0, status = 'Active', district,
             registration_no, website, office_address, annual_budget,
-            assigned_to, next_followup, internal_notes, contacts = []
+            assigned_to, next_followup, internal_notes, contacts = [],
+            section_80g = 0, fcra_registered = 0, csr_policy = 0,
+            documents = [], attachments = []
         } = req.body;
 
         if (!name?.trim()) return errorResponse(res, 'Organisation name is required.', 400);
 
+        const adminId = req.admin ? req.admin.id : null;
+
         await conn.beginTransaction();
 
         const domainsJson = JSON.stringify(Array.isArray(domains) ? domains : []);
+        const docList = Array.isArray(documents) && documents.length > 0 ? documents : (Array.isArray(attachments) ? attachments : []);
+        const docsJson = JSON.stringify(docList);
         const [result] = await conn.query(
             `INSERT INTO csr_organisations
              (name, type, responsible_person, phone, email, domains, contribution, status,
               district, registration_no, website, office_address, annual_budget,
-              assigned_to, next_followup, internal_notes, last_followup)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE())`,
+              assigned_to, next_followup, internal_notes, last_followup,
+              section_80g, fcra_registered, csr_policy, documents,
+              created_by, updated_by)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURDATE(),?,?,?,?,?,?)`,
             [name.trim(), type||null, responsible_person||null, phone||null, email||null,
              domainsJson, Number(contribution)||0, status,
              district||null, registration_no||null, website||null, office_address||null,
              annual_budget ? Number(annual_budget) : null,
-             assigned_to||null, next_followup||null, internal_notes||null]
+             assigned_to||null, next_followup||null, internal_notes||null,
+             section_80g ? 1 : 0, fcra_registered ? 1 : 0, csr_policy ? 1 : 0, docsJson,
+             adminId, adminId]
         );
         const orgId = result.insertId;
 
         if (contacts.length) {
             const contactVals = contacts
                 .filter(c => c.name || c.phone || c.email)
-                .map(c => [orgId, c.name||null, c.phone||null, c.email||null, c.designation||null]);
+                .map(c => [
+                    orgId,
+                    c.name || null,
+                    c.phone || null,
+                    c.alternate_phone || null,
+                    c.email || null,
+                    c.alternate_email || null,
+                    c.designation || null,
+                    c.remarks || null,
+                    c.is_primary ? 1 : 0
+                ]);
             if (contactVals.length) {
                 await conn.query(
-                    'INSERT INTO csr_organisation_contacts (org_id, name, phone, email, designation) VALUES ?',
+                    'INSERT INTO csr_organisation_contacts (org_id, name, phone, alternate_phone, email, alternate_email, designation, remarks, is_primary) VALUES ?',
                     [contactVals]
                 );
             }
         }
 
-        await logActivity(conn, req.admin?.full_name, `added new partner '${name.trim()}'`);
+        await logActivity(conn, req.admin?.full_name, `added new organisation '${name.trim()}'`);
         await conn.commit();
 
-        auditLog(req, { action: 'Created', module: 'CSR', details: `CSR Organisation created — "${name.trim()}"`, resource: `csr/organisations/${orgId}`, severity: 'info' });
-        // Notify all admins
-        broadcastNotification({
-          title: `New CSR Partner: ${name.trim()}`,
-          message: `A new CSR organisation "${name.trim()}" has been added.`,
-          type: 'csr', module: 'CSR',
-          record_id: orgId, link_path: `/mlaconnect/csr/organisations/${orgId}`,
-        });
-        const [newRows] = await db.query('SELECT * FROM csr_organisations WHERE id = ?', [orgId]);
+        auditLog(req, { action: 'Created', module: 'CSR', details: `CSR Organisation "${name.trim()}" created`, resource: `csr/organisations/${orgId}`, severity: 'success' });
+        broadcastNotification({ type: 'CSR_ORG_CREATED', title: 'New CSR Organisation', message: `${name.trim()} was added.`, link: `/admin/csr/organisations/${orgId}` });
+
+        const [newRows] = await db.query(
+            `SELECT o.*, 
+                    cr_u.full_name AS created_by_name,
+                    up_u.full_name AS updated_by_name
+             FROM csr_organisations o
+             LEFT JOIN admin_users cr_u ON o.created_by = cr_u.id
+             LEFT JOIN admin_users up_u ON o.updated_by = up_u.id
+             WHERE o.id = ?`,
+            [orgId]
+        );
         const org = newRows[0];
-        try { org.domains = JSON.parse(org.domains || '[]'); } catch { org.domains = []; }
-        const [newContacts] = await db.query('SELECT * FROM csr_organisation_contacts WHERE org_id = ?', [orgId]);
-        org.contacts = newContacts;
+        org.domains = typeof org.domains === 'string' ? JSON.parse(org.domains || '[]') : (org.domains || []);
+        org.documents = typeof org.documents === 'string' ? JSON.parse(org.documents || '[]') : (org.documents || []);
+        org.section_80g = Boolean(org.section_80g);
+        org.fcra_registered = Boolean(org.fcra_registered);
+        org.csr_policy = Boolean(org.csr_policy);
+        const [newContacts] = await db.query(
+            'SELECT * FROM csr_organisation_contacts WHERE org_id = ? ORDER BY is_primary DESC, id ASC',
+            [orgId]
+        );
+        org.contacts = newContacts.map(c => ({ ...c, is_primary: Boolean(c.is_primary) }));
 
         return successResponse(res, { data: { data: org } }, 'Organisation created.', 201);
     } catch (err) {
@@ -178,29 +256,45 @@ export const updateCSROrganisation = async (req, res) => {
             name, type, responsible_person, phone, email, domains = [],
             contribution, status, district, registration_no, website,
             office_address, annual_budget, assigned_to, next_followup,
-            internal_notes, contacts = []
+            internal_notes, contacts = [],
+            section_80g, fcra_registered, csr_policy,
+            documents, attachments
         } = req.body;
 
         if (!name?.trim()) return errorResponse(res, 'Organisation name is required.', 400);
 
-        const [check] = await db.query('SELECT id FROM csr_organisations WHERE id = ? AND deleted = 0', [id]);
+        const [check] = await db.query('SELECT id, section_80g, fcra_registered, csr_policy, documents, domains FROM csr_organisations WHERE id = ? AND deleted = 0', [id]);
         if (!check.length) return errorResponse(res, 'Organisation not found.', 404);
+
+        const existing = check[0];
+        const adminId = req.admin ? req.admin.id : null;
 
         await conn.beginTransaction();
 
-        const domainsJson = JSON.stringify(Array.isArray(domains) ? domains : []);
+        const domainsJson = domains !== undefined ? safeJsonStringify(domains, '[]') : safeJsonStringify(existing.domains, '[]');
+        const docList = documents !== undefined ? documents : (attachments !== undefined ? attachments : existing.documents);
+        const docsJson = safeJsonStringify(docList, '[]');
+
+        const sec80gVal = section_80g !== undefined ? (section_80g ? 1 : 0) : existing.section_80g;
+        const fcraVal = fcra_registered !== undefined ? (fcra_registered ? 1 : 0) : existing.fcra_registered;
+        const csrPolicyVal = csr_policy !== undefined ? (csr_policy ? 1 : 0) : existing.csr_policy;
+
         await conn.query(
             `UPDATE csr_organisations SET
              name=?, type=?, responsible_person=?, phone=?, email=?, domains=?,
              contribution=?, status=?, district=?, registration_no=?, website=?,
              office_address=?, annual_budget=?, assigned_to=?, next_followup=?,
-             internal_notes=?, updated_at=NOW()
+             internal_notes=?,
+             section_80g=?, fcra_registered=?, csr_policy=?, documents=?,
+             updated_by=?, updated_at=NOW()
              WHERE id=?`,
             [name.trim(), type||null, responsible_person||null, phone||null, email||null,
              domainsJson, contribution !== undefined ? Number(contribution) : 0, status||'Active',
              district||null, registration_no||null, website||null, office_address||null,
              annual_budget ? Number(annual_budget) : null,
-             assigned_to||null, next_followup||null, internal_notes||null, id]
+             assigned_to||null, next_followup||null, internal_notes||null,
+             sec80gVal, fcraVal, csrPolicyVal, docsJson,
+             adminId, id]
         );
 
         // Replace contacts
@@ -208,10 +302,20 @@ export const updateCSROrganisation = async (req, res) => {
         if (contacts.length) {
             const contactVals = contacts
                 .filter(c => c.name || c.phone || c.email)
-                .map(c => [id, c.name||null, c.phone||null, c.email||null, c.designation||null]);
+                .map(c => [
+                    id,
+                    c.name || null,
+                    c.phone || null,
+                    c.alternate_phone || null,
+                    c.email || null,
+                    c.alternate_email || null,
+                    c.designation || null,
+                    c.remarks || null,
+                    c.is_primary ? 1 : 0
+                ]);
             if (contactVals.length) {
                 await conn.query(
-                    'INSERT INTO csr_organisation_contacts (org_id, name, phone, email, designation) VALUES ?',
+                    'INSERT INTO csr_organisation_contacts (org_id, name, phone, alternate_phone, email, alternate_email, designation, remarks, is_primary) VALUES ?',
                     [contactVals]
                 );
             }
@@ -221,11 +325,27 @@ export const updateCSROrganisation = async (req, res) => {
         await conn.commit();
 
         auditLog(req, { action: 'Updated', module: 'CSR', details: `CSR Organisation ID ${id} updated — "${name.trim()}"`, resource: `csr/organisations/${id}`, severity: 'success' });
-        const [updRows] = await db.query('SELECT * FROM csr_organisations WHERE id = ?', [id]);
+        const [updRows] = await db.query(
+            `SELECT o.*, 
+                    cr_u.full_name AS created_by_name,
+                    up_u.full_name AS updated_by_name
+             FROM csr_organisations o
+             LEFT JOIN admin_users cr_u ON cr_u.id = o.created_by
+             LEFT JOIN admin_users up_u ON up_u.id = o.updated_by
+             WHERE o.id = ?`,
+            [id]
+        );
         const org = updRows[0];
-        try { org.domains = JSON.parse(org.domains || '[]'); } catch { org.domains = []; }
-        const [updContacts] = await db.query('SELECT * FROM csr_organisation_contacts WHERE org_id = ?', [id]);
-        org.contacts = updContacts;
+        org.domains = typeof org.domains === 'string' ? JSON.parse(org.domains || '[]') : (org.domains || []);
+        org.documents = typeof org.documents === 'string' ? JSON.parse(org.documents || '[]') : (org.documents || []);
+        org.section_80g = Boolean(org.section_80g);
+        org.fcra_registered = Boolean(org.fcra_registered);
+        org.csr_policy = Boolean(org.csr_policy);
+        const [updContacts] = await db.query(
+            'SELECT * FROM csr_organisation_contacts WHERE org_id = ? ORDER BY is_primary DESC, id ASC',
+            [id]
+        );
+        org.contacts = updContacts.map(c => ({ ...c, is_primary: Boolean(c.is_primary) }));
 
         return successResponse(res, { data: { data: org } }, 'Organisation updated.');
     } catch (err) {
@@ -234,6 +354,25 @@ export const updateCSROrganisation = async (req, res) => {
         return errorResponse(res, 'Server error updating organisation.');
     } finally {
         conn.release();
+    }
+};
+
+// ── POST /api/csr/upload (admin) ──────────────────────────────
+export const uploadCSRDocument = async (req, res) => {
+    try {
+        const { uploadDocument, runMulter } = await import('../configs/multerS3.js');
+        await runMulter(uploadDocument, req, res);
+        if (!req.file) return errorResponse(res, 'No file provided.', 400);
+        return successResponse(res, {
+            url: req.file.location || `/uploads/${req.file.filename}`,
+            name: req.file.originalname,
+            size: req.file.size,
+            mimetype: req.file.mimetype
+        }, 'Document uploaded.');
+    } catch (err) {
+        console.error('[uploadCSRDocument]', err);
+        if (err.code === 'LIMIT_FILE_SIZE') return errorResponse(res, 'File too large (max 20 MB).', 413);
+        return errorResponse(res, err.message || 'Upload failed.');
     }
 };
 
@@ -441,9 +580,21 @@ export const createCSRFollowup = async (req, res) => {
 export const getCSRActivities = async (req, res) => {
     try {
         const [rows] = await db.query(
-            'SELECT * FROM csr_activities ORDER BY created_at DESC LIMIT 30'
+            'SELECT * FROM csr_activities ORDER BY created_at DESC LIMIT 50'
         );
-        return successResponse(res, { data: { data: rows } }, 'Activities fetched.');
+        const mapped = rows.map(r => ({
+            id: r.id,
+            user_name: r.user_name || 'Admin',
+            user: r.user_name || 'Admin',
+            author_name: r.user_name || 'Admin',
+            action: r.action,
+            text: r.action,
+            time_label: r.time_label || 'Just now',
+            time: r.created_at,
+            created_at: r.created_at,
+            initials: r.initials || (r.user_name ? r.user_name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'AD')
+        }));
+        return successResponse(res, { data: { data: mapped } }, 'Activities fetched.');
     } catch (err) {
         console.error('[getCSRActivities]', err);
         return errorResponse(res, 'Server error fetching activities.');

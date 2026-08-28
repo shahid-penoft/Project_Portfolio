@@ -648,7 +648,10 @@ export const getProjectBySlug = async (req, res) => {
                       WHERE project_id = ? ORDER BY u.created_at DESC`, [id]),
             db.query('SELECT * FROM project_attachments WHERE project_id = ? ORDER BY created_at DESC', [id]),
             db.query('SELECT * FROM project_budget_entries WHERE project_id = ? ORDER BY created_at DESC', [id]),
-            db.query('SELECT * FROM project_budget_allocations WHERE project_id = ? ORDER BY created_at DESC', [id]),
+            db.query(`SELECT ba.*, co.name AS csr_org_name, co.type AS csr_org_type, co.status AS csr_org_status 
+                      FROM project_budget_allocations ba 
+                      LEFT JOIN csr_organisations co ON ba.csr_org_id = co.id 
+                      WHERE ba.project_id = ? ORDER BY ba.created_at DESC`, [id]),
             db.query('SELECT * FROM project_contractors WHERE project_id = ? ORDER BY created_at DESC', [id]),
             db.query(`SELECT t.*, au.full_name as name, r.name as role, au.profile_image 
                       FROM project_team_members t

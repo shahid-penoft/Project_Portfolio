@@ -2,6 +2,17 @@ import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 import { runMulter, uploadGeoLocationMedia, uploadGeoLocationAttachments } from '../configs/multerS3.js';
 
+const parseValues = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) {
+        return val.flatMap(v => typeof v === 'string' ? v.split(',') : [v]).map(v => typeof v === 'string' ? v.trim() : v).filter(Boolean);
+    }
+    if (typeof val === 'string') {
+        return val.split(',').map(v => v.trim()).filter(Boolean);
+    }
+    return [val];
+};
+
 /**
  * GET /api/geo-locations
  * Fetches all geo locations with search, filters, and pagination.
@@ -10,8 +21,18 @@ export const getAllGeoLocations = async (req, res) => {
     try {
         const { 
             page = 1, limit = 12, search, 
-            type, category, sub_category, ward, 
-            status = 'published', bookmarked_by_admin, is_tourist_place
+            type, types,
+            category, categories,
+            sub_category, sub_categories, subCategory, subCategories,
+            local_body_id, local_bodies, localBody, localBodies,
+            ward, wards, 
+            status = 'published', bookmarked_by_admin, 
+            is_tourist_place, touristPlace,
+            is_operational, operationalStatus,
+            is_public_access, publicAccess,
+            has_parking, parking,
+            has_wheelchair, wheelchairAccess,
+            any_history, anyHistory
         } = req.query;
 
         const offset = (page - 1) * limit;
@@ -24,7 +45,10 @@ export const getAllGeoLocations = async (req, res) => {
                 (SELECT COUNT(*) FROM geo_location_images WHERE location_id = g.id) AS image_count,
                 (SELECT COUNT(*) FROM geo_location_attachments WHERE location_id = g.id) AS attachment_count,
                 CONCAT(cb.full_name, ' (USR', LPAD(cb.id,4,'0'), ')') AS created_by_name,
-                CONCAT(ub.full_name, ' (USR', LPAD(ub.id,4,'0'), ')') AS updated_by_name
+                CONCAT(ub.full_name, ' (USR', LPAD(ub.id,4,'0'), ')') AS updated_by_name,
+                lb.name AS local_body_name,
+                lbw.ward_no AS ward_number,
+                lbw.place_name AS ward_place_name
         `;
         
         if (req.admin) {
@@ -35,12 +59,20 @@ export const getAllGeoLocations = async (req, res) => {
             FROM geo_locations g
             LEFT JOIN admin_users cb ON g.created_by = cb.id
             LEFT JOIN admin_users ub ON g.updated_by = ub.id
+            LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
             WHERE 1=1
         `;
 
-        let countQuery = `SELECT COUNT(*) as total FROM geo_locations g WHERE 1=1`;
+        let countQuery = `
+            SELECT COUNT(*) as total 
+            FROM geo_locations g 
+            LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
+            WHERE 1=1
+        `;
 
-        // Apply filters
+        // Apply Status Filter
         if (status) {
             baseQuery += ` AND g.status = ?`;
             countQuery += ` AND g.status = ?`;
@@ -48,35 +80,86 @@ export const getAllGeoLocations = async (req, res) => {
             countParams.push(status);
         }
 
-        if (type && type !== 'All') {
+        // Location Types
+        const typeVals = parseValues(types || type).filter(v => v !== 'All');
+        if (typeVals.length === 1) {
             baseQuery += ` AND g.type = ?`;
             countQuery += ` AND g.type = ?`;
-            queryParams.push(type);
-            countParams.push(type);
+            queryParams.push(typeVals[0]);
+            countParams.push(typeVals[0]);
+        } else if (typeVals.length > 1) {
+            const placeholders = typeVals.map(() => '?').join(',');
+            baseQuery += ` AND g.type IN (${placeholders})`;
+            countQuery += ` AND g.type IN (${placeholders})`;
+            queryParams.push(...typeVals);
+            countParams.push(...typeVals);
         }
 
-        if (category && category !== 'All') {
+        // Categories
+        const catVals = parseValues(categories || category).filter(v => v !== 'All');
+        if (catVals.length === 1) {
             baseQuery += ` AND g.category = ?`;
             countQuery += ` AND g.category = ?`;
-            queryParams.push(category);
-            countParams.push(category);
+            queryParams.push(catVals[0]);
+            countParams.push(catVals[0]);
+        } else if (catVals.length > 1) {
+            const placeholders = catVals.map(() => '?').join(',');
+            baseQuery += ` AND g.category IN (${placeholders})`;
+            countQuery += ` AND g.category IN (${placeholders})`;
+            queryParams.push(...catVals);
+            countParams.push(...catVals);
         }
 
-        if (sub_category && sub_category !== 'All') {
+        // Sub Categories
+        const subCatVals = parseValues(subCategories || subCategory || sub_categories || sub_category).filter(v => v !== 'All');
+        if (subCatVals.length === 1) {
             baseQuery += ` AND g.sub_category = ?`;
             countQuery += ` AND g.sub_category = ?`;
-            queryParams.push(sub_category);
-            countParams.push(sub_category);
+            queryParams.push(subCatVals[0]);
+            countParams.push(subCatVals[0]);
+        } else if (subCatVals.length > 1) {
+            const placeholders = subCatVals.map(() => '?').join(',');
+            baseQuery += ` AND g.sub_category IN (${placeholders})`;
+            countQuery += ` AND g.sub_category IN (${placeholders})`;
+            queryParams.push(...subCatVals);
+            countParams.push(...subCatVals);
         }
 
-        if (ward && ward !== 'All') {
-            baseQuery += ` AND g.ward = ?`;
-            countQuery += ` AND g.ward = ?`;
-            queryParams.push(ward);
-            countParams.push(ward);
+        // Local Bodies (by ID or name)
+        const lbVals = parseValues(localBodies || localBody || local_bodies || local_body_id).filter(v => v !== 'All');
+        if (lbVals.length > 0) {
+            const isAllNumeric = lbVals.every(v => !isNaN(Number(v)));
+            const placeholders = lbVals.map(() => '?').join(',');
+            if (isAllNumeric) {
+                baseQuery += ` AND g.local_body_id IN (${placeholders})`;
+                countQuery += ` AND g.local_body_id IN (${placeholders})`;
+                queryParams.push(...lbVals.map(Number));
+                countParams.push(...lbVals.map(Number));
+            } else {
+                baseQuery += ` AND lb.name IN (${placeholders})`;
+                countQuery += ` AND lb.name IN (${placeholders})`;
+                queryParams.push(...lbVals);
+                countParams.push(...lbVals);
+            }
         }
 
-        if (bookmarked_by_admin === 'true') {
+        // Wards (handles "Ward 5", "5", etc.)
+        const rawWardVals = parseValues(wards || ward).filter(v => v !== 'All');
+        if (rawWardVals.length > 0) {
+            const cleanedWards = rawWardVals.map(w => {
+                const str = String(w).trim();
+                const match = str.match(/\d+/);
+                return match ? match[0] : str;
+            });
+            const placeholders = cleanedWards.map(() => '?').join(',');
+            baseQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
+            countQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
+            queryParams.push(...cleanedWards, ...cleanedWards);
+            countParams.push(...cleanedWards, ...cleanedWards);
+        }
+
+        // Admin Bookmarked
+        if (bookmarked_by_admin === 'true' || bookmarked_by_admin === true) {
             if (!req.admin) {
                 return errorResponse(res, 'Unauthorized to view admin bookmarks', 401);
             }
@@ -84,17 +167,88 @@ export const getAllGeoLocations = async (req, res) => {
             countQuery += ` AND EXISTS (SELECT 1 FROM admin_geo_location_bookmarks WHERE location_id = g.id AND admin_id = ${Number(req.admin.id)})`;
         }
 
-        if (is_tourist_place === 'true') {
-            baseQuery += ` AND g.is_tourist_place = 1`;
-            countQuery += ` AND g.is_tourist_place = 1`;
+        // Tourist Place
+        const touristVal = is_tourist_place !== undefined ? is_tourist_place : touristPlace;
+        if (touristVal !== undefined && touristVal !== '') {
+            const isTourist = touristVal === 'true' || touristVal === '1' || touristVal === 1 || touristVal === 'Tourist Places Only' ? 1 : 0;
+            baseQuery += ` AND g.is_tourist_place = ?`;
+            countQuery += ` AND g.is_tourist_place = ?`;
+            queryParams.push(isTourist);
+            countParams.push(isTourist);
         }
 
+        // Operational Status
+        const opVal = is_operational !== undefined ? is_operational : operationalStatus;
+        if (opVal !== undefined && opVal !== '') {
+            const opParsed = parseValues(opVal);
+            if (opParsed.includes('Operational') || opParsed.includes('1') || opParsed.includes(1)) {
+                baseQuery += ` AND (g.is_operational = 1 OR g.is_operational IS NULL)`;
+                countQuery += ` AND (g.is_operational = 1 OR g.is_operational IS NULL)`;
+            } else if (opParsed.includes('Non-Operational') || opParsed.includes('0') || opParsed.includes(0)) {
+                baseQuery += ` AND g.is_operational = 0`;
+                countQuery += ` AND g.is_operational = 0`;
+            }
+        }
+
+        // Public Access
+        const paVal = is_public_access !== undefined ? is_public_access : publicAccess;
+        if (paVal !== undefined && paVal !== '') {
+            const paParsed = parseValues(paVal);
+            if (paParsed.includes('Yes') || paParsed.includes('Public Access') || paParsed.includes('1') || paParsed.includes(1)) {
+                baseQuery += ` AND (g.is_public_access = 1 OR g.is_public_access IS NULL)`;
+                countQuery += ` AND (g.is_public_access = 1 OR g.is_public_access IS NULL)`;
+            } else if (paParsed.includes('No') || paParsed.includes('Private Access') || paParsed.includes('0') || paParsed.includes(0)) {
+                baseQuery += ` AND g.is_public_access = 0`;
+                countQuery += ` AND g.is_public_access = 0`;
+            }
+        }
+
+        // Parking
+        const parkVal = has_parking !== undefined ? has_parking : parking;
+        if (parkVal !== undefined && parkVal !== '') {
+            const parkParsed = parseValues(parkVal);
+            if (parkParsed.includes('Yes') || parkParsed.includes('Parking Available') || parkParsed.includes('1') || parkParsed.includes(1)) {
+                baseQuery += ` AND g.has_parking = 1`;
+                countQuery += ` AND g.has_parking = 1`;
+            } else if (parkParsed.includes('No') || parkParsed.includes('No Parking') || parkParsed.includes('0') || parkParsed.includes(0)) {
+                baseQuery += ` AND (g.has_parking = 0 OR g.has_parking IS NULL)`;
+                countQuery += ` AND (g.has_parking = 0 OR g.has_parking IS NULL)`;
+            }
+        }
+
+        // Wheelchair
+        const wcVal = has_wheelchair !== undefined ? has_wheelchair : wheelchairAccess;
+        if (wcVal !== undefined && wcVal !== '') {
+            const wcParsed = parseValues(wcVal);
+            if (wcParsed.includes('Yes') || wcParsed.includes('Wheelchair Accessible') || wcParsed.includes('1') || wcParsed.includes(1)) {
+                baseQuery += ` AND g.has_wheelchair = 1`;
+                countQuery += ` AND g.has_wheelchair = 1`;
+            } else if (wcParsed.includes('No') || wcParsed.includes('Not Accessible') || wcParsed.includes('0') || wcParsed.includes(0)) {
+                baseQuery += ` AND (g.has_wheelchair = 0 OR g.has_wheelchair IS NULL)`;
+                countQuery += ` AND (g.has_wheelchair = 0 OR g.has_wheelchair IS NULL)`;
+            }
+        }
+
+        // History
+        const histVal = any_history !== undefined ? any_history : anyHistory;
+        if (histVal !== undefined && histVal !== '') {
+            const histParsed = parseValues(histVal);
+            if (histParsed.includes('Yes') || histParsed.includes('Has History')) {
+                baseQuery += ` AND g.any_history = 'Yes'`;
+                countQuery += ` AND g.any_history = 'Yes'`;
+            } else if (histParsed.includes('No') || histParsed.includes('No History')) {
+                baseQuery += ` AND (g.any_history = 'No' OR g.any_history IS NULL)`;
+                countQuery += ` AND (g.any_history = 'No' OR g.any_history IS NULL)`;
+            }
+        }
+
+        // Search Query
         if (search) {
             const searchTerm = `%${search}%`;
-            baseQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.landmark LIKE ? OR g.full_address LIKE ? OR g.description LIKE ?)`;
-            countQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.landmark LIKE ? OR g.full_address LIKE ? OR g.description LIKE ?)`;
-            queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
-            countParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+            baseQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.sub_category LIKE ? OR g.landmark LIKE ? OR g.full_address LIKE ? OR g.description LIKE ? OR lb.name LIKE ? OR lbw.place_name LIKE ?)`;
+            countQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.sub_category LIKE ? OR g.landmark LIKE ? OR g.full_address LIKE ? OR g.description LIKE ? OR lb.name LIKE ? OR lbw.place_name LIKE ?)`;
+            queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+            countParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
         }
 
         baseQuery += ` ORDER BY g.created_at DESC LIMIT ? OFFSET ?`;
@@ -104,20 +258,93 @@ export const getAllGeoLocations = async (req, res) => {
         const [countResult] = await db.query(countQuery, countParams);
         const total = countResult[0].total;
 
-        // Also get global stats for the cards
-        const [statsRows] = await db.query(`
-            SELECT category, COUNT(*) as count 
-            FROM geo_locations 
-            WHERE status = ? 
-            GROUP BY category
-        `, [status]);
+        // Compute full facet counts across published locations
+        const [
+            [typesRows],
+            [categoryRows],
+            [subCategoryRows],
+            [localBodyRows],
+            [wardRows],
+            [touristRows],
+            [opRows],
+            [paRows],
+            [parkRows],
+            [wcRows],
+            [histRows]
+        ] = await Promise.all([
+            db.query(`SELECT type, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY type`, [status]),
+            db.query(`SELECT category, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY category`, [status]),
+            db.query(`SELECT sub_category, COUNT(*) as count FROM geo_locations WHERE status = ? AND sub_category IS NOT NULL AND sub_category != '' GROUP BY sub_category`, [status]),
+            db.query(`SELECT local_body_id, COUNT(*) as count FROM geo_locations WHERE status = ? AND local_body_id IS NOT NULL GROUP BY local_body_id`, [status]),
+            db.query(`SELECT ward, local_body_id, COUNT(*) as count FROM geo_locations WHERE status = ? AND ward IS NOT NULL AND ward != '' GROUP BY ward, local_body_id`, [status]),
+            db.query(`SELECT is_tourist_place, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY is_tourist_place`, [status]),
+            db.query(`SELECT is_operational, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY is_operational`, [status]),
+            db.query(`SELECT is_public_access, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY is_public_access`, [status]),
+            db.query(`SELECT has_parking, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY has_parking`, [status]),
+            db.query(`SELECT has_wheelchair, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY has_wheelchair`, [status]),
+            db.query(`SELECT any_history, COUNT(*) as count FROM geo_locations WHERE status = ? GROUP BY any_history`, [status]),
+        ]);
 
-        const stats = { total };
-        statsRows.forEach(row => {
-            if (row.category) {
-                stats[row.category] = row.count;
+        const filterCounts = {
+            types: {},
+            categories: {},
+            subCategories: {},
+            localBodies: {},
+            wards: {},
+            touristPlace: { "Tourist Places Only": 0, "Non-Tourist Places": 0 },
+            operationalStatus: { "Operational": 0, "Non-Operational": 0 },
+            publicAccess: { "Yes": 0, "No": 0 },
+            parking: { "Yes": 0, "No": 0 },
+            wheelchairAccess: { "Yes": 0, "No": 0 },
+            anyHistory: { "Has History": 0, "No History": 0 }
+        };
+
+        typesRows.forEach(r => { if (r.type) filterCounts.types[r.type] = r.count; });
+        categoryRows.forEach(r => { if (r.category) filterCounts.categories[r.category] = r.count; });
+        subCategoryRows.forEach(r => { if (r.sub_category) filterCounts.subCategories[r.sub_category] = r.count; });
+        localBodyRows.forEach(r => { if (r.local_body_id != null) filterCounts.localBodies[String(r.local_body_id)] = r.count; });
+        wardRows.forEach(r => {
+            if (r.ward != null) {
+                const wStr = String(r.ward);
+                filterCounts.wards[wStr] = (filterCounts.wards[wStr] || 0) + r.count;
+                if (r.local_body_id != null) {
+                    filterCounts.wards[`${r.local_body_id}_${wStr}`] = r.count;
+                }
             }
         });
+
+        touristRows.forEach(r => {
+            if (r.is_tourist_place === 1 || r.is_tourist_place === true) filterCounts.touristPlace["Tourist Places Only"] += r.count;
+            else filterCounts.touristPlace["Non-Tourist Places"] += r.count;
+        });
+
+        opRows.forEach(r => {
+            if (r.is_operational !== 0 && r.is_operational !== false) filterCounts.operationalStatus["Operational"] += r.count;
+            else filterCounts.operationalStatus["Non-Operational"] += r.count;
+        });
+
+        paRows.forEach(r => {
+            if (r.is_public_access !== 0 && r.is_public_access !== false) filterCounts.publicAccess["Yes"] += r.count;
+            else filterCounts.publicAccess["No"] += r.count;
+        });
+
+        parkRows.forEach(r => {
+            if (r.has_parking === 1 || r.has_parking === true) filterCounts.parking["Yes"] += r.count;
+            else filterCounts.parking["No"] += r.count;
+        });
+
+        wcRows.forEach(r => {
+            if (r.has_wheelchair === 1 || r.has_wheelchair === true) filterCounts.wheelchairAccess["Yes"] += r.count;
+            else filterCounts.wheelchairAccess["No"] += r.count;
+        });
+
+        histRows.forEach(r => {
+            if (r.any_history === 'Yes') filterCounts.anyHistory["Has History"] += r.count;
+            else filterCounts.anyHistory["No History"] += r.count;
+        });
+
+        // Global stats for cards
+        const stats = { total, ...filterCounts.categories };
 
         return successResponse(res, {
             data: rows,
@@ -127,7 +354,8 @@ export const getAllGeoLocations = async (req, res) => {
                 limit: Number(limit),
                 totalPages: Math.ceil(total / limit)
             },
-            stats
+            stats,
+            filterCounts
         });
     } catch (error) {
         console.error('[getAllGeoLocations]', error);
@@ -328,16 +556,28 @@ export const toggleAdminBookmark = async (req, res) => {
 export const getMyBookmarks = async (req, res) => {
     try {
         const constituentId = req.constituent.id;
-        const { page = 1, limit = 12, search, type, category, sub_category, ward } = req.query;
+        const { 
+            page = 1, limit = 12, search, 
+            type, types,
+            category, categories,
+            sub_category, sub_categories, subCategory, subCategories,
+            local_body_id, local_bodies, localBody, localBodies,
+            ward, wards 
+        } = req.query;
         const offset = (page - 1) * limit;
 
         let baseQuery = `
             SELECT g.*, 
                 (SELECT url FROM geo_location_images WHERE location_id = g.id ORDER BY display_order ASC LIMIT 1) AS cover_image,
                 (SELECT COUNT(*) FROM geo_location_images WHERE location_id = g.id) AS image_count,
-                (SELECT COUNT(*) FROM geo_location_attachments WHERE location_id = g.id) AS attachment_count
+                (SELECT COUNT(*) FROM geo_location_attachments WHERE location_id = g.id) AS attachment_count,
+                lb.name AS local_body_name,
+                lbw.ward_no AS ward_number,
+                lbw.place_name AS ward_place_name
             FROM geo_locations g
             INNER JOIN geo_location_bookmarks b ON g.id = b.location_id
+            LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
             WHERE b.constituent_id = ? AND g.status = 'published'
         `;
 
@@ -345,37 +585,84 @@ export const getMyBookmarks = async (req, res) => {
             SELECT COUNT(*) as total 
             FROM geo_locations g 
             INNER JOIN geo_location_bookmarks b ON g.id = b.location_id 
+            LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
             WHERE b.constituent_id = ? AND g.status = 'published'
         `;
 
         const queryParams = [constituentId];
         const countParams = [constituentId];
 
-        // Apply filters
-        if (type && type !== 'All') {
-            baseQuery += ` AND g.type = ?`;
-            countQuery += ` AND g.type = ?`;
-            queryParams.push(type);
-            countParams.push(type);
+        // Types
+        const typeVals = parseValues(types || type).filter(v => v !== 'All');
+        if (typeVals.length > 0) {
+            const placeholders = typeVals.map(() => '?').join(',');
+            baseQuery += ` AND g.type IN (${placeholders})`;
+            countQuery += ` AND g.type IN (${placeholders})`;
+            queryParams.push(...typeVals);
+            countParams.push(...typeVals);
         }
-        if (category && category !== 'All') {
-            baseQuery += ` AND g.category = ?`;
-            countQuery += ` AND g.category = ?`;
-            queryParams.push(category);
-            countParams.push(category);
+
+        // Categories
+        const catVals = parseValues(categories || category).filter(v => v !== 'All');
+        if (catVals.length > 0) {
+            const placeholders = catVals.map(() => '?').join(',');
+            baseQuery += ` AND g.category IN (${placeholders})`;
+            countQuery += ` AND g.category IN (${placeholders})`;
+            queryParams.push(...catVals);
+            countParams.push(...catVals);
         }
-        if (ward && ward !== 'All') {
-            baseQuery += ` AND g.ward = ?`;
-            countQuery += ` AND g.ward = ?`;
-            queryParams.push(ward);
-            countParams.push(ward);
+
+        // Sub Categories
+        const subCatVals = parseValues(subCategories || subCategory || sub_categories || sub_category).filter(v => v !== 'All');
+        if (subCatVals.length > 0) {
+            const placeholders = subCatVals.map(() => '?').join(',');
+            baseQuery += ` AND g.sub_category IN (${placeholders})`;
+            countQuery += ` AND g.sub_category IN (${placeholders})`;
+            queryParams.push(...subCatVals);
+            countParams.push(...subCatVals);
         }
+
+        // Local Bodies
+        const lbVals = parseValues(localBodies || localBody || local_bodies || local_body_id).filter(v => v !== 'All');
+        if (lbVals.length > 0) {
+            const isAllNumeric = lbVals.every(v => !isNaN(Number(v)));
+            const placeholders = lbVals.map(() => '?').join(',');
+            if (isAllNumeric) {
+                baseQuery += ` AND g.local_body_id IN (${placeholders})`;
+                countQuery += ` AND g.local_body_id IN (${placeholders})`;
+                queryParams.push(...lbVals.map(Number));
+                countParams.push(...lbVals.map(Number));
+            } else {
+                baseQuery += ` AND lb.name IN (${placeholders})`;
+                countQuery += ` AND lb.name IN (${placeholders})`;
+                queryParams.push(...lbVals);
+                countParams.push(...lbVals);
+            }
+        }
+
+        // Wards
+        const rawWardVals = parseValues(wards || ward).filter(v => v !== 'All');
+        if (rawWardVals.length > 0) {
+            const cleanedWards = rawWardVals.map(w => {
+                const str = String(w).trim();
+                const match = str.match(/\d+/);
+                return match ? match[0] : str;
+            });
+            const placeholders = cleanedWards.map(() => '?').join(',');
+            baseQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
+            countQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
+            queryParams.push(...cleanedWards, ...cleanedWards);
+            countParams.push(...cleanedWards, ...cleanedWards);
+        }
+
+        // Search
         if (search) {
             const searchTerm = `%${search}%`;
-            baseQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.landmark LIKE ?)`;
-            countQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.landmark LIKE ?)`;
-            queryParams.push(searchTerm, searchTerm, searchTerm);
-            countParams.push(searchTerm, searchTerm, searchTerm);
+            baseQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.sub_category LIKE ? OR g.landmark LIKE ? OR lb.name LIKE ? OR lbw.place_name LIKE ?)`;
+            countQuery += ` AND (g.name LIKE ? OR g.category LIKE ? OR g.sub_category LIKE ? OR g.landmark LIKE ? OR lb.name LIKE ? OR lbw.place_name LIKE ?)`;
+            queryParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+            countParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
         }
 
         baseQuery += ` ORDER BY b.created_at DESC LIMIT ? OFFSET ?`;
@@ -385,19 +672,92 @@ export const getMyBookmarks = async (req, res) => {
         const [countResult] = await db.query(countQuery, countParams);
         const total = countResult[0].total;
 
-        // Stats for bookmarked
-        const [statsRows] = await db.query(`
-            SELECT g.category, COUNT(*) as count 
-            FROM geo_locations g
-            INNER JOIN geo_location_bookmarks b ON g.id = b.location_id
-            WHERE b.constituent_id = ? AND g.status = 'published'
-            GROUP BY g.category
-        `, [constituentId]);
+        // Compute full facet counts across bookmarks
+        const [
+            [typesRows],
+            [categoryRows],
+            [subCategoryRows],
+            [localBodyRows],
+            [wardRows],
+            [touristRows],
+            [opRows],
+            [paRows],
+            [parkRows],
+            [wcRows],
+            [histRows]
+        ] = await Promise.all([
+            db.query(`SELECT g.type, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.type`, [constituentId]),
+            db.query(`SELECT g.category, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.category`, [constituentId]),
+            db.query(`SELECT g.sub_category, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' AND g.sub_category IS NOT NULL AND g.sub_category != '' GROUP BY g.sub_category`, [constituentId]),
+            db.query(`SELECT g.local_body_id, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' AND g.local_body_id IS NOT NULL GROUP BY g.local_body_id`, [constituentId]),
+            db.query(`SELECT g.ward, g.local_body_id, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' AND g.ward IS NOT NULL AND g.ward != '' GROUP BY g.ward, g.local_body_id`, [constituentId]),
+            db.query(`SELECT g.is_tourist_place, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.is_tourist_place`, [constituentId]),
+            db.query(`SELECT g.is_operational, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.is_operational`, [constituentId]),
+            db.query(`SELECT g.is_public_access, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.is_public_access`, [constituentId]),
+            db.query(`SELECT g.has_parking, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.has_parking`, [constituentId]),
+            db.query(`SELECT g.has_wheelchair, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.has_wheelchair`, [constituentId]),
+            db.query(`SELECT g.any_history, COUNT(*) as count FROM geo_locations g INNER JOIN geo_location_bookmarks b ON g.id = b.location_id WHERE b.constituent_id = ? AND g.status = 'published' GROUP BY g.any_history`, [constituentId]),
+        ]);
 
-        const stats = { total };
-        statsRows.forEach(row => {
-            if (row.category) stats[row.category] = row.count;
+        const filterCounts = {
+            types: {},
+            categories: {},
+            subCategories: {},
+            localBodies: {},
+            wards: {},
+            touristPlace: { "Tourist Places Only": 0, "Non-Tourist Places": 0 },
+            operationalStatus: { "Operational": 0, "Non-Operational": 0 },
+            publicAccess: { "Yes": 0, "No": 0 },
+            parking: { "Yes": 0, "No": 0 },
+            wheelchairAccess: { "Yes": 0, "No": 0 },
+            anyHistory: { "Has History": 0, "No History": 0 }
+        };
+
+        typesRows.forEach(r => { if (r.type) filterCounts.types[r.type] = r.count; });
+        categoryRows.forEach(r => { if (r.category) filterCounts.categories[r.category] = r.count; });
+        subCategoryRows.forEach(r => { if (r.sub_category) filterCounts.subCategories[r.sub_category] = r.count; });
+        localBodyRows.forEach(r => { if (r.local_body_id != null) filterCounts.localBodies[String(r.local_body_id)] = r.count; });
+        wardRows.forEach(r => {
+            if (r.ward != null) {
+                const wStr = String(r.ward);
+                filterCounts.wards[wStr] = (filterCounts.wards[wStr] || 0) + r.count;
+                if (r.local_body_id != null) {
+                    filterCounts.wards[`${r.local_body_id}_${wStr}`] = r.count;
+                }
+            }
         });
+
+        touristRows.forEach(r => {
+            if (r.is_tourist_place === 1 || r.is_tourist_place === true) filterCounts.touristPlace["Tourist Places Only"] += r.count;
+            else filterCounts.touristPlace["Non-Tourist Places"] += r.count;
+        });
+
+        opRows.forEach(r => {
+            if (r.is_operational !== 0 && r.is_operational !== false) filterCounts.operationalStatus["Operational"] += r.count;
+            else filterCounts.operationalStatus["Non-Operational"] += r.count;
+        });
+
+        paRows.forEach(r => {
+            if (r.is_public_access !== 0 && r.is_public_access !== false) filterCounts.publicAccess["Yes"] += r.count;
+            else filterCounts.publicAccess["No"] += r.count;
+        });
+
+        parkRows.forEach(r => {
+            if (r.has_parking === 1 || r.has_parking === true) filterCounts.parking["Yes"] += r.count;
+            else filterCounts.parking["No"] += r.count;
+        });
+
+        wcRows.forEach(r => {
+            if (r.has_wheelchair === 1 || r.has_wheelchair === true) filterCounts.wheelchairAccess["Yes"] += r.count;
+            else filterCounts.wheelchairAccess["No"] += r.count;
+        });
+
+        histRows.forEach(r => {
+            if (r.any_history === 'Yes') filterCounts.anyHistory["Has History"] += r.count;
+            else filterCounts.anyHistory["No History"] += r.count;
+        });
+
+        const stats = { total, ...filterCounts.categories };
 
         return successResponse(res, {
             data: rows,
@@ -407,7 +767,8 @@ export const getMyBookmarks = async (req, res) => {
                 limit: Number(limit),
                 totalPages: Math.ceil(total / limit)
             },
-            stats
+            stats,
+            filterCounts
         });
     } catch (error) {
         console.error('[getMyBookmarks]', error);

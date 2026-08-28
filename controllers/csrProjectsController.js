@@ -2,9 +2,14 @@ import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
 
 const logActivity = async (conn, user_name, action) => {
+    const finalUserName = user_name || 'Admin';
+    const words = finalUserName.trim().split(/\s+/);
+    const initials = words.length >= 2
+        ? (words[0][0] + words[1][0]).toUpperCase()
+        : finalUserName.slice(0, 2).toUpperCase();
     await conn.query(
-        `INSERT INTO csr_activities (user_name, action, time_label, initials) VALUES (?,?,  'Just now', 'MC')`,
-        [user_name || 'MLA Cell', action]
+        `INSERT INTO csr_activities (user_name, action, time_label, initials) VALUES (?,?, 'Just now', ?)`,
+        [finalUserName, action, initials]
     );
 };
 
@@ -120,7 +125,13 @@ export const updateCSROrgProjectLink = async (req, res) => {
         if (!links.length) return errorResponse(res, 'Link not found.', 404);
 
         const link = links[0];
-        const newAmount = allocated_amount !== undefined ? Math.max(0, Number(allocated_amount)) : link.allocated_amount;
+        const currentSpent = Number(link.spent_amount) || 0;
+        const newAmount = allocated_amount !== undefined ? Math.max(0, Number(allocated_amount)) : Number(link.allocated_amount);
+
+        if (allocated_amount !== undefined && newAmount < currentSpent) {
+            return errorResponse(res, `Cannot reduce allocation below ₹${currentSpent.toLocaleString('en-IN')}, which has already been spent by this project.`, 400);
+        }
+
         const delta = newAmount - Number(link.allocated_amount);
 
         await conn.beginTransaction();
@@ -143,7 +154,7 @@ export const updateCSROrgProjectLink = async (req, res) => {
             );
             // Update project budget
             await conn.query(
-                'UPDATE projects SET budget = GREATEST(0, budget + ?) WHERE id = ?',
+                'UPDATE projects SET budget = GREATEST(COALESCE(spent, 0), budget + ?) WHERE id = ?',
                 [delta, link.project_id]
             );
         }
@@ -166,33 +177,72 @@ export const removeCSROrgProjectLink = async (req, res) => {
     try {
         const { id: csr_org_id, linkId } = req.params;
         const [links] = await db.query(
-            'SELECT * FROM csr_project_links WHERE id = ? AND csr_org_id = ?',
+            `SELECT cpl.*, p.title AS project_title, o.name AS org_name
+             FROM csr_project_links cpl
+             JOIN projects p ON p.id = cpl.project_id
+             JOIN csr_organisations o ON o.id = cpl.csr_org_id
+             WHERE cpl.id = ? AND cpl.csr_org_id = ?`,
             [linkId, csr_org_id]
         );
         if (!links.length) return errorResponse(res, 'Link not found.', 404);
 
         const link = links[0];
+        const allocated = Number(link.allocated_amount) || 0;
+        const spent = Number(link.spent_amount) || 0;
+
         await conn.beginTransaction();
 
-        // Remove the link row
-        await conn.query('DELETE FROM csr_project_links WHERE id = ?', [linkId]);
-
-        // Remove corresponding budget allocation
-        await conn.query(
-            'DELETE FROM project_budget_allocations WHERE project_id = ? AND csr_org_id = ? LIMIT 1',
-            [link.project_id, csr_org_id]
-        );
-
-        // Revert project budget
-        if (Number(link.allocated_amount) > 0) {
+        if (spent <= 0) {
+            // Unspent: Safe to completely remove
+            await conn.query('DELETE FROM csr_project_links WHERE id = ?', [linkId]);
             await conn.query(
-                'UPDATE projects SET budget = GREATEST(0, budget - ?) WHERE id = ?',
-                [link.allocated_amount, link.project_id]
+                'DELETE FROM project_budget_allocations WHERE project_id = ? AND csr_org_id = ? LIMIT 1',
+                [link.project_id, csr_org_id]
             );
-        }
+            if (allocated > 0) {
+                await conn.query(
+                    'UPDATE projects SET budget = GREATEST(COALESCE(spent, 0), budget - ?) WHERE id = ?',
+                    [allocated, link.project_id]
+                );
+            }
+            await logActivity(conn, req.admin?.full_name,
+                `removed CSR partnership for project '${link.project_title}' from '${link.org_name}' (₹${allocated} released)`);
+            await conn.commit();
+            return successResponse(res, { data: { action: 'deleted', released_amount: allocated } }, 'Project link removed and allocation released.');
+        } else {
+            // Spent > 0: Rule 3 - Close link and release only the unspent amount
+            const unspent = Math.max(0, allocated - spent);
 
-        await conn.commit();
-        return successResponse(res, { data: { success: true } }, 'Link removed.');
+            // Update link status to 'Closed' and set allocated_amount to spent
+            await conn.query(
+                `UPDATE csr_project_links
+                 SET status = 'Closed', allocated_amount = ?, updated_at = NOW()
+                 WHERE id = ?`,
+                [spent, linkId]
+            );
+
+            // Update corresponding budget allocation amount to spent
+            await conn.query(
+                `UPDATE project_budget_allocations
+                 SET amount = ?
+                 WHERE project_id = ? AND csr_org_id = ?
+                 LIMIT 1`,
+                [spent, link.project_id, csr_org_id]
+            );
+
+            // Deduct only unspent amount from project budget
+            if (unspent > 0) {
+                await conn.query(
+                    'UPDATE projects SET budget = GREATEST(COALESCE(spent, 0), budget - ?) WHERE id = ?',
+                    [unspent, link.project_id]
+                );
+            }
+
+            await logActivity(conn, req.admin?.full_name,
+                `closed CSR partnership for project '${link.project_title}' with '${link.org_name}' (₹${spent} utilised, ₹${unspent} released)`);
+            await conn.commit();
+            return successResponse(res, { data: { action: 'closed', retained_amount: spent, released_amount: unspent } }, `Project partnership closed. ₹${spent.toLocaleString('en-IN')} retained in historical budget and ₹${unspent.toLocaleString('en-IN')} unspent released.`);
+        }
     } catch (err) {
         await conn.rollback();
         console.error('[removeCSROrgProjectLink]', err);

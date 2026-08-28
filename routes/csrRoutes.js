@@ -21,6 +21,7 @@ import {
     createCSRReport,
     updateCSRReport,
     deleteCSRReport,
+    uploadCSRDocument,
 } from '../controllers/csrController.js';
 import {
     getCSROrgProjects,
@@ -33,6 +34,9 @@ const router = express.Router();
 
 // All CSR routes require authentication + 'csr' permission
 router.use(verifyToken, requirePermission('csr'));
+
+// ── Upload ────────────────────────────────────────────────────
+router.post('/upload', uploadCSRDocument);
 
 // ── Stats ─────────────────────────────────────────────────────
 router.get('/stats', getCSRStats);
