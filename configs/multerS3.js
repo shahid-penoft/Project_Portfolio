@@ -254,11 +254,33 @@ export const uploadInformationCenterFiles = multer({
     { name: 'attachments', maxCount: 20 }
 ]);
 
+// Helper: automatically rewrite S3 location to custom assets domain
+export const transformFileLocations = (req) => {
+    const baseUrl = (process.env.MEDIA_BASE_URL || '').replace(/\/+$/, '');
+    if (!baseUrl) return;
+
+    const transform = (f) => {
+        if (f && f.key) {
+            f.location = `${baseUrl}/${f.key.replace(/^\/+/, '')}`;
+        }
+    };
+
+    if (req.file) transform(req.file);
+    if (req.files) {
+        if (Array.isArray(req.files)) {
+            req.files.forEach(transform);
+        } else if (typeof req.files === 'object') {
+            Object.values(req.files).flat().forEach(transform);
+        }
+    }
+};
+
 // Helper: wrap multer in a promise (for use inside async controllers)
 export const runMulter = (multerFn, req, res) =>
     new Promise((resolve, reject) =>
         multerFn(req, res, (err) => {
             if (!req.body) req.body = {};
+            if (!err) transformFileLocations(req);
             return err ? reject(err) : resolve();
         })
     );
@@ -267,6 +289,7 @@ export const runMulter = (multerFn, req, res) =>
 export const safeUploadIcon = (req, res, next) => {
     uploadIcon(req, res, (err) => {
         if (!req.body) req.body = {};
+        if (!err) transformFileLocations(req);
         if (err) {
             console.warn('Multer S3 error (non-fatal):', err.message);
         }
