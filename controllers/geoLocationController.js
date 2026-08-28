@@ -60,7 +60,7 @@ export const getAllGeoLocations = async (req, res) => {
             LEFT JOIN admin_users cb ON g.created_by = cb.id
             LEFT JOIN admin_users ub ON g.updated_by = ub.id
             LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
-            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND (CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR) OR g.ward = CONCAT('Ward ', lbw.ward_no) OR (lbw.place_name IS NOT NULL AND g.ward = lbw.place_name))
             WHERE 1=1
         `;
 
@@ -68,7 +68,7 @@ export const getAllGeoLocations = async (req, res) => {
             SELECT COUNT(*) as total 
             FROM geo_locations g 
             LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
-            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND (CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR) OR g.ward = CONCAT('Ward ', lbw.ward_no) OR (lbw.place_name IS NOT NULL AND g.ward = lbw.place_name))
             WHERE 1=1
         `;
 
@@ -143,19 +143,31 @@ export const getAllGeoLocations = async (req, res) => {
             }
         }
 
-        // Wards (handles "Ward 5", "5", etc.)
+        // Wards (handles "Ward 5", "5", "39_5", place names, etc.)
         const rawWardVals = parseValues(wards || ward).filter(v => v !== 'All');
         if (rawWardVals.length > 0) {
-            const cleanedWards = rawWardVals.map(w => {
-                const str = String(w).trim();
-                const match = str.match(/\d+/);
-                return match ? match[0] : str;
-            });
-            const placeholders = cleanedWards.map(() => '?').join(',');
-            baseQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
-            countQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
-            queryParams.push(...cleanedWards, ...cleanedWards);
-            countParams.push(...cleanedWards, ...cleanedWards);
+            const wardClauses = [];
+            for (const rawW of rawWardVals) {
+                const str = String(rawW).trim();
+                if (str.includes('_')) {
+                    const [lbId, wNo] = str.split('_');
+                    const match = wNo.match(/\d+/);
+                    const cleanD = match ? match[0] : wNo;
+                    wardClauses.push(`(g.local_body_id = ? AND (g.ward = ? OR g.ward = ? OR g.ward LIKE ? OR lbw.ward_no = ?))`);
+                    queryParams.push(Number(lbId), cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD);
+                    countParams.push(Number(lbId), cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD);
+                } else {
+                    const match = str.match(/\d+/);
+                    const cleanD = match ? match[0] : str;
+                    wardClauses.push(`(g.ward = ? OR g.ward = ? OR g.ward LIKE ? OR lbw.ward_no = ? OR (lbw.place_name IS NOT NULL AND lbw.place_name LIKE ?))`);
+                    queryParams.push(cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD, `%${str}%`);
+                    countParams.push(cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD, `%${str}%`);
+                }
+            }
+            if (wardClauses.length > 0) {
+                baseQuery += ` AND (${wardClauses.join(' OR ')})`;
+                countQuery += ` AND (${wardClauses.join(' OR ')})`;
+            }
         }
 
         // Admin Bookmarked
@@ -305,9 +317,15 @@ export const getAllGeoLocations = async (req, res) => {
         localBodyRows.forEach(r => { if (r.local_body_id != null) filterCounts.localBodies[String(r.local_body_id)] = r.count; });
         wardRows.forEach(r => {
             if (r.ward != null) {
-                const wStr = String(r.ward);
+                const wStr = String(r.ward).trim();
+                const match = wStr.match(/\d+/);
+                const cleanDigit = match ? match[0] : wStr;
+                
+                filterCounts.wards[cleanDigit] = (filterCounts.wards[cleanDigit] || 0) + r.count;
+                filterCounts.wards[`Ward ${cleanDigit}`] = (filterCounts.wards[`Ward ${cleanDigit}`] || 0) + r.count;
                 filterCounts.wards[wStr] = (filterCounts.wards[wStr] || 0) + r.count;
                 if (r.local_body_id != null) {
+                    filterCounts.wards[`${r.local_body_id}_${cleanDigit}`] = r.count;
                     filterCounts.wards[`${r.local_body_id}_${wStr}`] = r.count;
                 }
             }
@@ -343,8 +361,24 @@ export const getAllGeoLocations = async (req, res) => {
             else filterCounts.anyHistory["No History"] += r.count;
         });
 
+        // Compute Tourist Spots count
+        const touristCount = filterCounts.touristPlace?.["Tourist Places Only"] || (
+            categoryRows.find(r => r.category === 'Tourist Spots' || r.category === 'Tourism')?.count || 0
+        );
+
         // Global stats for cards
-        const stats = { total, ...filterCounts.categories };
+        const stats = {
+            total,
+            ...filterCounts.categories,
+            "Tourist Spots": touristCount,
+            "touristPlaces": touristCount,
+            "Religious Sites": filterCounts.categories["Religious Sites"] || filterCounts.categories["Religious"] || 0,
+            "Water Bodies": filterCounts.categories["Water Bodies"] || filterCounts.categories["Water Body"] || 0,
+            "Educational": filterCounts.categories["Educational"] || filterCounts.categories["Education"] || 0,
+            "Healthcare": filterCounts.categories["Healthcare"] || filterCounts.categories["Health"] || 0,
+            "Government": filterCounts.categories["Government"] || filterCounts.categories["Govt"] || 0,
+            "Public Places": filterCounts.categories["Public Places"] || filterCounts.categories["Public Place"] || 0,
+        };
 
         return successResponse(res, {
             data: rows,
@@ -392,19 +426,36 @@ export const getGeoLocationStats = async (req, res) => {
             `SELECT COUNT(*) as mappedCount FROM geo_locations WHERE status = 'published' AND coordinates IS NOT NULL AND coordinates != ''`
         );
 
-        const stats = {
-            total: totalRow[0].total,
-            wardsCount: wardRow[0].wardsCount,
-            addedThisWeek: weekRow[0].addedThisWeek,
-            mappedCount: mappedRow[0].mappedCount,
-            categoryCounts: {}
-        };
+        const [touristRow] = await db.query(
+            `SELECT COUNT(*) as touristCount FROM geo_locations WHERE status = 'published' AND (is_tourist_place = 1 OR category IN ('Tourist Spots', 'Tourism', 'Tourist Place'))`
+        );
 
+        const categoryCounts = {};
         categoryRows.forEach(row => {
             if (row.category) {
-                stats.categoryCounts[row.category] = row.count;
+                categoryCounts[row.category] = row.count;
             }
         });
+
+        const touristCount = touristRow[0]?.touristCount || 0;
+
+        const stats = {
+            total: totalRow[0]?.total || 0,
+            touristCount,
+            "Tourist Spots": touristCount,
+            "touristPlaces": touristCount,
+            "Religious Sites": categoryCounts["Religious Sites"] || categoryCounts["Religious"] || 0,
+            "Water Bodies": categoryCounts["Water Bodies"] || categoryCounts["Water Body"] || 0,
+            "Educational": categoryCounts["Educational"] || categoryCounts["Education"] || 0,
+            "Healthcare": categoryCounts["Healthcare"] || categoryCounts["Health"] || 0,
+            "Government": categoryCounts["Government"] || categoryCounts["Govt"] || 0,
+            "Public Places": categoryCounts["Public Places"] || categoryCounts["Public Place"] || 0,
+            wardsCount: wardRow[0]?.wardsCount || 0,
+            addedThisWeek: weekRow[0]?.addedThisWeek || 0,
+            mappedCount: mappedRow[0]?.mappedCount || 0,
+            categoryCounts,
+            ...categoryCounts
+        };
 
         return successResponse(res, stats);
     } catch (error) {
@@ -460,7 +511,7 @@ export const getGeoLocationById = async (req, res) => {
             LEFT JOIN admin_users cb ON g.created_by = cb.id
             LEFT JOIN admin_users ub ON g.updated_by = ub.id
             LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
-            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND (CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR) OR g.ward = CONCAT('Ward ', lbw.ward_no) OR (lbw.place_name IS NOT NULL AND g.ward = lbw.place_name))
             WHERE g.id = ?
         `;
         const [rows] = await db.query(query, [id]);
@@ -577,7 +628,7 @@ export const getMyBookmarks = async (req, res) => {
             FROM geo_locations g
             INNER JOIN geo_location_bookmarks b ON g.id = b.location_id
             LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
-            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND (CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR) OR g.ward = CONCAT('Ward ', lbw.ward_no) OR (lbw.place_name IS NOT NULL AND g.ward = lbw.place_name))
             WHERE b.constituent_id = ? AND g.status = 'published'
         `;
 
@@ -586,7 +637,7 @@ export const getMyBookmarks = async (req, res) => {
             FROM geo_locations g 
             INNER JOIN geo_location_bookmarks b ON g.id = b.location_id 
             LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
-            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR)
+            LEFT JOIN local_body_wards lbw ON lbw.local_body_id = g.local_body_id AND (CAST(lbw.ward_no AS CHAR) = CAST(g.ward AS CHAR) OR g.ward = CONCAT('Ward ', lbw.ward_no) OR (lbw.place_name IS NOT NULL AND g.ward = lbw.place_name))
             WHERE b.constituent_id = ? AND g.status = 'published'
         `;
 
@@ -641,19 +692,106 @@ export const getMyBookmarks = async (req, res) => {
             }
         }
 
-        // Wards
+        // Wards (handles "Ward 5", "5", "39_5", place names, etc.)
         const rawWardVals = parseValues(wards || ward).filter(v => v !== 'All');
         if (rawWardVals.length > 0) {
-            const cleanedWards = rawWardVals.map(w => {
-                const str = String(w).trim();
-                const match = str.match(/\d+/);
-                return match ? match[0] : str;
-            });
-            const placeholders = cleanedWards.map(() => '?').join(',');
-            baseQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
-            countQuery += ` AND (g.ward IN (${placeholders}) OR lbw.ward_no IN (${placeholders}))`;
-            queryParams.push(...cleanedWards, ...cleanedWards);
-            countParams.push(...cleanedWards, ...cleanedWards);
+            const wardClauses = [];
+            for (const rawW of rawWardVals) {
+                const str = String(rawW).trim();
+                if (str.includes('_')) {
+                    const [lbId, wNo] = str.split('_');
+                    const match = wNo.match(/\d+/);
+                    const cleanD = match ? match[0] : wNo;
+                    wardClauses.push(`(g.local_body_id = ? AND (g.ward = ? OR g.ward = ? OR g.ward LIKE ? OR lbw.ward_no = ?))`);
+                    queryParams.push(Number(lbId), cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD);
+                    countParams.push(Number(lbId), cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD);
+                } else {
+                    const match = str.match(/\d+/);
+                    const cleanD = match ? match[0] : str;
+                    wardClauses.push(`(g.ward = ? OR g.ward = ? OR g.ward LIKE ? OR lbw.ward_no = ? OR (lbw.place_name IS NOT NULL AND lbw.place_name LIKE ?))`);
+                    queryParams.push(cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD, `%${str}%`);
+                    countParams.push(cleanD, `Ward ${cleanD}`, `%${cleanD}%`, cleanD, `%${str}%`);
+                }
+            }
+            if (wardClauses.length > 0) {
+                baseQuery += ` AND (${wardClauses.join(' OR ')})`;
+                countQuery += ` AND (${wardClauses.join(' OR ')})`;
+            }
+        }
+
+        // Tourist Place
+        const touristVal = req.query.is_tourist_place !== undefined ? req.query.is_tourist_place : req.query.touristPlace;
+        if (touristVal !== undefined && touristVal !== '') {
+            const isTourist = touristVal === 'true' || touristVal === '1' || touristVal === 1 || touristVal === 'Tourist Places Only' ? 1 : 0;
+            baseQuery += ` AND g.is_tourist_place = ?`;
+            countQuery += ` AND g.is_tourist_place = ?`;
+            queryParams.push(isTourist);
+            countParams.push(isTourist);
+        }
+
+        // Operational Status
+        const opVal = req.query.is_operational !== undefined ? req.query.is_operational : req.query.operationalStatus;
+        if (opVal !== undefined && opVal !== '') {
+            const opParsed = parseValues(opVal);
+            if (opParsed.includes('Operational') || opParsed.includes('1') || opParsed.includes(1)) {
+                baseQuery += ` AND (g.is_operational = 1 OR g.is_operational IS NULL)`;
+                countQuery += ` AND (g.is_operational = 1 OR g.is_operational IS NULL)`;
+            } else if (opParsed.includes('Non-Operational') || opParsed.includes('0') || opParsed.includes(0)) {
+                baseQuery += ` AND g.is_operational = 0`;
+                countQuery += ` AND g.is_operational = 0`;
+            }
+        }
+
+        // Public Access
+        const paVal = req.query.is_public_access !== undefined ? req.query.is_public_access : req.query.publicAccess;
+        if (paVal !== undefined && paVal !== '') {
+            const paParsed = parseValues(paVal);
+            if (paParsed.includes('Yes') || paParsed.includes('Public Access') || paParsed.includes('1') || paParsed.includes(1)) {
+                baseQuery += ` AND (g.is_public_access = 1 OR g.is_public_access IS NULL)`;
+                countQuery += ` AND (g.is_public_access = 1 OR g.is_public_access IS NULL)`;
+            } else if (paParsed.includes('No') || paParsed.includes('Private Access') || paParsed.includes('0') || paParsed.includes(0)) {
+                baseQuery += ` AND g.is_public_access = 0`;
+                countQuery += ` AND g.is_public_access = 0`;
+            }
+        }
+
+        // Parking
+        const parkVal = req.query.has_parking !== undefined ? req.query.has_parking : req.query.parking;
+        if (parkVal !== undefined && parkVal !== '') {
+            const parkParsed = parseValues(parkVal);
+            if (parkParsed.includes('Yes') || parkParsed.includes('Parking Available') || parkParsed.includes('1') || parkParsed.includes(1)) {
+                baseQuery += ` AND g.has_parking = 1`;
+                countQuery += ` AND g.has_parking = 1`;
+            } else if (parkParsed.includes('No') || parkParsed.includes('No Parking') || parkParsed.includes('0') || parkParsed.includes(0)) {
+                baseQuery += ` AND (g.has_parking = 0 OR g.has_parking IS NULL)`;
+                countQuery += ` AND (g.has_parking = 0 OR g.has_parking IS NULL)`;
+            }
+        }
+
+        // Wheelchair
+        const wcVal = req.query.has_wheelchair !== undefined ? req.query.has_wheelchair : req.query.wheelchairAccess;
+        if (wcVal !== undefined && wcVal !== '') {
+            const wcParsed = parseValues(wcVal);
+            if (wcParsed.includes('Yes') || wcParsed.includes('Wheelchair Accessible') || wcParsed.includes('1') || wcParsed.includes(1)) {
+                baseQuery += ` AND g.has_wheelchair = 1`;
+                countQuery += ` AND g.has_wheelchair = 1`;
+            } else if (wcParsed.includes('No') || wcParsed.includes('Not Accessible') || wcParsed.includes('0') || wcParsed.includes(0)) {
+                baseQuery += ` AND (g.has_wheelchair = 0 OR g.has_wheelchair IS NULL)`;
+                countQuery += ` AND (g.has_wheelchair = 0 OR g.has_wheelchair IS NULL)`;
+            }
+        }
+
+        // History
+        const histVal = req.query.any_history !== undefined ? req.query.any_history : req.query.anyHistory;
+        if (histVal !== undefined && histVal !== '') {
+            const histParsed = parseValues(histVal);
+            if (histParsed.includes('Yes') || histParsed.includes('Has History')) {
+                baseQuery += ` AND g.any_history = 'Yes'`;
+                countQuery += ` AND g.any_history = 'Yes'`;
+            } else if (histParsed.includes('No') || histParsed.includes('No History')) {
+                baseQuery += ` AND (g.any_history = 'No' OR g.any_history IS NULL)`;
+                countQuery += ` AND (g.any_history = 'No' OR g.any_history IS NULL)`;
+            }
         }
 
         // Search
@@ -719,9 +857,15 @@ export const getMyBookmarks = async (req, res) => {
         localBodyRows.forEach(r => { if (r.local_body_id != null) filterCounts.localBodies[String(r.local_body_id)] = r.count; });
         wardRows.forEach(r => {
             if (r.ward != null) {
-                const wStr = String(r.ward);
+                const wStr = String(r.ward).trim();
+                const match = wStr.match(/\d+/);
+                const cleanDigit = match ? match[0] : wStr;
+                
+                filterCounts.wards[cleanDigit] = (filterCounts.wards[cleanDigit] || 0) + r.count;
+                filterCounts.wards[`Ward ${cleanDigit}`] = (filterCounts.wards[`Ward ${cleanDigit}`] || 0) + r.count;
                 filterCounts.wards[wStr] = (filterCounts.wards[wStr] || 0) + r.count;
                 if (r.local_body_id != null) {
+                    filterCounts.wards[`${r.local_body_id}_${cleanDigit}`] = r.count;
                     filterCounts.wards[`${r.local_body_id}_${wStr}`] = r.count;
                 }
             }

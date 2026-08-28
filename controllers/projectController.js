@@ -9,6 +9,19 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadDir = path.join(__dirname, '..', 'uploads');
 
+// Ensure completion_percentage column exists in projects table
+(async () => {
+    try {
+        const [cols] = await db.query("SHOW COLUMNS FROM projects LIKE 'completion_percentage'");
+        if (cols.length === 0) {
+            await db.query("ALTER TABLE projects ADD COLUMN completion_percentage INT NULL DEFAULT NULL AFTER status");
+            console.log('[projectController] Added completion_percentage column to projects table');
+        }
+    } catch (e) {
+        console.error('[projectController] Error checking/adding completion_percentage column:', e);
+    }
+})();
+
 const filterValidMediaUrls = (items, preserveCoverSlot = false) => {
     if (!Array.isArray(items)) return [];
     return items.filter((item, idx) => {
@@ -118,25 +131,32 @@ export const uploadProjectInlineImage = async (req, res) => {
 };
 
 // ── Helper: Build dynamic filters & sorting for projects ──────────
-function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_deleted, 0) = 0']) {
-    const conditions = [...defaultConditions];
-    const vals = [];
+const buildProjectFiltersAndSort = (query) => {
+    const getParam = (...names) => {
+        for (const name of names) {
+            if (query[name] !== undefined) return query[name];
+            if (query[`${name}[]`] !== undefined) return query[`${name}[]`];
+        }
+        return undefined;
+    };
 
-    const {
-        search, q,
-        type, project_type,
-        project_sub_type, sub_type,
-        category,
-        department_id, department,
-        sector_id, sector,
-        local_body_id, local_body,
-        ward_id, ward,
-        status,
-        year,
-        is_active, visibility,
-        sortBy, sort_by,
-        sortOrder, sort_order, order
-    } = query;
+    const type = getParam('type', 'project_type');
+    const sub_type = getParam('sub_type', 'project_sub_type');
+    const category = getParam('category');
+    const department = getParam('department_id', 'department');
+    const sector = getParam('sector_id', 'sector');
+    const local_body = getParam('local_body_id', 'local_body');
+    const ward = getParam('ward_id', 'ward');
+    const status = getParam('status');
+    const is_active = getParam('is_active');
+    const visibility = getParam('visibility');
+    const year = getParam('year');
+    const search = getParam('search', 'q');
+    const sortBy = getParam('sortBy', 'sort_by');
+    const sortOrder = getParam('sortOrder', 'sort_order', 'order');
+
+    const conditions = ['p.deleted_at IS NULL'];
+    const vals = [];
 
     // Helper for multi-value / array / comma-separated parameters
     const parseValues = (val) => {
@@ -147,7 +167,7 @@ function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_d
     };
 
     // Project Type (MLA vs Portfolio vs specific)
-    const effectiveType = type || project_type;
+    const effectiveType = type;
     if (effectiveType === 'MLA') {
         conditions.push("p.project_type = 'MLA'");
     } else if (effectiveType === 'PORTFOLIO' || effectiveType === 'other') {
@@ -158,7 +178,7 @@ function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_d
     }
 
     // Project Sub Type (e.g. MLA Projects, Ente Nadu Projects, etc.)
-    const subTypeVals = parseValues(project_sub_type || sub_type).filter(v => v !== 'all');
+    const subTypeVals = parseValues(sub_type).filter(v => v !== 'all');
     if (subTypeVals.length === 1) {
         conditions.push('p.project_sub_type = ?');
         vals.push(subTypeVals[0]);
@@ -178,7 +198,7 @@ function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_d
     }
 
     // Department (p.department_id or d.name or JSON departments)
-    const deptVals = parseValues(department_id || department).filter(v => v !== 'all');
+    const deptVals = parseValues(department).filter(v => v !== 'all');
     if (deptVals.length === 1) {
         if (!isNaN(deptVals[0])) {
             conditions.push('(p.department_id = ? OR JSON_CONTAINS(p.departments, ?))');
@@ -203,7 +223,7 @@ function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_d
     }
 
     // Sector (p.sector_id)
-    const sectorVals = parseValues(sector_id || sector).filter(v => v !== 'all');
+    const sectorVals = parseValues(sector).filter(v => v !== 'all');
     if (sectorVals.length === 1) {
         if (!isNaN(sectorVals[0])) {
             conditions.push('p.sector_id = ?');
@@ -224,7 +244,7 @@ function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_d
     }
 
     // Local Body (p.local_body_id)
-    const lbVals = parseValues(local_body_id || local_body).filter(v => v !== 'all');
+    const lbVals = parseValues(local_body).filter(v => v !== 'all');
     if (lbVals.length === 1) {
         if (!isNaN(lbVals[0])) {
             conditions.push('p.local_body_id = ?');
@@ -244,14 +264,29 @@ function buildProjectFiltersAndSort(query, defaultConditions = ['COALESCE(p.is_d
         }
     }
 
-    // Ward (p.ward_id)
-    const wardVals = parseValues(ward_id || ward).filter(v => v !== 'all');
+    // Ward (p.ward_id or w.ward_no or w.place_name)
+    const wardVals = parseValues(ward).filter(v => v !== 'all');
     if (wardVals.length === 1) {
-        conditions.push('p.ward_id = ?');
-        vals.push(wardVals[0]);
+        if (!isNaN(wardVals[0])) {
+            conditions.push('(p.ward_id = ? OR w.ward_no = ?)');
+            vals.push(Number(wardVals[0]), String(wardVals[0]));
+        } else {
+            conditions.push('(w.place_name = ? OR w.ward_no = ?)');
+            vals.push(wardVals[0], wardVals[0]);
+        }
     } else if (wardVals.length > 1) {
-        conditions.push(`p.ward_id IN (${wardVals.map(() => '?').join(',')})`);
-        vals.push(...wardVals);
+        const numWards = wardVals.filter(v => !isNaN(v)).map(Number);
+        const strWards = wardVals.filter(v => isNaN(v));
+        const orClauses = [];
+        if (numWards.length > 0) {
+            orClauses.push(`(p.ward_id IN (${numWards.map(() => '?').join(',')}) OR w.ward_no IN (${numWards.map(() => '?').join(',')}))`);
+            vals.push(...numWards, ...numWards.map(String));
+        }
+        if (strWards.length > 0) {
+            orClauses.push(`(w.place_name IN (${strWards.map(() => '?').join(',')}) OR w.ward_no IN (${strWards.map(() => '?').join(',')}))`);
+            vals.push(...strWards, ...strWards);
+        }
+        conditions.push(`(${orClauses.join(' OR ')})`);
     }
 
     // Status (p.status)
@@ -354,7 +389,7 @@ export const getAllProjects = async (req, res) => {
         const [rows] = await db.query(
             `SELECT p.id, p.title, p.slug, p.description, p.project_content,
                     p.images, p.videos, p.tags, p.year, p.sector_id, p.category, p.local_body_id, p.ward_id,
-                    p.display_order, p.is_active, p.status, p.start_date, p.end_date,
+                    p.display_order, p.is_active, p.status, p.completion_percentage, p.start_date, p.end_date,
                     p.created_at, p.updated_at, p.project_type, p.project_sub_type,
                     s.name AS sector_name, lb.name AS local_body_name, d.name AS department_name,
                     w.ward_no, w.place_name AS ward_name,
@@ -362,6 +397,7 @@ export const getAllProjects = async (req, res) => {
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
                     (CASE 
+                        WHEN p.completion_percentage IS NOT NULL THEN p.completion_percentage
                         WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
                         THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
                         WHEN p.status = 'Completed' THEN 100
@@ -385,9 +421,101 @@ export const getAllProjects = async (req, res) => {
             videos: (() => { try { return typeof r.videos === 'string' ? JSON.parse(r.videos) : (r.videos || []); } catch { return []; } })(),
         }));
 
+        // Compute real-time filterCounts for facets
+        let filterCounts = {
+            status: {},
+            sector: {},
+            localBody: {},
+            ward: {},
+            category: {},
+            department: {},
+            visibility: { active: 0, hidden: 0 },
+        };
+
+        try {
+            const baseConditions = ['p.deleted_at IS NULL'];
+            const baseVals = [];
+            if (req.query.type && req.query.type !== 'all') {
+                baseConditions.push('p.project_type = ?');
+                baseVals.push(req.query.type);
+            }
+            if (req.query.project_sub_type && req.query.project_sub_type !== 'all') {
+                baseConditions.push('p.project_sub_type = ?');
+                baseVals.push(req.query.project_sub_type);
+            }
+            const baseWhere = baseConditions.length ? `WHERE ${baseConditions.join(' AND ')}` : '';
+
+            const [
+                [statusRows],
+                [sectorRows],
+                [localBodyRows],
+                [wardRows],
+                [categoryRows],
+                [departmentRows],
+                [visibilityRows]
+            ] = await Promise.all([
+                db.query(`SELECT p.status, COUNT(*) AS count FROM projects p ${baseWhere} GROUP BY p.status`, baseVals),
+                db.query(`SELECT p.sector_id, s.name AS sector_name, COUNT(*) AS count FROM projects p LEFT JOIN sectors s ON s.id = p.sector_id ${baseWhere} GROUP BY p.sector_id, s.name`, baseVals),
+                db.query(`SELECT p.local_body_id, lb.name AS local_body_name, COUNT(*) AS count FROM projects p LEFT JOIN local_bodies lb ON lb.id = p.local_body_id ${baseWhere} GROUP BY p.local_body_id, lb.name`, baseVals),
+                db.query(`SELECT p.ward_id, p.local_body_id, w.ward_no, w.place_name, COUNT(*) AS count FROM projects p LEFT JOIN local_body_wards w ON w.id = p.ward_id ${baseWhere} GROUP BY p.ward_id, p.local_body_id, w.ward_no, w.place_name`, baseVals),
+                db.query(`SELECT p.category, COUNT(*) AS count FROM projects p ${baseWhere} ${baseWhere ? 'AND' : 'WHERE'} (p.category IS NOT NULL AND p.category != '') GROUP BY p.category`, baseVals),
+                db.query(`SELECT p.department_id, d.name AS department_name, COUNT(*) AS count FROM projects p LEFT JOIN departments d ON d.id = p.department_id ${baseWhere} GROUP BY p.department_id, d.name`, baseVals),
+                db.query(`SELECT p.is_active, COUNT(*) AS count FROM projects p ${baseWhere} GROUP BY p.is_active`, baseVals),
+            ]);
+
+            statusRows.forEach(r => {
+                if (r.status) filterCounts.status[r.status] = r.count;
+            });
+
+            sectorRows.forEach(r => {
+                if (r.sector_id != null) filterCounts.sector[String(r.sector_id)] = r.count;
+                if (r.sector_name) filterCounts.sector[r.sector_name] = r.count;
+            });
+
+            localBodyRows.forEach(r => {
+                if (r.local_body_id != null) filterCounts.localBody[String(r.local_body_id)] = r.count;
+                if (r.local_body_name) filterCounts.localBody[r.local_body_name] = r.count;
+            });
+
+            wardRows.forEach(r => {
+                if (r.ward_id != null) filterCounts.ward[String(r.ward_id)] = r.count;
+                if (r.ward_no != null) {
+                    const cleanDigit = String(r.ward_no).replace(/\D+/g, '');
+                    if (cleanDigit) {
+                        filterCounts.ward[cleanDigit] = (filterCounts.ward[cleanDigit] || 0) + r.count;
+                        filterCounts.ward[`Ward ${cleanDigit}`] = (filterCounts.ward[`Ward ${cleanDigit}`] || 0) + r.count;
+                    }
+                    if (r.local_body_id != null) {
+                        if (cleanDigit) filterCounts.ward[`${r.local_body_id}_${cleanDigit}`] = r.count;
+                        filterCounts.ward[`${r.local_body_id}_${r.ward_no}`] = r.count;
+                    }
+                }
+                if (r.place_name) {
+                    filterCounts.ward[r.place_name] = (filterCounts.ward[r.place_name] || 0) + r.count;
+                }
+            });
+
+            categoryRows.forEach(r => {
+                if (r.category) filterCounts.category[r.category] = r.count;
+            });
+
+            departmentRows.forEach(r => {
+                if (r.department_id != null) filterCounts.department[String(r.department_id)] = r.count;
+                if (r.department_name) filterCounts.department[r.department_name] = r.count;
+            });
+
+            visibilityRows.forEach(r => {
+                if (r.is_active == 1) filterCounts.visibility.active = r.count;
+                if (r.is_active == 0) filterCounts.visibility.hidden = r.count;
+            });
+        } catch (fcErr) {
+            console.error('[getAllProjects] Failed to compute filterCounts:', fcErr);
+        }
+
         return successResponse(res, {
             data: parsedRows,
             pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+            filterCounts,
         }, 'Projects fetched.');
     } catch (err) {
         console.error('[getAllProjects]', err);
@@ -411,6 +539,7 @@ export const getProjectsByYear = async (req, res) => {
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
                     (CASE 
+                        WHEN p.completion_percentage IS NOT NULL THEN p.completion_percentage
                         WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
                         THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
                         WHEN p.status = 'Completed' THEN 100
@@ -452,6 +581,7 @@ export const getProjectsByLocalBody = async (req, res) => {
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
                     (CASE 
+                        WHEN p.completion_percentage IS NOT NULL THEN p.completion_percentage
                         WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
                         THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
                         WHEN p.status = 'Completed' THEN 100
@@ -493,6 +623,7 @@ export const getProjectsBySector = async (req, res) => {
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) AS milestones_total,
                     (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') AS milestones_completed,
                     (CASE 
+                        WHEN p.completion_percentage IS NOT NULL THEN p.completion_percentage
                         WHEN (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id) > 0 
                         THEN ROUND(((SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id AND pm.status = 'Done') * 100.0) / (SELECT COUNT(*) FROM project_milestones pm WHERE pm.project_id = p.id))
                         WHEN p.status = 'Completed' THEN 100
@@ -812,7 +943,7 @@ export const createProject = async (req, res) => {
             title, description, project_content, images = [], videos = [], tags,
             year, sector_id, category, local_body_id,
             display_order = 0, is_active = 1,
-            status = 'In Progress', ward_id, start_date, end_date,
+            status = 'In Progress', completion_percentage, ward_id, start_date, end_date,
             actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00,
             project_type = 'MLA', project_sub_type, milestones = [], team = [], contractors = []
         } = req.body;
@@ -852,13 +983,16 @@ export const createProject = async (req, res) => {
         const cleanIsActive = (is_active == 1 || is_active === true || is_active === '1') ? 1 : 0;
         const cleanProjectType = sanitizeProjectType(project_type);
         const cleanProjectSubType = project_sub_type ? String(project_sub_type).trim() : null;
+        const cleanCompletionPct = (completion_percentage !== undefined && completion_percentage !== null && completion_percentage !== '')
+            ? Math.min(100, Math.max(0, parseInt(completion_percentage, 10)))
+            : null;
 
         const [result] = await db.query(
-            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, category, local_body_id, display_order, is_active, status, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by, project_type, project_sub_type)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO projects (title, slug, description, project_content, images, videos, tags, year, sector_id, category, local_body_id, display_order, is_active, status, completion_percentage, ward_id, start_date, end_date, actual_start_date, actual_end_date, location, departments, department_id, budget, created_by, updated_by, project_type, project_sub_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, cleanYear,
             cleanSectorId, category || null, cleanLocalBodyId, cleanDisplayOrder, cleanIsActive,
-            status || 'In Progress', cleanWardId, cleanStartDate, cleanEndDate, cleanActualStartDate, cleanActualEndDate, location || null, depsJson, cleanDeptId, cleanBudget, adminId, adminId, cleanProjectType, cleanProjectSubType]
+            status || 'In Progress', cleanCompletionPct, cleanWardId, cleanStartDate, cleanEndDate, cleanActualStartDate, cleanActualEndDate, location || null, depsJson, cleanDeptId, cleanBudget, adminId, adminId, cleanProjectType, cleanProjectSubType]
         );
 
         const newProjectId = result.insertId;
@@ -940,7 +1074,7 @@ export const updateProject = async (req, res) => {
             title, description, project_content, images = [], videos = [], tags,
             year, sector_id, category, local_body_id,
             display_order = 0, is_active = 1,
-            status = 'In Progress', ward_id, start_date, end_date,
+            status = 'In Progress', completion_percentage, ward_id, start_date, end_date,
             actual_start_date, actual_end_date, location, departments = [], department_id, budget = 0.00,
             project_type = 'MLA', project_sub_type
         } = req.body;
@@ -986,15 +1120,18 @@ export const updateProject = async (req, res) => {
         const cleanIsActive = (is_active == 1 || is_active === true || is_active === '1') ? 1 : 0;
         const cleanProjectType = sanitizeProjectType(project_type);
         const cleanProjectSubType = project_sub_type ? String(project_sub_type).trim() : null;
+        const cleanCompletionPct = (completion_percentage !== undefined && completion_percentage !== null && completion_percentage !== '')
+            ? Math.min(100, Math.max(0, parseInt(completion_percentage, 10)))
+            : null;
 
         const [result] = await db.query(
             `UPDATE projects SET title=?, slug=?, description=?, project_content=?, images=?, videos=?, tags=?, year=?,
              sector_id=?, category=?, local_body_id=?, display_order=?, is_active=?, updated_at=NOW(), updated_by=?,
-             status=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?, project_type=?, project_sub_type=?
+             status=?, completion_percentage=?, ward_id=?, start_date=?, end_date=?, actual_start_date=?, actual_end_date=?, location=?, departments=?, department_id=?, budget=?, project_type=?, project_sub_type=?
              WHERE id=?`,
             [title.trim(), slug, description || null, project_content || null, imagesJson, videosJson, tags || null, cleanYear,
             cleanSectorId, category || null, cleanLocalBodyId, cleanDisplayOrder, cleanIsActive, adminId,
-            status || 'In Progress', cleanWardId, cleanStartDate, cleanEndDate, cleanActualStartDate, cleanActualEndDate, location || null, depsJson, cleanDeptId, cleanBudget, cleanProjectType, cleanProjectSubType, id]
+            status || 'In Progress', cleanCompletionPct, cleanWardId, cleanStartDate, cleanEndDate, cleanActualStartDate, cleanActualEndDate, location || null, depsJson, cleanDeptId, cleanBudget, cleanProjectType, cleanProjectSubType, id]
         );
 
         if (!result.affectedRows) return errorResponse(res, 'Project not found.', 404);
