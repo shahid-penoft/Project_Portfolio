@@ -60,6 +60,15 @@ const formatDateTime = (dateStr) => {
     } catch { return String(dateStr); }
 };
 
+const maskMediaUrl = (url) => {
+    if (!url) return '';
+    const mediaBase = (process.env.MEDIA_BASE_URL || 'https://assets.shibutheckumpuram.com').replace(/\/+$/, '');
+    if (typeof url === 'string' && url.includes('.amazonaws.com')) {
+        return url.replace(/^https?:\/\/[^/]*\.amazonaws\.com/i, mediaBase);
+    }
+    return url;
+};
+
 const buildPostResponse = (row, attachments = []) => ({
     id:               row.id,
     title:            row.title,
@@ -71,16 +80,16 @@ const buildPostResponse = (row, attachments = []) => ({
     description:      row.rich_content || '',
     tags:             row.tags_count || 0,
     tagsList:         safeJSON(row.tags_list, []),
-    thumbnail_url:    row.thumbnail_url || '',
+    thumbnail_url:    maskMediaUrl(row.thumbnail_url || ''),
     actionButton:     row.action_button_label
-                        ? { label: row.action_button_label, url: row.action_button_url || '', external: Boolean(row.action_button_external) }
+                        ? { label: row.action_button_label, url: maskMediaUrl(row.action_button_url || ''), external: Boolean(row.action_button_external) }
                         : null,
     attachments:      attachments.map(a => ({
         id:        a.id,
         name:      a.name,
         size:      a.size,
         type:      a.mime_type,
-        url:       a.url,
+        url:       maskMediaUrl(a.url),
     })),
     createdBy:        row.created_by_name  || null,
     updatedBy:        row.updated_by_name  || null,
