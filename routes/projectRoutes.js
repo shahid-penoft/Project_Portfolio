@@ -35,7 +35,7 @@ import { getProjectCSRFunders } from '../controllers/csrProjectsController.js';
 const router = express.Router();
 
 // Public routes (must be defined before verifyToken)
-router.get('/public/slug/:slug', (req, res, next) => { console.log('DEBUG: Hit public slug route'); next(); }, getProjectBySlug);
+router.get('/public/slug/:slug', (req, res, next) => { next(); }, getProjectBySlug);
 router.get('/slug/:slug', (req, res, next) => { console.log('DEBUG: Hit shortened slug route'); next(); }, getProjectBySlug);
 router.get('/public', getAllProjects);
 router.get('/public/search', searchPublicProjects);

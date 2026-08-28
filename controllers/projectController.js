@@ -151,6 +151,9 @@ const buildProjectFiltersAndSort = (query) => {
     const is_active = getParam('is_active');
     const visibility = getParam('visibility');
     const year = getParam('year');
+    const dateRange = getParam('dateRange', 'date_range');
+    const dateFrom = getParam('date_from', 'from_date', 'startDate', 'start_date_from');
+    const dateTo = getParam('date_to', 'to_date', 'endDate', 'start_date_to');
     const search = getParam('search', 'q');
     const sortBy = getParam('sortBy', 'sort_by');
     const sortOrder = getParam('sortOrder', 'sort_order', 'order');
@@ -318,6 +321,40 @@ const buildProjectFiltersAndSort = (query) => {
         vals.push(...yearVals, ...yearVals);
     }
 
+    // Date Range (Preset label or custom bounds)
+    const rawDateRange = parseValues(dateRange)[0];
+    if (rawDateRange) {
+        switch (rawDateRange) {
+            case 'Today':
+                conditions.push('(p.created_at >= CURDATE() OR (p.start_date IS NOT NULL AND p.start_date >= CURDATE()))');
+                break;
+            case 'Last 7 Days':
+                conditions.push('(p.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)))');
+                break;
+            case 'Last 30 Days':
+                conditions.push('(p.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)))');
+                break;
+            case 'This Month':
+                conditions.push('(p.created_at >= DATE_SUB(CURDATE(), INTERVAL (DAY(CURDATE()) - 1) DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(CURDATE(), INTERVAL (DAY(CURDATE()) - 1) DAY)))');
+                break;
+            case 'This Year':
+                conditions.push('(p.created_at >= DATE_SUB(CURDATE(), INTERVAL (DAYOFYEAR(CURDATE()) - 1) DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(CURDATE(), INTERVAL (DAYOFYEAR(CURDATE()) - 1) DAY)))');
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (dateFrom) {
+        conditions.push('(p.created_at >= ? OR (p.start_date IS NOT NULL AND p.start_date >= ?))');
+        vals.push(dateFrom, dateFrom);
+    }
+    if (dateTo) {
+        const toVal = String(dateTo).includes(':') ? dateTo : `${dateTo} 23:59:59`;
+        conditions.push('(p.created_at <= ? OR (p.start_date IS NOT NULL AND p.start_date <= ?))');
+        vals.push(toVal, toVal);
+    }
+
     // Search query (title, tags, description)
     const searchTerm = search;
     if (searchTerm) {
@@ -429,6 +466,7 @@ export const getAllProjects = async (req, res) => {
             ward: {},
             category: {},
             department: {},
+            dateRange: {},
             visibility: { active: 0, hidden: 0 },
         };
 
@@ -452,15 +490,23 @@ export const getAllProjects = async (req, res) => {
                 [wardRows],
                 [categoryRows],
                 [departmentRows],
-                [visibilityRows]
+                [visibilityRows],
+                [dateRangeRows]
             ] = await Promise.all([
                 db.query(`SELECT p.status, COUNT(*) AS count FROM projects p ${baseWhere} GROUP BY p.status`, baseVals),
                 db.query(`SELECT p.sector_id, s.name AS sector_name, COUNT(*) AS count FROM projects p LEFT JOIN sectors s ON s.id = p.sector_id ${baseWhere} GROUP BY p.sector_id, s.name`, baseVals),
                 db.query(`SELECT p.local_body_id, lb.name AS local_body_name, COUNT(*) AS count FROM projects p LEFT JOIN local_bodies lb ON lb.id = p.local_body_id ${baseWhere} GROUP BY p.local_body_id, lb.name`, baseVals),
                 db.query(`SELECT p.ward_id, p.local_body_id, w.ward_no, w.place_name, COUNT(*) AS count FROM projects p LEFT JOIN local_body_wards w ON w.id = p.ward_id ${baseWhere} GROUP BY p.ward_id, p.local_body_id, w.ward_no, w.place_name`, baseVals),
                 db.query(`SELECT p.category, COUNT(*) AS count FROM projects p ${baseWhere} ${baseWhere ? 'AND' : 'WHERE'} (p.category IS NOT NULL AND p.category != '') GROUP BY p.category`, baseVals),
-                db.query(`SELECT p.department_id, d.name AS department_name, COUNT(*) AS count FROM projects p LEFT JOIN departments d ON d.id = p.department_id ${baseWhere} GROUP BY p.department_id, d.name`, baseVals),
+                db.query(`SELECT p.department_id, d.name AS department_name, p.departments FROM projects p LEFT JOIN departments d ON d.id = p.department_id ${baseWhere}`, baseVals),
                 db.query(`SELECT p.is_active, COUNT(*) AS count FROM projects p ${baseWhere} GROUP BY p.is_active`, baseVals),
+                db.query(`SELECT 
+                    COUNT(CASE WHEN p.created_at >= CURDATE() OR (p.start_date IS NOT NULL AND p.start_date >= CURDATE()) THEN 1 END) AS today_count,
+                    COUNT(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)) THEN 1 END) AS last7_count,
+                    COUNT(CASE WHEN p.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)) THEN 1 END) AS last30_count,
+                    COUNT(CASE WHEN p.created_at >= DATE_SUB(CURDATE(), INTERVAL (DAY(CURDATE()) - 1) DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(CURDATE(), INTERVAL (DAY(CURDATE()) - 1) DAY)) THEN 1 END) AS this_month_count,
+                    COUNT(CASE WHEN p.created_at >= DATE_SUB(CURDATE(), INTERVAL (DAYOFYEAR(CURDATE()) - 1) DAY) OR (p.start_date IS NOT NULL AND p.start_date >= DATE_SUB(CURDATE(), INTERVAL (DAYOFYEAR(CURDATE()) - 1) DAY)) THEN 1 END) AS this_year_count
+                    FROM projects p ${baseWhere}`, baseVals)
             ]);
 
             statusRows.forEach(r => {
@@ -500,9 +546,41 @@ export const getAllProjects = async (req, res) => {
             });
 
             departmentRows.forEach(r => {
-                if (r.department_id != null) filterCounts.department[String(r.department_id)] = r.count;
-                if (r.department_name) filterCounts.department[r.department_name] = r.count;
+                if (r.department_id != null) {
+                    const k = String(r.department_id);
+                    filterCounts.department[k] = (filterCounts.department[k] || 0) + 1;
+                }
+                if (r.department_name) {
+                    filterCounts.department[r.department_name] = (filterCounts.department[r.department_name] || 0) + 1;
+                }
+                let jsonDepts = [];
+                if (typeof r.departments === 'string') {
+                    try { jsonDepts = JSON.parse(r.departments); } catch {}
+                } else if (Array.isArray(r.departments)) {
+                    jsonDepts = r.departments;
+                }
+                if (Array.isArray(jsonDepts)) {
+                    jsonDepts.forEach(d => {
+                        if (d) {
+                            const dStr = String(d).trim();
+                            if (dStr) {
+                                filterCounts.department[dStr] = (filterCounts.department[dStr] || 0) + 1;
+                            }
+                        }
+                    });
+                }
             });
+
+            if (dateRangeRows && dateRangeRows[0]) {
+                const dr = dateRangeRows[0];
+                filterCounts.dateRange = {
+                    'Today': dr.today_count || 0,
+                    'Last 7 Days': dr.last7_count || 0,
+                    'Last 30 Days': dr.last30_count || 0,
+                    'This Month': dr.this_month_count || 0,
+                    'This Year': dr.this_year_count || 0,
+                };
+            }
 
             visibilityRows.forEach(r => {
                 if (r.is_active == 1) filterCounts.visibility.active = r.count;
