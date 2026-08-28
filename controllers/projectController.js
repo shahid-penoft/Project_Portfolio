@@ -319,7 +319,7 @@ const buildProjectFiltersAndSort = (query) => {
     }
 
     // Search query (title, tags, description)
-    const searchTerm = search || q;
+    const searchTerm = search;
     if (searchTerm) {
         conditions.push('(p.title LIKE ? OR p.tags LIKE ? OR p.description LIKE ?)');
         vals.push(`%${searchTerm}%`, `%${searchTerm}%`, `%${searchTerm}%`);
@@ -328,8 +328,8 @@ const buildProjectFiltersAndSort = (query) => {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     // Sorting
-    const activeSortBy = (sortBy || sort_by || '').toLowerCase();
-    const activeSortOrder = (sortOrder || sort_order || order || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const activeSortBy = (sortBy || '').toLowerCase();
+    const activeSortOrder = (sortOrder || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     let orderBy = 'ORDER BY p.display_order ASC, p.created_at DESC';
     switch (activeSortBy) {
