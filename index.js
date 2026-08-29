@@ -222,6 +222,18 @@ app.use((req, res) =>
 // ─── Global Error Handler ─────────────────────────────────────
 app.use((err, req, res, next) => {
     console.error('[GlobalError]', err);
+    if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({
+            success: false,
+            message: 'File size too large. (Max 10 MB for images, 50 MB for documents, 200 MB for videos).'
+        });
+    }
+    if (err.name === 'MulterError') {
+        return res.status(400).json({
+            success: false,
+            message: err.message || 'File upload error occurred.'
+        });
+    }
     res.status(500).json({ success: false, message: 'An unexpected error occurred.' });
 });
 

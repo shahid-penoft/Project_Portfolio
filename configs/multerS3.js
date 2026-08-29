@@ -42,7 +42,7 @@ const iconFileFilter = (req, file, cb) => {
 const s3StorageOptions = (folder = 'uploads') => ({
     s3: s3Client,
     bucket: s3Bucket,
-    // acl: 'public-read', // Removed because bucket does not allow ACLs
+    acl: (req, file, cb) => cb(null, undefined), // Do not pass ACL header (prevents "The bucket does not allow ACLs" error)
     contentType: (req, file, cb) => {
         cb(null, file.mimetype);
     },
@@ -83,7 +83,7 @@ export const uploadMediaArray = multer({
     storage: multerS3(s3StorageOptions('media')),
     fileFilter,
     limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB
-}).array('media', 10);
+}).array('media');
 
 export const uploadMediaFields = multer({
     storage: multerS3(s3StorageOptions('media')),
@@ -119,7 +119,7 @@ export const uploadJobDocuments = multer({
     storage: multerS3(s3StorageOptions('job-applications')),
     fileFilter,
     limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
-}).array('documents', 5);
+}).array('documents');
 
 export const uploadGoverningBodyPhoto = multer({
     storage: multerS3(s3StorageOptions('governing-bodies')),
@@ -131,23 +131,23 @@ export const uploadGoverningBodyPhoto = multer({
 export const uploadComplaintMedia = multer({
     storage: multerS3(s3StorageOptions('complaints/media')),
     fileFilter,
-}).array('files', 10);
+}).array('files');
 
 export const uploadComplaintAttachments = multer({
     storage: multerS3(s3StorageOptions('complaints/attachments')),
     fileFilter,
-}).array('files', 5);
+}).array('files');
 
 // ─── Issue Uploads ────────────────────────────────────────
 export const uploadIssueMedia = multer({
     storage: multerS3(s3StorageOptions('issues/media')),
     fileFilter,
-}).array('files', 10);
+}).array('files');
 
 export const uploadIssueAttachments = multer({
     storage: multerS3(s3StorageOptions('issues/attachments')),
     fileFilter,
-}).array('files', 5);
+}).array('files');
 
 // ─── Scheme Uploads ───────────────────────────────────────
 export const uploadSchemeAttachments = multer({
@@ -155,46 +155,46 @@ export const uploadSchemeAttachments = multer({
     fileFilter,
 }).fields([
     { name: 'coverImage', maxCount: 1 },
-    { name: 'files', maxCount: 5 }
+    { name: 'files' }
 ]);
 
 export const uploadSchemeApplicationDocs = multer({
     storage: multerS3(s3StorageOptions('schemes/applications')),
     fileFilter,
-}).array('files', 10);
+}).array('files');
 
 // ─── Idea Uploads ────────────────────────────────────────
 export const uploadIdeaMediaS3 = multer({
     storage: multerS3(s3StorageOptions('ideas/media')),
     fileFilter,
-}).array('files', 10);
+}).array('files');
 
 export const uploadIdeaAttachmentsS3 = multer({
     storage: multerS3(s3StorageOptions('ideas/attachments')),
     fileFilter,
-}).array('files', 5);
+}).array('files');
 
 // ─── Suggestion Uploads ────────────────────────────────────────
 export const uploadSuggestionMediaS3 = multer({
     storage: multerS3(s3StorageOptions('suggestions/media')),
     fileFilter,
-}).array('files', 10);
+}).array('files');
 
 export const uploadSuggestionAttachmentsS3 = multer({
     storage: multerS3(s3StorageOptions('suggestions/attachments')),
     fileFilter,
-}).array('files', 5);
+}).array('files');
 
 // ─── Geo Location Uploads ────────────────────────────────────────
 export const uploadGeoLocationMedia = multer({
     storage: multerS3(s3StorageOptions('geo-locations/media')),
     fileFilter,
-}).array('files', 10);
+}).array('files');
 
 export const uploadGeoLocationAttachments = multer({
     storage: multerS3(s3StorageOptions('geo-locations/attachments')),
     fileFilter,
-}).array('files', 5);
+}).array('files');
 
 
 // ─── CM Funds Uploads ────────────────────────────────────────
@@ -216,32 +216,32 @@ export const uploadComplaintUpdateFiles = multer({
     storage: multerS3(s3StorageOptions('complaints/updates')),
     fileFilter,
 }).fields([
-    { name: 'media', maxCount: 10 },
-    { name: 'attachments', maxCount: 5 }
+    { name: 'media' },
+    { name: 'attachments' }
 ]);
 
 export const uploadIssueUpdateFiles = multer({
     storage: multerS3(s3StorageOptions('issues/updates')),
     fileFilter,
 }).fields([
-    { name: 'media', maxCount: 10 },
-    { name: 'attachments', maxCount: 5 }
+    { name: 'media' },
+    { name: 'attachments' }
 ]);
 
 export const uploadIdeaUpdateFiles = multer({
     storage: multerS3(s3StorageOptions('ideas/updates')),
     fileFilter,
 }).fields([
-    { name: 'media', maxCount: 10 },
-    { name: 'attachments', maxCount: 5 }
+    { name: 'media' },
+    { name: 'attachments' }
 ]);
 
 export const uploadSuggestionUpdateFiles = multer({
     storage: multerS3(s3StorageOptions('suggestions/updates')),
     fileFilter,
 }).fields([
-    { name: 'media', maxCount: 10 },
-    { name: 'attachments', maxCount: 5 }
+    { name: 'media' },
+    { name: 'attachments' }
 ]);
 
 // ─── Information Center Uploads ─────────────────────────────────
@@ -251,7 +251,7 @@ export const uploadInformationCenterFiles = multer({
     limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
 }).fields([
     { name: 'coverImage', maxCount: 1 },
-    { name: 'attachments', maxCount: 20 }
+    { name: 'attachments' }
 ]);
 
 // Helper: automatically rewrite S3 location to custom assets domain

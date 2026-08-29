@@ -28,7 +28,7 @@ const formatScheme = (row) => ({
     showActionButton: !!row.show_action_button,
     actionButtonLabel: row.action_button_label || '',
     actionButtonUrl: row.action_button_url || '',
-    showOnWebsite: !!row.show_on_website,
+    showOnWebsite: row.status === 'Published' || !!row.show_on_website,
     coverImage: row.cover_image || '',
     deadline: row.deadline ? new Date(row.deadline).toISOString().split('T')[0] : null,
     createdBy: row.created_by_name || 'Rajesh Kumar (ADM-001)',
@@ -159,7 +159,7 @@ export const createScheme = async (req, res) => {
         eligibilities = typeof eligibilities === 'string' ? parseJSON(eligibilities) : (eligibilities || []);
         
         const isShowActionButton = showActionButton === 'true' || showActionButton === true;
-        const isShowOnWebsite = showOnWebsite === 'true' || showOnWebsite === true;
+        const isShowOnWebsite = status === 'Published';
 
         const coverImageFile = req.files && req.files['coverImage'] ? req.files['coverImage'][0] : null;
         const coverImageUrl = coverImageFile ? (coverImageFile.location || coverImageFile.path) : null;
@@ -249,7 +249,8 @@ export const updateScheme = async (req, res) => {
         existingAttachments = typeof existingAttachments === 'string' ? parseJSON(existingAttachments) : (existingAttachments || []);
         
         const isShowActionButton = showActionButton === 'true' || showActionButton === true;
-        const isShowOnWebsite = showOnWebsite === 'true' || showOnWebsite === true;
+        const newStatus = status !== undefined ? status : existing.status;
+        const isShowOnWebsite = newStatus === 'Published';
 
         const coverImageFile = req.files && req.files['coverImage'] ? req.files['coverImage'][0] : null;
         let coverImageUrl = existing.cover_image;

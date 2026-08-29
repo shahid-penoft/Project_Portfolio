@@ -75,7 +75,7 @@ const buildPostResponse = (row, attachments = []) => ({
     category:         row.category,
     domains:          safeJSON(row.domains, []),
     status:           row.status,
-    web:              Boolean(row.web),
+    web:              row.status === 'Published' || Boolean(row.web),
     rich_content:     row.rich_content || '',
     description:      row.rich_content || '',
     tags:             row.tags_count || 0,
@@ -236,7 +236,7 @@ export const create = async (req, res) => {
         const domainsArr  = safeJSON(domains,  []);
         const tagsArr     = safeJSON(tagsList,  []);
         const showCTA     = showActionButton === 'true' || showActionButton === true;
-        const webFlag     = web === '1' || web === 'true' || web === true ? 1 : 0;
+        const webFlag     = status === 'Published' ? 1 : 0;
         const category    = domainsArr[0] || 'Other';
         const adminName   = req.admin?.full_name || 'Admin';
 
@@ -334,12 +334,10 @@ export const update = async (req, res) => {
         const showCTA     = showActionButton !== undefined
                               ? (showActionButton === 'true' || showActionButton === true)
                               : Boolean(row.action_button_label);
-        const webFlag     = web !== undefined
-                              ? (web === '1' || web === 'true' || web === true ? 1 : 0)
-                              : row.web;
         const adminName   = req.admin?.full_name || 'Admin';
         const newTitle    = title    !== undefined ? title.trim()  : row.title;
         const newStatus   = status   !== undefined ? status        : row.status;
+        const webFlag     = newStatus === 'Published' ? 1 : 0;
         const newCategory = domainsArr[0] || row.category || 'Other';
         const newContent  = req.body.content !== undefined ? req.body.content : row.rich_content;
 
