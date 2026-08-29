@@ -205,6 +205,7 @@ app.use('/api/geo-categories', geoCategoryRoutes);
 app.use('/api/mla/dropdowns', mlaDropdownsRoutes);
 app.use('/api/admin/governing-bodies', governingBodiesRoutes);
 app.use('/api/csr', csrRoutes);
+app.use('/api/letters', lettersRoutes);
 app.use('/api/admin/letters', lettersRoutes);
 app.use('/api/cm-funds',       cmFundsRoutes); // Public intake: POST /api/cm-funds/public-submit
 app.use('/api/admin/cm-funds', cmFundsRoutes);

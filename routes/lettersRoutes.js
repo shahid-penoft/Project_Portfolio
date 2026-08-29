@@ -1,5 +1,6 @@
 import express from 'express';
 import { verifyToken } from '../middlewares/auth.js';
+import { uploadLetterAttachmentsS3 } from '../configs/multerS3.js';
 import {
     getAllLetters,
     getNextLetterId,
@@ -19,14 +20,16 @@ import {
     trashLetter,
     restoreLetter,
     permanentDeleteLetter,
+    publicSubmitLetter,
 } from '../controllers/lettersController.js';
 
 const router = express.Router();
 
-// All routes require admin auth
-router.use(verifyToken);
+// ── Public routes (No admin auth required) ─────────────────────
+router.post('/public-submit', uploadLetterAttachmentsS3, publicSubmitLetter);
 
-import { uploadLetterAttachmentsS3 } from '../configs/multerS3.js';
+// ── Protected routes (Require admin auth) ──────────────────────
+router.use(verifyToken);
 
 // ── Letters ────────────────────────────────────────────────────
 router.get('/next-id',          getNextLetterId);   // must be before /:id

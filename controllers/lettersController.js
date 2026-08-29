@@ -77,6 +77,9 @@ export const getAllLetters = async (req, res) => {
 
         if (type)     { baseConditions.push('l.type = ?');     baseParams.push(type); }
         if (priority) { baseConditions.push('l.priority = ?'); baseParams.push(priority); }
+        if (req.query.category === 'recommendation') {
+            baseConditions.push("l.type = 'Recommendation'");
+        }
         if (req.query.trashed === 'true') {
             baseConditions.push('l.trashed_at IS NOT NULL');
         } else {
@@ -659,5 +662,117 @@ export const deleteFollowup = async (req, res) => {
     } catch (err) {
         console.error('[deleteFollowup]', err);
         res.status(500).json({ success: false, message: 'Failed to delete follow-up.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/letters/public-submit (Citizen Public Submission)
+// ─────────────────────────────────────────────────────────────
+export const publicSubmitLetter = async (req, res) => {
+    try {
+        const {
+            subject, title, type = 'Recommendation', priority = 'Normal',
+            recipient_name, recipient_org, recipient_designation, recipient_address, recipient_email,
+            body, description, salutation, closing,
+            applicant_name, applicant_phone, applicant_email,
+            local_body_id, ward_id, local_body_name, ward_name,
+        } = req.body;
+
+        const letterSubject = (subject || title || '').trim();
+        if (!letterSubject) {
+            return res.status(400).json({ success: false, message: 'Subject/title is required.' });
+        }
+
+        const applicantName = (applicant_name || '').trim();
+        const applicantPhone = (applicant_phone || '').trim();
+        const applicantEmail = (applicant_email || '').trim();
+
+        if (!applicantName) {
+            return res.status(400).json({ success: false, message: 'Applicant name is required.' });
+        }
+        if (!applicantPhone) {
+            return res.status(400).json({ success: false, message: 'Applicant phone number is required.' });
+        }
+
+        const { letterId, yearSeq } = await generateLetterId();
+
+        const recipientName = (recipient_name || '').trim() || 'To Whom It May Concern';
+        const letterBody = (body || description || '').trim() || null;
+
+        const applicantInfo = {
+            applicant_name: applicantName,
+            applicant_phone: applicantPhone,
+            applicant_email: applicantEmail || null,
+            local_body_id: local_body_id ? parseInt(local_body_id, 10) : null,
+            ward_id: ward_id ? parseInt(ward_id, 10) : null,
+            local_body_name: local_body_name || null,
+            ward_name: ward_name || null,
+            submitted_at: new Date().toISOString(),
+        };
+
+        const remarks = JSON.stringify(applicantInfo);
+        const reference = `Applicant: ${applicantName} (${applicantPhone})`;
+
+        const [result] = await pool.query(`
+            INSERT INTO mla_letters
+              (letter_id, subject, type, priority, status, response_status,
+               recipient_name, recipient_designation, recipient_org, recipient_address, recipient_email,
+               reference, salutation, closing, body, remarks,
+               prepared_by_user_id, sent_on, year_seq)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `, [
+            letterId,
+            letterSubject,
+            type === 'Recommendation' ? 'Recommendation' : (type || 'Recommendation'),
+            priority || 'Normal',
+            'Draft',
+            'Pending',
+            recipientName,
+            recipient_designation || null,
+            recipient_org || null,
+            recipient_address || null,
+            recipient_email || null,
+            reference,
+            salutation || 'Respected Sir,',
+            closing || 'Yours faithfully,',
+            letterBody,
+            remarks,
+            null,
+            null,
+            yearSeq,
+        ]);
+
+        const newId = result.insertId;
+
+        // Log initial activity
+        await logActivity(newId, `Public request for Recommendation Letter submitted by ${applicantName} (${applicantPhone}).`, null, applicantName);
+
+        // Process attachments / audio notes
+        if (req.files && req.files.length > 0) {
+            for (const file of req.files) {
+                let fileType = 'attachment';
+                if (file.fieldname && file.fieldname.startsWith('audioNotes')) {
+                    fileType = 'audio_note';
+                }
+                const fileUrl = file.location || file.path || `/uploads/letters/attachments/${file.filename}`;
+                await pool.query(
+                    'INSERT INTO mla_letter_attachments (letter_id, file_name, file_url, file_type) VALUES (?,?,?,?)',
+                    [newId, file.originalname, fileUrl, fileType]
+                );
+            }
+        }
+
+        return res.status(201).json({
+            success: true,
+            message: 'Recommendation letter request submitted successfully.',
+            data: {
+                id: newId,
+                reference_no: letterId,
+                letter_id: letterId,
+            },
+        });
+    } catch (err) {
+        console.error('[publicSubmitLetter] error:', err);
+        return res.status(500).json({ success: false, message: 'Failed to submit recommendation letter request.' });
     }
 };

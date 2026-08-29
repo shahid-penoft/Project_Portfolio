@@ -15,6 +15,7 @@ const labelType = (source, category) => {
         case 'idea':       return category || 'Development Idea';
         case 'suggestion': return category || 'Constituency Suggestion';
         case 'cm_fund':    return category || 'CM Relief Aid';
+        case 'letter':     return category === 'Recommendation' ? 'Recommendation Letter' : (category || 'Official Letter');
         default:           return category || 'Petition';
     }
 };
@@ -34,7 +35,7 @@ const formatDate = (d) => {
 
 /** Statuses that mark final resolution */
 const RESOLVED_STATUSES = new Set([
-    'Resolved', 'Approved', 'Implemented', 'Disbursed',
+    'Resolved', 'Approved', 'Implemented', 'Disbursed', 'Sent', 'Delivered', 'Archived'
 ]);
 
 /**
@@ -102,9 +103,25 @@ const UPDATES_META = {
     idea:       { table: 'idea_updates',         fk: 'idea_id'       },
     suggestion: { table: 'suggestion_updates',  fk: 'suggestion_id' },
     cm_fund:    { table: 'cm_fund_request_updates', fk: 'request_id' },
+    letter:     { table: 'mla_letter_activity',     fk: 'letter_id' },
 };
 
 const fetchUpdates = async (source, petitionId) => {
+    if (source === 'letter') {
+        try {
+            const [activities] = await pool.query(
+                `SELECT id, 'Activity' AS type, 'Office Letter Activity' AS title, action AS note, created_at
+                 FROM mla_letter_activity
+                 WHERE letter_id = ?
+                 ORDER BY created_at ASC LIMIT 15`,
+                [petitionId]
+            );
+            return activities || [];
+        } catch {
+            return [];
+        }
+    }
+
     const meta = UPDATES_META[source];
     if (!meta) return [];
     try {
@@ -142,7 +159,8 @@ export const trackPetition = async (req, res) => {
     try {
         const ref       = (req.query.ref   || '').trim().toUpperCase();
         const rawPhone  = digitsOnly(req.query.phone || '');
-        const phoneLike = rawPhone ? `%${rawPhone}%` : null;
+        const phone10   = rawPhone.length >= 10 ? rawPhone.slice(-10) : rawPhone;
+        const phoneLike = phone10 ? `%${phone10}%` : null;
 
         if (!ref || !rawPhone) {
             return res.status(400).json({
@@ -240,12 +258,38 @@ export const trackPetition = async (req, res) => {
               AND cf.id = ?
               AND cf.applicant_phone LIKE ?
 
+            UNION ALL
+
+            SELECT
+                'letter',
+                l.id,
+                l.letter_id,
+                l.subject,
+                l.type,
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.remarks, '$.applicant_name')), l.recipient_name),
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.remarks, '$.applicant_phone')), ''),
+                l.status,
+                l.created_at,
+                CAST(JSON_UNQUOTE(JSON_EXTRACT(l.remarks, '$.local_body_id')) AS UNSIGNED)
+            FROM mla_letters l
+            WHERE l.trashed_at IS NULL
+              AND (l.letter_id = ? OR CAST(l.id AS CHAR) = ?)
+              AND (l.remarks LIKE ? OR l.reference LIKE ?)
+
             ORDER BY submitted_at DESC
             LIMIT 1
         `;
 
         const legParams = [ref, phoneLike];
-        const params    = [...legParams, ...legParams, ...legParams, ...legParams, ...legParams];
+        const letterParams = [ref, ref, phoneLike, phoneLike];
+        const params    = [
+            ...legParams,    // complaint
+            ...legParams,    // issue
+            ...legParams,    // idea
+            ...legParams,    // suggestion
+            ...legParams,    // cm_fund
+            ...letterParams, // letter
+        ];
 
         const [rows] = await pool.query(sql, params);
 
