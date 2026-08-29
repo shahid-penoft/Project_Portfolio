@@ -100,3 +100,62 @@ export const uploadSettingImage = async (req, res) => {
         return errorResponse(res, err.message || 'Server error uploading image.');
     }
 };
+
+const DEFAULT_LAUNCH_CONFIG = {
+    enabled: false,
+    launchId: "launch-2026-v1",
+    productName: "Kothamangalam MLA Connect",
+    title: "Introducing our new Digital Experience",
+    description: "Experience the next generation of our platform.",
+    buttonText: "Launch Now",
+    logoUrl: "",
+    backgroundImage: ""
+};
+
+// Get Product Launch Configuration (Public)
+export const getProductLaunchConfig = async (req, res) => {
+    try {
+        const [rows] = await db.query("SELECT setting_value FROM site_settings WHERE setting_key = 'product_launch_config'");
+        if (rows.length === 0 || !rows[0].setting_value) {
+            return successResponse(res, { data: DEFAULT_LAUNCH_CONFIG }, 'Default product launch configuration retrieved.');
+        }
+
+        let parsedConfig = DEFAULT_LAUNCH_CONFIG;
+        try {
+            parsedConfig = typeof rows[0].setting_value === 'string'
+                ? JSON.parse(rows[0].setting_value)
+                : rows[0].setting_value;
+        } catch (e) {
+            console.error('[getProductLaunchConfig] JSON parse error:', e);
+        }
+
+        return successResponse(res, { data: { ...DEFAULT_LAUNCH_CONFIG, ...parsedConfig } }, 'Product launch configuration retrieved.');
+    } catch (err) {
+        console.error('[getProductLaunchConfig]', err);
+        return errorResponse(res, 'Server error fetching product launch configuration.');
+    }
+};
+
+// Update Product Launch Configuration (Admin)
+export const updateProductLaunchConfig = async (req, res) => {
+    try {
+        const config = req.body.config || req.body;
+        if (!config || typeof config !== 'object') {
+            return errorResponse(res, 'Invalid product launch configuration provided.', 400);
+        }
+
+        const serializedConfig = JSON.stringify(config);
+
+        await db.query(`
+            INSERT INTO site_settings (setting_key, setting_value, description)
+            VALUES ('product_launch_config', ?, 'Product Launch Gate configuration')
+            ON DUPLICATE KEY UPDATE setting_value = ?, updated_at = CURRENT_TIMESTAMP
+        `, [serializedConfig, serializedConfig]);
+
+        return successResponse(res, { data: config }, 'Product launch configuration updated successfully.');
+    } catch (err) {
+        console.error('[updateProductLaunchConfig]', err);
+        return errorResponse(res, 'Server error updating product launch configuration.');
+    }
+};
+
