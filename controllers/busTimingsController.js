@@ -37,7 +37,7 @@ export const getAll = async (req, res) => {
             }
         }
 
-        sql += ` ORDER BY departure_time ASC`;
+        sql += ` ORDER BY COALESCE(STR_TO_DATE(departure_time, '%h:%i %p'), STR_TO_DATE(departure_time, '%H:%i'), departure_time) ASC`;
 
         const [rows] = await pool.query(sql, params);
 
@@ -89,6 +89,8 @@ export const getAll = async (req, res) => {
     }
 };
 
+const TIME_REGEX = /^(?:0?[1-9]|1[0-2]):[0-5]\d\s?(?:AM|PM|am|pm)$|^\d{2}:\d{2}$/i;
+
 export const create = async (req, res) => {
     try {
         const { type, departureTime, departureStand, route, destinationTime, destinationStand, days, reservation } = req.body;
@@ -96,8 +98,8 @@ export const create = async (req, res) => {
         if (!['KSRTC', 'Private', 'Other State Gov'].includes(type)) {
             return res.status(400).json({ success: false, message: 'Invalid bus type' });
         }
-        if (!/^\d{2}:\d{2}$/.test(departureTime) || !/^\d{2}:\d{2}$/.test(destinationTime)) {
-            return res.status(400).json({ success: false, message: 'Invalid time format. Use HH:MM' });
+        if (!TIME_REGEX.test(departureTime) || !TIME_REGEX.test(destinationTime)) {
+            return res.status(400).json({ success: false, message: 'Invalid time format. Use HH:MM or HH:MM AM/PM' });
         }
         if (!departureStand || !destinationStand || !route) {
             return res.status(400).json({ success: false, message: 'Missing required fields' });
@@ -142,8 +144,8 @@ export const update = async (req, res) => {
         if (!['KSRTC', 'Private', 'Other State Gov'].includes(type)) {
             return res.status(400).json({ success: false, message: 'Invalid bus type' });
         }
-        if (!/^\d{2}:\d{2}$/.test(departureTime) || !/^\d{2}:\d{2}$/.test(destinationTime)) {
-            return res.status(400).json({ success: false, message: 'Invalid time format. Use HH:MM' });
+        if (!TIME_REGEX.test(departureTime) || !TIME_REGEX.test(destinationTime)) {
+            return res.status(400).json({ success: false, message: 'Invalid time format. Use HH:MM or HH:MM AM/PM' });
         }
         if (!departureStand || !destinationStand || !route) {
             return res.status(400).json({ success: false, message: 'Missing required fields' });
