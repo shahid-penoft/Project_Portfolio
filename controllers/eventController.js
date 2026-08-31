@@ -17,25 +17,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 //    • If event is within the ongoing window (2 hours)   → 'ongoing'
 //    • If event datetime + ongoing window has passed     → 'past'
 // ─────────────────────────────────────────────────────────────
-const ONGOING_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+function computeStatus(event_date, event_time, is_live) {
+    if (is_live === 1 || is_live === true || is_live === '1') return 'live';
+    if (!event_date) return 'upcoming';
 
-function computeStatus(event_date, event_time) {
-    // Build a JS Date from the stored date + time values
-    // event_date can be a Date object (from MySQL) or a string 'YYYY-MM-DD'
-    // event_time can be a string 'HH:MM:SS' or 'HH:MM'
-    const dateStr = event_date instanceof Date
-        ? event_date.toISOString().slice(0, 10)
-        : String(event_date).slice(0, 10);          // 'YYYY-MM-DD'
+    let dateStr = '';
+    if (event_date instanceof Date) {
+        const y = event_date.getFullYear();
+        const m = String(event_date.getMonth() + 1).padStart(2, '0');
+        const d = String(event_date.getDate()).padStart(2, '0');
+        dateStr = `${y}-${m}-${d}`;
+    } else {
+        dateStr = String(event_date).slice(0, 10);
+    }
 
-    const timeStr = String(event_time || '00:00:00').slice(0, 8); // 'HH:MM:SS'
-
-    const eventStart = new Date(`${dateStr}T${timeStr}`);
-    const eventEnd = new Date(eventStart.getTime() + ONGOING_WINDOW_MS);
+    const timeStr = String(event_time || '23:59:59').slice(0, 8);
+    const eventDateTime = new Date(`${dateStr}T${timeStr}`);
     const now = new Date();
 
-    if (now < eventStart) return 'upcoming';
-    if (now <= eventEnd) return 'ongoing';
-    return 'past';
+    if (now > eventDateTime) return 'past';
+    return 'upcoming';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -133,6 +134,7 @@ export const getAllEvents = async (req, res) => {
 
                 return {
                     ...event,
+                    status: computeStatus(event.event_date, event.event_time, event.is_live),
                     paragraph_text: paragraphText,
                     cover_image: eventPhotos.length > 0
                         ? eventPhotos[0].file_url
@@ -248,6 +250,7 @@ export const getEventsByStatus = async (req, res) => {
 
                 return {
                     ...event,
+                    status: computeStatus(event.event_date, event.event_time, event.is_live),
                     paragraph_text: paragraphText,
                     cover_image: eventPhotos.length > 0
                         ? eventPhotos[0].file_url
@@ -315,6 +318,7 @@ export const getEventById = async (req, res) => {
         return successResponse(res, {
             data: {
                 ...event,
+                status: computeStatus(event.event_date, event.event_time, event.is_live),
                 paragraph_text: paragraphText,
                 content,
                 media: {
@@ -375,6 +379,7 @@ export const getEventBySlug = async (req, res) => {
         return successResponse(res, {
             data: {
                 ...event,
+                status: computeStatus(event.event_date, event.event_time, event.is_live),
                 paragraph_text: paragraphText,
                 content,
                 media: {

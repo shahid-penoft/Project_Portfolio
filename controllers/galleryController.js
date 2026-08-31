@@ -3,6 +3,7 @@ import { successResponse, errorResponse } from '../utils/helpers.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import axios from 'axios';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
@@ -796,6 +797,58 @@ export const getGalleryFilterOptions = async (req, res) => {
     } catch (err) {
         console.error('[getGalleryFilterOptions]', err);
         return errorResponse(res, 'Server error fetching filter options.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  GET /api/gallery/download
+//  Public — stream-proxy media with Content-Disposition: attachment
+// ─────────────────────────────────────────────────────────────
+export const downloadMediaProxy = async (req, res) => {
+    try {
+        const { url, filename } = req.query;
+        if (!url) {
+            return res.status(400).json({ success: false, message: 'Media URL is required' });
+        }
+
+        const cleanUrl = url.split('?')[0];
+        const ext = path.extname(cleanUrl) || '.jpg';
+        let safeFilename = filename ? filename.replace(/[/\\?%*:|"<>]/g, '_') : `media-${Date.now()}`;
+        if (!path.extname(safeFilename)) {
+            safeFilename += ext;
+        }
+
+        // If local file path starting with /uploads/
+        if (cleanUrl.startsWith('/uploads/')) {
+            const localFilePath = path.join(UPLOADS_DIR, path.basename(cleanUrl));
+            if (fs.existsSync(localFilePath)) {
+                return res.download(localFilePath, safeFilename);
+            }
+        }
+
+        // If external URL (S3, CloudFront, CDN)
+        const response = await axios({
+            method: 'GET',
+            url: url,
+            responseType: 'stream',
+            headers: {
+                'User-Agent': 'Mozilla/5.0'
+            },
+            timeout: 30000
+        });
+
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFilename)}"`);
+        if (response.headers['content-type']) {
+            res.setHeader('Content-Type', response.headers['content-type']);
+        }
+        if (response.headers['content-length']) {
+            res.setHeader('Content-Length', response.headers['content-length']);
+        }
+
+        response.data.pipe(res);
+    } catch (error) {
+        console.error('[downloadMediaProxy]', error.message);
+        return res.status(500).json({ success: false, message: 'Failed to stream media download' });
     }
 };
 

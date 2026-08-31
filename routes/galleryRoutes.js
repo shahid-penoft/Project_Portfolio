@@ -6,10 +6,14 @@ import {
     getImagesByLocalBody, getImagesBySector, getImagesByYear, searchImages, getImagesBySource,
     getVideosByLocalBody, getVideosBySector, getVideosByYear, searchVideos,
     getGalleryFilterOptions,
+    downloadMediaProxy,
 } from '../controllers/galleryController.js';
 import { verifyToken, requirePermission } from '../middlewares/auth.js';
 
 const router = express.Router();
+
+// ── Public: media download streaming proxy ────────────────────
+router.get('/download', downloadMediaProxy);
 
 // ── Public: existing grouped gallery ──────────────────────────
 router.get('/images', getGalleryImages);
