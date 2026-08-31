@@ -11,7 +11,7 @@ import { verifyToken, requirePermission } from '../middlewares/auth.js';
 const router = express.Router();
 
 // All template routes require admin authentication
-router.use(verifyToken, requirePermission('enquiries'));
+router.use(verifyToken, requirePermission(['templates_manager', 'enquiries', 'site_settings']));
 
 router.get('/', getAllTemplates);
 router.get('/:id', getTemplateById);

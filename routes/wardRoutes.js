@@ -7,7 +7,7 @@ const router = express.Router({ mergeParams: true });
 
 router.get('/', getWardsByLocalBody);
 
-router.use(verifyToken, requirePermission('enquiries'));
+router.use(verifyToken, requirePermission(['local_bodies', 'events', 'site_settings', 'enquiries']));
 router.post('/', createWard);
 router.put('/:id', updateWard);
 router.delete('/:id', deleteWard);

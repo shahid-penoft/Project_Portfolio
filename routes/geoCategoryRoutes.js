@@ -14,7 +14,7 @@ router.get('/', getGeoCategories);
 
 // Admin only routes for managing categories
 router.use(verifyToken);
-router.use(requirePermission('geo-location'));
+router.use(requirePermission(['geo_mapping', 'geo-location', 'site_settings']));
 
 router.post('/', createGeoCategory);
 router.put('/:id', updateGeoCategory);

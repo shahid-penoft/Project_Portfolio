@@ -11,7 +11,7 @@ const router = express.Router();
 
 // All routes require a valid admin session with site_settings permission
 // (Superadmins bypass the permission check automatically)
-router.use(verifyToken, requirePermission('site_settings'));
+router.use(verifyToken, requirePermission(['teams_log', 'site_settings']));
 
 // ⚠️ /meta and /export MUST be declared BEFORE /:id
 // otherwise Express treats the string "meta"/"export" as an id param.

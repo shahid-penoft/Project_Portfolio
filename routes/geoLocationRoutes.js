@@ -20,10 +20,10 @@ router.post('/:id/bookmark', verifyConstituentToken, ctrl.toggleBookmark);
 
 // Admin only endpoints
 router.post('/:id/admin-bookmark', verifyToken, ctrl.toggleAdminBookmark);
-router.post('/', verifyToken, requirePermission('geo-location'), ctrl.createGeoLocation);
-router.put('/:id', verifyToken, requirePermission('geo-location'), ctrl.updateGeoLocation);
-router.post('/:id/upload-media', verifyToken, requirePermission('geo-location'), ctrl.uploadGeoLocationMediaHandler);
-router.post('/:id/upload-attachment', verifyToken, requirePermission('geo-location'), ctrl.uploadGeoLocationAttachmentHandler);
-router.delete('/:id', verifyToken, requirePermission('geo-location'), ctrl.deleteGeoLocation);
+router.post('/', verifyToken, requirePermission(['geo_mapping', 'geo-location', 'site_settings']), ctrl.createGeoLocation);
+router.put('/:id', verifyToken, requirePermission(['geo_mapping', 'geo-location', 'site_settings']), ctrl.updateGeoLocation);
+router.post('/:id/upload-media', verifyToken, requirePermission(['geo_mapping', 'geo-location', 'site_settings']), ctrl.uploadGeoLocationMediaHandler);
+router.post('/:id/upload-attachment', verifyToken, requirePermission(['geo_mapping', 'geo-location', 'site_settings']), ctrl.uploadGeoLocationAttachmentHandler);
+router.delete('/:id', verifyToken, requirePermission(['geo_mapping', 'geo-location', 'site_settings']), ctrl.deleteGeoLocation);
 
 export default router;

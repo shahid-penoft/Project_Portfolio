@@ -7,7 +7,7 @@ const router = express.Router();
 // Only superadmin or those with 'site_settings' can manage roles.
 // But as per plan, we restrict this heavily. We'll use a special string or just let superadmin bypass.
 // Actually, let's require 'site_settings' as the permission, since superadmin bypasses anyway.
-router.use(verifyToken, requirePermission('site_settings'));
+router.use(verifyToken, requirePermission(['role_management', 'site_settings']));
 
 router.get('/', getRoles);
 router.get('/:id', getRoleById);

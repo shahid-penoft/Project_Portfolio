@@ -31,7 +31,7 @@ const submissionLimiter = rateLimit({
 });
 
 /** Admin guard: all management routes below require an authenticated site_settings admin */
-const adminGuard = [verifyToken, requirePermission('site_settings')];
+const adminGuard = [verifyToken, requirePermission(['mla_care', 'site_settings'])];
 
 // POST /api/mla-care/upload-document - Upload medical document (public)
 router.post('/upload-document', uploadCareDocument);

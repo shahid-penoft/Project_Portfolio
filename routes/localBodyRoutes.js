@@ -8,7 +8,7 @@ router.get('/all-with-wards', getLocalBodiesWithWards); // public hierarchical r
 router.get('/public/:id', getPublicLocalBodyById); // public detailed view
 router.get('/', getAllLocalBodies); // public
 
-router.use(verifyToken, requirePermission('enquiries'));
+router.use(verifyToken, requirePermission(['local_bodies', 'events', 'site_settings', 'enquiries']));
 router.post('/upload', uploadLocalBodyImage);
 router.post('/', createLocalBody);
 router.put('/:id', updateLocalBody);
