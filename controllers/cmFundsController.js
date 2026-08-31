@@ -102,7 +102,7 @@ export const getNextAppId = async (req, res) => {
 export const listRequests = async (req, res) => {
   try {
     const { 
-      status, priority, search, sort, order, 
+      status, priority, search, search_field, searchField, sort, order, 
       application_type, applicationType,
       category, category_id,
       local_body_id, localBody,
@@ -209,20 +209,54 @@ export const listRequests = async (req, res) => {
     }
 
     if (search) {
-      baseQuery += ` AND (
-        r.applicant_name LIKE ? OR 
-        r.id LIKE ? OR 
-        r.applicant_phone LIKE ? OR 
-        r.application_title LIKE ? OR 
-        r.application_type LIKE ? OR 
-        c.name LIKE ? OR 
-        r.sub_category LIKE ? OR 
-        lb.name LIKE ? OR 
-        w.place_name LIKE ? OR 
-        o.full_name LIKE ?
-      )`;
-      const s = `%${search}%`;
-      queryParams.push(s, s, s, s, s, s, s, s, s, s);
+      const q = search.trim();
+      const field = (search_field || searchField || 'all').toLowerCase();
+
+      switch (field) {
+        case 'id':
+          baseQuery += ` AND (r.id = ? OR r.id LIKE ?)`;
+          queryParams.push(q, `${q}%`);
+          break;
+        case 'phone':
+        case 'number':
+          const cleanPhone = q.replace(/[^0-9]/g, '');
+          baseQuery += ` AND (r.applicant_phone LIKE ? OR r.alternate_phone LIKE ?)`;
+          queryParams.push(`%${cleanPhone || q}%`, `%${cleanPhone || q}%`);
+          break;
+        case 'email':
+          baseQuery += ` AND (r.applicant_name LIKE ? OR r.description LIKE ?)`;
+          queryParams.push(`%${q}%`, `%${q}%`);
+          break;
+        case 'name':
+          baseQuery += ` AND (r.applicant_name LIKE ? OR MATCH(r.applicant_name, r.address_line1, r.address, r.location) AGAINST(? IN BOOLEAN MODE))`;
+          queryParams.push(`%${q}%`, `+${q}*`);
+          break;
+        case 'house_name':
+        case 'address':
+        case 'location':
+          baseQuery += ` AND (r.address_line1 LIKE ? OR r.address LIKE ? OR r.location LIKE ? OR MATCH(r.applicant_name, r.address_line1, r.address, r.location) AGAINST(? IN BOOLEAN MODE))`;
+          queryParams.push(`%${q}%`, `%${q}%`, `%${q}%`, `+${q}*`);
+          break;
+        case 'all':
+        default:
+          baseQuery += ` AND (
+            r.applicant_name LIKE ? OR 
+            r.id LIKE ? OR 
+            r.applicant_phone LIKE ? OR 
+            r.alternate_phone LIKE ? OR
+            r.application_title LIKE ? OR 
+            r.application_type LIKE ? OR 
+            c.name LIKE ? OR 
+            r.sub_category LIKE ? OR 
+            lb.name LIKE ? OR 
+            w.place_name LIKE ? OR 
+            o.full_name LIKE ? OR
+            MATCH(r.applicant_name, r.address_line1, r.address, r.location) AGAINST(? IN BOOLEAN MODE)
+          )`;
+          const s = `%${q}%`;
+          queryParams.push(s, s, s, s, s, s, s, s, s, s, s, `${q}*`);
+          break;
+      }
     }
 
     // Support both legacy aliases and new sort=<col>&order=<dir> style

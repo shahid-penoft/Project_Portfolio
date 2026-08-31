@@ -4,6 +4,7 @@ import { sendNotificationEmail } from '../utils/email.js';
 import { sendWhatsAppMessage } from '../configs/whatsapp.js';
 import { followUpUpdateSMS, followUpUpdateWhatsApp, followUpUpdateEmail } from '../services/smsTemplates.js';
 import pool from '../configs/db.js';
+import { brevoSmsLimiter } from '../services/rateLimiter.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/notifications/sms
@@ -241,50 +242,59 @@ const normalisePhone = (raw) => {
 };
 
 /**
- * sendWithRetry — calls fn(), retrying on 429/503/generic 5xx.
+ * sendWithRetry — calls fn(), retrying on 429/503/generic 5xx with full randomized jitter.
  *
- * On 429: reads Retry-After header (defaults to 10 s) before retrying.
- * On 503: waits 10 s before retrying.
+ * On 429: reads Retry-After header (or uses exponential backoff with jitter).
+ * On 503: waits 10 s with jitter before retrying.
  * On 400/401: non-retryable; throws immediately.
- * On other errors: waits 3 s before retrying.
+ * On other errors: waits with exponential backoff before retrying.
  *
  * Returns normally on success; throws on exhausted retries.
  */
-const sendWithRetry = async (fn, contactId, channel, maxRetries = 2) => {
+const sendWithRetry = async (fn, contactId, channel, maxRetries = 3) => {
     let lastErr;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
+            if (channel === 'sms') {
+                await brevoSmsLimiter.acquire();
+            }
             await fn();
             return; // success
         } catch (err) {
             lastErr = err;
             const httpStatus = err?.response?.status || err?.status || err?.statusCode;
+            const jitterMs = Math.floor(Math.random() * 800) + 200; // 200ms - 1000ms randomized jitter
 
             if (httpStatus === 429) {
-                const retryAfter = parseInt(
-                    err?.response?.headers?.['retry-after'] || '10',
-                    10
-                );
+                const retryAfterHeader = parseInt(err?.response?.headers?.['retry-after'], 10);
+                const waitMs = (!isNaN(retryAfterHeader) && retryAfterHeader > 0)
+                    ? (retryAfterHeader * 1000) + jitterMs
+                    : Math.min(30_000, (Math.pow(2, attempt) * 2000) + jitterMs);
+
                 console.warn(
                     `[BulkSend] 429 rate-limited (contact=${contactId}, ch=${channel}). ` +
-                    `Waiting ${retryAfter}s (retry ${attempt + 1}/${maxRetries})…`
+                    `Waiting ${Math.round(waitMs / 1000)}s (retry ${attempt + 1}/${maxRetries})…`
                 );
-                await sleep(retryAfter * 1000);
+                await sleep(waitMs);
                 continue;
             }
 
             // 503 — brief service unavailability
             if (httpStatus === 503) {
-                console.warn(`[BulkSend] 503 for contact=${contactId}, ch=${channel}. Waiting 10s…`);
-                await sleep(10_000);
+                const waitMs = 10_000 + jitterMs;
+                console.warn(`[BulkSend] 503 for contact=${contactId}, ch=${channel}. Waiting ${Math.round(waitMs / 1000)}s…`);
+                await sleep(waitMs);
                 continue;
             }
 
-            // 400/401 — non-retryable (bad number, bad API key, etc.)
+            // 400/401 — non-retryable (bad number, invalid auth, etc.)
             if (httpStatus === 400 || httpStatus === 401) break;
 
-            // Other errors — brief back-off
-            if (attempt < maxRetries) await sleep(3_000);
+            // Other errors — exponential backoff with jitter
+            if (attempt < maxRetries) {
+                const waitMs = (Math.pow(2, attempt) * 1500) + jitterMs;
+                await sleep(waitMs);
+            }
         }
     }
     throw lastErr;

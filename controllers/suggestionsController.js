@@ -134,7 +134,7 @@ const fetchFullSuggestion = async (id) => {
 
 export const getSuggestions = async (req, res) => {
     try {
-        const { status, category, department, priority, search, local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id, page = 1, limit = 20, trash } = req.query;
+        const { status, category, department, priority, search, search_field, searchField, local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id, page = 1, limit = 20, trash } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         const conditions = [];
@@ -171,9 +171,41 @@ export const getSuggestions = async (req, res) => {
         }
 
         if (search) {
-            conditions.push('(i.title LIKE ? OR i.complainant_name LIKE ? OR i.reference_no LIKE ? OR i.phone LIKE ?)');
-            const q = `%${search}%`;
-            params.push(q, q, q, q);
+            const q = search.trim();
+            const field = (search_field || searchField || 'all').toLowerCase();
+
+            switch (field) {
+                case 'id':
+                    conditions.push('(i.reference_no = ? OR i.reference_no LIKE ? OR i.id = ?)');
+                    params.push(q, `${q}%`, isNaN(q) ? 0 : Number(q));
+                    break;
+                case 'phone':
+                case 'number':
+                    const cleanPhone = q.replace(/[^0-9]/g, '');
+                    conditions.push('(i.phone LIKE ? OR i.alternative_phone LIKE ?)');
+                    params.push(`%${cleanPhone || q}%`, `%${cleanPhone || q}%`);
+                    break;
+                case 'email':
+                    conditions.push('i.email LIKE ?');
+                    params.push(`%${q}%`);
+                    break;
+                case 'name':
+                    conditions.push('(i.complainant_name LIKE ? OR MATCH(i.complainant_name, i.location) AGAINST(? IN BOOLEAN MODE))');
+                    params.push(`%${q}%`, `+${q}*`);
+                    break;
+                case 'house_name':
+                case 'address':
+                case 'location':
+                    conditions.push('(i.location LIKE ? OR MATCH(i.complainant_name, i.location) AGAINST(? IN BOOLEAN MODE))');
+                    params.push(`%${q}%`, `+${q}*`);
+                    break;
+                case 'all':
+                default:
+                    conditions.push('(i.title LIKE ? OR i.complainant_name LIKE ? OR i.reference_no LIKE ? OR i.phone LIKE ? OR i.email LIKE ? OR i.location LIKE ?)');
+                    const wildcard = `%${q}%`;
+                    params.push(wildcard, wildcard, wildcard, wildcard, wildcard, wildcard);
+                    break;
+            }
         }
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
