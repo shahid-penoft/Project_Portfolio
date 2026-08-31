@@ -21,10 +21,15 @@ const getClient = () => {
  *  - Already has leading +    → kept as-is
  */
 const normalizePhone = (phone) => {
-    const cleaned = (phone || '').replace(/\D/g, '');
-    if (cleaned.startsWith('91') && cleaned.length === 12) return `+${cleaned}`;
-    if (cleaned.length === 10) return `+91${cleaned}`;
-    return `+${cleaned}`; // assume digits already carry country code
+    const raw = (phone || '').toString().trim();
+    if (raw.startsWith('+')) {
+        return '+' + raw.replace(/\D/g, '');
+    }
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length >= 10) {
+        return '+91' + digits.slice(-10);
+    }
+    return '+91' + digits;
 };
 
 /**
@@ -36,10 +41,11 @@ const normalizePhone = (phone) => {
  */
 export const sendSMS = async (to, content) => {
     const client = getClient();
+    const recipient = normalizePhone(to);
 
     const payload = {
         sender: process.env.BREVO_SMS_SENDER || 'MLAConnect',
-        recipient: normalizePhone(to),
+        recipient,
         content,
         type: 'transactional',
     };
@@ -57,10 +63,11 @@ export const sendSMS = async (to, content) => {
 export const sendSMSSafe = async (to, content) => {
     try {
         if (!to) return;
-        await sendSMS(to, content);
-        console.info('[SMS sent]', to);
+        const res = await sendSMS(to, content);
+        console.info('[SMS sent]', to, 'Remaining Credits:', res?.remainingCredits);
+        return res;
     } catch (err) {
-        console.warn('[SMS failed — non-fatal]', to, err.message);
+        console.warn('[SMS failed — non-fatal]', to, err.message || err);
     }
 };
 

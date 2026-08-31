@@ -80,7 +80,7 @@ export const createAdminUser = async (req, res) => {
             [identifier, token]
         );
 
-        // 3. Send the invite
+        // 3. Send the invite (Email and/or SMS)
         if (email) {
             await sendAdminInviteEmail({
                 to: email,
@@ -88,7 +88,8 @@ export const createAdminUser = async (req, res) => {
                 token,
                 roleName
             });
-        } else {
+        }
+        if (phone) {
             const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',')[0] : 'http://localhost:5173';
             const fullLink = `${frontendUrl}/admin/reset-password?token=${token}`;
             const shortLink = await createShortLink(fullLink, 7 * 24 * 60); // 7 days in minutes
