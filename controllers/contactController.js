@@ -5,7 +5,7 @@ import { sendBrevoSMS } from '../configs/sms.js';
 import { sendWhatsAppMessage, sendWhatsAppTemplate, sendWhatsAppInteractive } from '../configs/whatsapp.js';
 import { sendVoiceMessage } from '../configs/voice.js';
 
-const CATEGORIES = ['membership', 'local issues', 'submit ideas', 'submit opinions', 'general'];
+const CATEGORIES = ['membership', 'local issues', 'submit ideas', 'submit opinions', 'general', 'other', 'enquiry'];
 
 // ─────────────────────────────────────────────────────────────
 //  POST /api/contact  — Public (no auth required)

@@ -3,6 +3,7 @@ import transporter       from '../configs/mailer.js';
 import buildLetterHtmlTemplate from '../utils/letterHtmlTemplate.js';
 import generateLetterPdf       from '../utils/letterPdfTemplate.js';
 import { logActivity as auditLog } from './teamsLogController.js';
+import { broadcastNotification }   from '../utils/notificationHelper.js';
 
 // ─── Helpers ──────────────────────────────────────────────────
 
@@ -746,6 +747,17 @@ export const publicSubmitLetter = async (req, res) => {
 
         // Log initial activity
         await logActivity(newId, `Public request for Recommendation Letter submitted by ${applicantName} (${applicantPhone}).`, null, applicantName);
+
+        // Notify all admins about new public recommendation request
+        broadcastNotification({
+            title: `New Recommendation Request ${letterId}`,
+            message: `"${letterSubject}" requested by ${applicantName}.`,
+            type: 'alert',
+            module: 'Letters',
+            record_id: newId,
+            record_ref: letterId,
+            link_path: `/admin/dashboard/letters/${newId}`,
+        });
 
         // Process attachments / audio notes
         if (req.files && req.files.length > 0) {

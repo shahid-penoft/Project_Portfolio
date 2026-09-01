@@ -366,10 +366,12 @@ export const createRequest = async (req, res) => {
 
     const appId = await generateAppId(connection, applicationType);
     const userId = req.admin ? req.admin.id : null;
+    const constituentId = req.constituent?.id || null;
+    const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (userId && !constituentId);
 
     let assignedOfficerId = b.assigned_officer_id || b.officer || null;
     if (assignedOfficerId === "Unassigned") assignedOfficerId = null;
-    let initialStatus = b.status || 'Submitted';
+    let initialStatus = b.status || (isAdminCreation ? 'Submitted' : 'Draft');
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
@@ -412,8 +414,8 @@ export const createRequest = async (req, res) => {
     // Add timeline event
     await connection.query(`
       INSERT INTO cm_fund_timeline_events (request_id, event_type, to_status, actor_id, note)
-      VALUES (?, 'Application Received', 'Submitted', ?, 'Application submitted successfully')
-    `, [appId, userId]);
+      VALUES (?, 'Application Received', ?, ?, 'Application submitted successfully')
+    `, [appId, initialStatus, userId]);
 
     await connection.commit();
     auditLog(req, { action: 'Created', module: 'CM Funds', details: `CM Funds application submitted — ${applicantName} (${appId})`, resource: `cm-funds/${appId}`, severity: 'info' });
@@ -422,10 +424,9 @@ export const createRequest = async (req, res) => {
     // - Public/constituent submission → auto-insert "We are reviewing your submission."
     // - Admin creation with status_details → insert custom text
     // - Admin creation without status_details → insert nothing (no regression)
-    const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (userId && !constituentId);
     const sdTrimmed = statusDetails?.trim();
     const updateTitle = sdTrimmed || (isAdminCreation ? null : 'We are reviewing your submission.');
-    const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : 'Your application has been registered and is under initial review by the MLA Office.');
+    const updateNote  = sdTrimmed || (isAdminCreation ? null : `Your application has been registered and is under initial review by the MLA Office.\n\nApplicant: ${applicantName}\nTracking ID: ${appId}`);
     if (updateTitle) {
         try {
             await pool.query(
@@ -454,6 +455,7 @@ export const createRequest = async (req, res) => {
         dateFiled: dateFiled || new Date().toISOString().split('T')[0],
         referenceNo: appId,
         statusDetails: statusDetails,
+        moduleLabel: 'Application',
       });
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,

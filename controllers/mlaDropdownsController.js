@@ -233,13 +233,15 @@ const insertTreeItems = async (connection, items, key, module, subCategory, stat
         const sortOrder = item.sort_order !== undefined ? item.sort_order : (i + 1) * 10;
         const isDefault = item.is_default ? 1 : 0;
 
+        const isSystem  = item.is_system ? 1 : (value.toLowerCase() === 'draft' ? 1 : 0);
+
         let newId;
         try {
             const [result] = await connection.query(
                 `INSERT INTO mla_dropdown_lists
-                 (\`key\`, module, sub_category, label, value, parent_id, color, icon, sort_order, is_default, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [key, module, subCategory || null, label, value, dbParentId, color, icon, sortOrder, isDefault, dbStatus]
+                 (\`key\`, module, sub_category, label, value, parent_id, color, icon, sort_order, is_default, is_system, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [key, module, subCategory || null, label, value, dbParentId, color, icon, sortOrder, isDefault, isSystem, dbStatus]
             );
             newId = result.insertId;
         } catch (err) {
@@ -682,12 +684,21 @@ export const deleteDropdown = async (req, res) => {
         const forceDelete = req.query.force === 'true';
 
         if (!isNaN(Number(id))) {
-            // Single item delete — check impact first
+            // Single item delete — check impact and system lock first
             const [[itemRow]] = await pool.query(
-                'SELECT `key`, value, label FROM mla_dropdown_lists WHERE id = ?', [id]
+                'SELECT `key`, value, label, is_system FROM mla_dropdown_lists WHERE id = ?', [id]
             );
 
-            if (itemRow && !forceDelete) {
+            if (!itemRow) return res.status(404).json({ success: false, message: 'Item not found.' });
+
+            if (itemRow.is_system) {
+                return res.status(400).json({
+                    success: false,
+                    message: `"${itemRow.label || itemRow.value}" is a system-protected status and cannot be deleted.`
+                });
+            }
+
+            if (!forceDelete) {
                 const mapping = CASCADE_MAP[itemRow.key];
                 if (mapping) {
                     const affectedCount = await getCascadeCount(pool, itemRow.key, itemRow.value);
@@ -713,7 +724,15 @@ export const deleteDropdown = async (req, res) => {
             return res.json({ success: true, message: 'Item deleted. Existing records will show the value as unavailable.' });
         }
 
-        // Delete entire group by key string
+        // Delete entire group by key string - check if contains system items
+        const [sysRows] = await pool.query('SELECT id, value FROM mla_dropdown_lists WHERE `key` = ? AND is_system = 1', [id]);
+        if (sysRows.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'This dropdown contains system-protected options (e.g. Draft) and cannot be deleted.'
+            });
+        }
+
         const [result] = await pool.query('DELETE FROM mla_dropdown_lists WHERE `key` = ?', [id]);
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Item not found.' });
         return res.json({ success: true, message: 'Item(s) deleted.' });

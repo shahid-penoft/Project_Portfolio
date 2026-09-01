@@ -180,6 +180,58 @@ export const getUnifiedItems = async (req, res) => {
             ) deleter_log ON g.id = deleter_log.governing_body_id
             LEFT JOIN admin_users del_u ON COALESCE(deleter_log.admin_user_id, creator_log.admin_user_id) = del_u.id
             WHERE g.${statusFilter}
+            
+            UNION ALL
+            
+            SELECT 
+                id.id AS raw_id,
+                IFNULL(id.reference_no, CONCAT('ID-', id.id)) AS display_id,
+                'Ideas' AS module,
+                id.title AS title,
+                id.local_body_id AS local_body_id,
+                lb.name AS local_body_name,
+                id.ward_id AS ward_id,
+                w.ward_no AS ward_no,
+                IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
+                id.priority AS priority,
+                id.status AS status,
+                id.created_at AS created_at,
+                id.updated_at AS updated_at,
+                id.deleted_at AS deleted_at,
+                u.full_name AS created_by,
+                del_u.full_name AS deleted_by
+            FROM ideas id
+            LEFT JOIN local_bodies lb ON id.local_body_id = lb.id
+            LEFT JOIN local_body_wards w ON id.ward_id = w.id
+            LEFT JOIN admin_users u ON COALESCE(id.filed_by_admin_id, id.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users del_u ON COALESCE(id.updated_by_admin_id, (SELECT admin_user_id FROM idea_activity WHERE idea_id = id.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id
+            WHERE id.${statusFilter}
+            
+            UNION ALL
+            
+            SELECT 
+                s.id AS raw_id,
+                IFNULL(s.reference_no, CONCAT('S-', s.id)) AS display_id,
+                'Suggestions' AS module,
+                s.title AS title,
+                s.local_body_id AS local_body_id,
+                lb.name AS local_body_name,
+                s.ward_id AS ward_id,
+                w.ward_no AS ward_no,
+                IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
+                s.priority AS priority,
+                s.status AS status,
+                s.created_at AS created_at,
+                s.updated_at AS updated_at,
+                s.deleted_at AS deleted_at,
+                u.full_name AS created_by,
+                del_u.full_name AS deleted_by
+            FROM suggestions s
+            LEFT JOIN local_bodies lb ON s.local_body_id = lb.id
+            LEFT JOIN local_body_wards w ON s.ward_id = w.id
+            LEFT JOIN admin_users u ON COALESCE(s.filed_by_admin_id, s.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users del_u ON COALESCE(s.updated_by_admin_id, (SELECT admin_user_id FROM suggestion_activity WHERE suggestion_id = s.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id
+            WHERE s.${statusFilter}
         `;
 
         // Wrap the union in a subquery to apply global filters/sort

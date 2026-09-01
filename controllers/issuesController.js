@@ -401,7 +401,7 @@ export const createIssue = async (req, res) => {
             title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude,
             submitter_name, phone, alternative_phone, email,
             local_body_id, ward_id, department, date_filed,
-            address_line1, custom_sms_message, notify_complainant,
+            address_line1, custom_sms_message, custom_email_message, notify_complainant,
             notify_channels,
             status_details,
         } = req.body;
@@ -418,6 +418,8 @@ export const createIssue = async (req, res) => {
 
         const constituentId = req.constituent?.id || null;
         const adminId       = req.admin?.id       || null;
+        const isAdminCreation = req.headers?.['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        const initialStatus = status || (isAdminCreation ? (await getDropdownDefault('issue_status') || 'Pending') : 'Draft');
 
         const [result] = await pool.query(`
             INSERT INTO issues
@@ -433,7 +435,7 @@ export const createIssue = async (req, res) => {
             affected_by || null,
             resolved_date || null,
             priority || await getDropdownDefault('issue_priority') || 'Medium',
-            status   || await getDropdownDefault('issue_status')   || 'Pending',
+            initialStatus,
             description || null,
             location || null,
             address || null,
@@ -461,10 +463,9 @@ export const createIssue = async (req, res) => {
         // - Public/constituent submission → auto-insert "We are reviewing your submission."
         // - Admin creation with status_details → insert custom text
         // - Admin creation without status_details → insert nothing (no regression)
-        const isAdminCreation = req.headers?.['x-app-portal'] === 'admin' || (adminId && !constituentId);
         const sdTrimmed = status_details?.trim();
         const updateTitle = sdTrimmed || (isAdminCreation ? null : 'We are reviewing your submission.');
-        const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : 'Your public issue report has been registered and is under initial review by the MLA Office.');
+        const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : `Your public issue report has been registered and is under initial review by the MLA Office.\n\nSubmitter: ${submitter_name}\nTracking ID: ${reference_no}`);
         if (updateTitle) {
             await pool.query(
                 `INSERT INTO issue_updates (issue_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
@@ -484,7 +485,9 @@ export const createIssue = async (req, res) => {
         // Fire-and-forget: SMS & Email confirmation to submitter
         const dateStr = new Date(date_filed || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
         
-        const channels = Array.isArray(notify_channels) ? notify_channels : [];
+        const channels = Array.isArray(notify_channels) 
+            ? notify_channels 
+            : (typeof notify_channels === 'string' ? notify_channels.split(',').map(s => s.trim()) : []);
         const isLegacyNotify = notify_complainant === true || notify_complainant === 'true';
         const shouldSendSMS = channels.includes('sms') || isLegacyNotify;
         const shouldSendEmail = channels.includes('email') || isLegacyNotify;
@@ -495,6 +498,7 @@ export const createIssue = async (req, res) => {
                 dateFiled: date_filed || new Date().toISOString().split('T')[0],
                 referenceNo: reference_no,
                 statusDetails: status_details,
+                moduleLabel: 'Public Issue',
             });
 
             smsBody = smsBody
@@ -517,7 +521,7 @@ export const createIssue = async (req, res) => {
 
         if (shouldSendEmail && email && email.trim()) {
             const reviewMsg = status_details?.trim() || "We are reviewing your submission.";
-            let emailBody = custom_email_message?.trim() || `Hi ${submitter_name},\n\nApplication received: ${dateStr}\n${reviewMsg}\nTracking ID: ${reference_no}\n\nOffice of Kothamangalam MLA`;
+            let emailBody = custom_email_message?.trim() || `Hi ${submitter_name},\n\nPublic Issue received: ${dateStr}\n${reviewMsg}\nTracking ID: ${reference_no}\n\nOffice of Kothamangalam MLA`;
             
             emailBody = emailBody
                 .replace(/\[Pending ID\]/g, reference_no)
@@ -530,7 +534,7 @@ export const createIssue = async (req, res) => {
             import('../utils/email.js').then(({ sendNotificationEmail }) => {
                 sendNotificationEmail({
                     to: email.trim(),
-                    subject: `Application Received [${reference_no}]`,
+                    subject: `Public Issue Received [${reference_no}]`,
                     message: emailBody,
                 }).catch(err => console.error('[createIssue:email]', err.message));
             });
