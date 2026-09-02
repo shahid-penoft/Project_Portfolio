@@ -2,7 +2,7 @@ import db from './configs/db.js';
 
 const columns = [
     { name: 'raw_id', c: 'c.id', i: 'i.id', f: 'f.id', l: 'l.id', g: 'g.id' },
-    { name: 'display_id', c: "CONCAT('C-', c.id)", i: "CONCAT('I-', i.id)", f: "CAST(f.id AS CHAR)", l: "IFNULL(l.letter_id COLLATE utf8mb4_unicode_ci, CONCAT('L-', l.id))", g: "IF(g.governing_body_type COLLATE utf8mb4_unicode_ci ='OTHER', CONCAT('O-', g.id), CONCAT('M-', g.id))" },
+    { name: 'display_id', c: "IFNULL(c.reference_no, CONCAT('C-', c.id))", i: "IFNULL(i.reference_no, CONCAT('P-', i.id))", f: "CAST(f.id AS CHAR)", l: "IFNULL(l.letter_id COLLATE utf8mb4_unicode_ci, CONCAT('L-', l.id))", g: "IF(g.governing_body_type COLLATE utf8mb4_unicode_ci ='OTHER', CONCAT('O-', g.id), CONCAT('M-', g.id))" },
     { name: 'module', c: "'Complaints'", i: "'Public Issue'", f: "'Applications'", l: "'Letters'", g: "IF(g.governing_body_type COLLATE utf8mb4_unicode_ci ='OTHER', 'Office', 'Governing Body')" },
     { name: 'title', c: 'c.title', i: 'i.title', f: "IFNULL(f.applicant_name, 'Untitled Application')", l: 'l.subject', g: 'g.name' },
     { name: 'local_body_name', c: 'lb.name', i: 'lb.name', f: 'lb.name', l: 'NULL', g: 'lb.name' },

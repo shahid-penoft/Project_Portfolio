@@ -45,7 +45,7 @@ export const getUnifiedItems = async (req, res) => {
         const baseQuery = `
             SELECT 
                 c.id AS raw_id,
-                CONCAT('C-', c.id) AS display_id,
+                IFNULL(c.reference_no, CONCAT('C-', c.id)) AS display_id,
                 'Complaints' AS module,
                 c.title AS title,
                 c.local_body_id AS local_body_id,
@@ -71,7 +71,7 @@ export const getUnifiedItems = async (req, res) => {
             
             SELECT 
                 i.id AS raw_id,
-                CONCAT('I-', i.id) AS display_id,
+                IFNULL(i.reference_no, CONCAT('P-', i.id)) AS display_id,
                 'Public Issue' AS module,
                 i.title AS title,
                 i.local_body_id AS local_body_id,
@@ -185,7 +185,7 @@ export const getUnifiedItems = async (req, res) => {
             
             SELECT 
                 id.id AS raw_id,
-                IFNULL(id.reference_no, CONCAT('ID-', id.id)) AS display_id,
+                IFNULL(id.reference_no, CONCAT('I-', id.id)) AS display_id,
                 'Ideas' AS module,
                 id.title AS title,
                 id.local_body_id AS local_body_id,
