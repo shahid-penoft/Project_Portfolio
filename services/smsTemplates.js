@@ -13,7 +13,7 @@
  */
 export const submissionConfirmationSMS = ({ name, dateFiled, referenceNo, statusDetails, moduleLabel }) => {
     const d = new Date(dateFiled);
-    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : dateFiled;
+    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : dateFiled;
     const reviewMsg = statusDetails?.trim() || "We are reviewing your submission.";
     const label = moduleLabel || "Submission";
     return `Hi ${name},\n\n${label} received: ${dateStr}\n${reviewMsg}\nTracking ID: ${referenceNo}\n\nOffice of Kothamangalam MLA`;
@@ -33,10 +33,10 @@ export const submissionConfirmationSMS = ({ name, dateFiled, referenceNo, status
  */
 export const followUpUpdateSMS = ({ name, referenceNo, statusTitle, moduleLabel, updateDate, dateFiled }) => {
     const d = new Date(updateDate || Date.now());
-    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
+    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
     
     const dFiled = dateFiled ? new Date(dateFiled) : null;
-    const filedDateStr = (dFiled && !isNaN(dFiled)) ? dFiled.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (dateFiled || 'N/A');
+    const filedDateStr = (dFiled && !isNaN(dFiled)) ? dFiled.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : (dateFiled || 'N/A');
     
     const label = moduleLabel || 'Application';
     const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
@@ -48,10 +48,10 @@ export const followUpUpdateSMS = ({ name, referenceNo, statusTitle, moduleLabel,
  */
 export const followUpUpdateWhatsApp = ({ name, referenceNo, statusTitle, moduleLabel, updateDate, dateFiled }) => {
     const d = new Date(updateDate || Date.now());
-    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
+    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
     
     const dFiled = dateFiled ? new Date(dateFiled) : null;
-    const filedDateStr = (dFiled && !isNaN(dFiled)) ? dFiled.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : (dateFiled || 'N/A');
+    const filedDateStr = (dFiled && !isNaN(dFiled)) ? dFiled.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : (dateFiled || 'N/A');
     
     const label = moduleLabel || 'Application';
     const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
@@ -64,7 +64,7 @@ export const followUpUpdateWhatsApp = ({ name, referenceNo, statusTitle, moduleL
  */
 export const followUpUpdateEmail = ({ name, referenceNo, statusTitle, moduleLabel, updateDate }) => {
     const d = new Date(updateDate || Date.now());
-    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
+    const dateStr = !isNaN(d) ? d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }) : String(updateDate || '');
     const label = moduleLabel || 'Application';
     const status = (statusTitle || '').trim() || 'We are reviewing your submission.';
 

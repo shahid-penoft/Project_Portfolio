@@ -679,7 +679,7 @@ export const createCSRReport = async (req, res) => {
 
         await conn.beginTransaction();
         const today = new Date().toISOString().split('T')[0];
-        const timeNow = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+        const timeNow = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
 
         const [result] = await conn.query(
             `INSERT INTO csr_reports
