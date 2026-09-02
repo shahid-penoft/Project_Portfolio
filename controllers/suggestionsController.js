@@ -586,21 +586,16 @@ export const restoreSuggestion = async (req, res) => {
 export const deleteSuggestion = async (req, res) => {
     try {
         const { id } = req.params;
-        const { force } = req.query;
 
-        if (force !== 'true') {
-            return res.status(400).json({ success: false, message: 'Permanent deletion requires ?force=true. Use PATCH /trash to soft-delete.' });
-        }
-
-        const [media]       = await pool.query('SELECT file_url FROM suggestion_media       WHERE suggestion_id = ?', [id]);
-        const [attachments] = await pool.query('SELECT file_url FROM suggestion_attachments WHERE suggestion_id = ?', [id]);
-        await Promise.all([...media, ...attachments].map(r => deleteS3Object(r.file_url)));
-
-        const [result] = await pool.query('DELETE FROM suggestions WHERE id = ?', [id]);
+        const [result] = await pool.query(
+            'UPDATE suggestions SET is_deleted = 1, deleted_at = NOW(), updated_by_admin_id = ? WHERE id = ?',
+            [req.admin?.id || null, id]
+        );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Suggestion not found.' });
 
-        auditLog(req, { action: 'Deleted', module: 'Suggestions', details: `Suggestion ID ${id} permanently deleted`, resource: `suggestions/${id}`, severity: 'error' });
-        res.json({ success: true, message: 'Suggestion permanently deleted.' });
+        await logActivity(id, 'Suggestion moved to Trash', req.admin?.id);
+        auditLog(req, { action: 'Trashed', module: 'Suggestions', details: `Suggestion ID ${id} moved to trash`, resource: `suggestions/${id}`, severity: 'info' });
+        res.json({ success: true, message: 'Suggestion moved to trash.' });
     } catch (err) {
         console.error('[deleteSuggestion]', err);
         res.status(500).json({ success: false, message: 'Failed to delete suggestion.' });
@@ -688,15 +683,24 @@ export const addSuggestionUpdate = async (req, res) => {
                 });
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE suggestion_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]);
+                await pool.query(
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                    ['Suggestion', id, 'SMS', rec.phone.trim(), finalSms]
+                ).catch(err => console.warn('[Log failed]', err.message));
             }
 
             // Send Email if selected
             if (rec?.email && channels.includes('email') && custom_email_message?.trim()) {
+                const emailMsg = custom_email_message.trim();
                 sendNotificationEmail({
                     to: rec.email,
                     subject: `Update on your Suggestion ${rec.reference_no || ''}`,
-                    message: custom_email_message.trim()
+                    message: emailMsg
                 }).catch(err => console.error('[addSuggestionUpdate Email Error]', err));
+                await pool.query(
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                    ['Suggestion', id, 'Email', rec.email.trim(), emailMsg]
+                ).catch(err => console.warn('[Log failed]', err.message));
             }
         }
 

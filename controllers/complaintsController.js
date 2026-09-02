@@ -702,26 +702,21 @@ export const restoreComplaint = async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // DELETE /api/complaints/:id  (admin only — permanent delete, requires ?force=true)
+// DELETE /api/complaints/:id  (admin only — soft-deletes / preserves record)
 // ─────────────────────────────────────────────────────────────
 export const deleteComplaint = async (req, res) => {
     try {
         const { id } = req.params;
-        const { force } = req.query;
 
-        if (force !== 'true') {
-            return res.status(400).json({ success: false, message: 'Permanent deletion requires ?force=true. Use PATCH /trash to soft-delete.' });
-        }
-
-        // Delete all S3 files first
-        const [media] = await pool.query('SELECT file_url FROM complaint_media       WHERE complaint_id = ?', [id]);
-        const [attachments] = await pool.query('SELECT file_url FROM complaint_attachments WHERE complaint_id = ?', [id]);
-        await Promise.all([...media, ...attachments].map(r => deleteS3Object(r.file_url)));
-
-        const [result] = await pool.query('DELETE FROM complaints WHERE id = ?', [id]);
+        const [result] = await pool.query(
+            'UPDATE complaints SET is_deleted = 1, deleted_at = NOW(), updated_by_admin_id = ? WHERE id = ?',
+            [req.admin?.id || null, id]
+        );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Complaint not found.' });
 
-        auditLog(req, { action: 'Deleted', module: 'Complaints', details: `Complaint ID ${id} permanently deleted`, resource: `complaints/${id}`, severity: 'error' });
-        res.json({ success: true, message: 'Complaint permanently deleted.' });
+        await logActivity(id, 'Complaint moved to Trash', req.admin?.id);
+        auditLog(req, { action: 'Trashed', module: 'Complaints', details: `Complaint ID ${id} moved to trash`, resource: `complaints/${id}`, severity: 'info' });
+        res.json({ success: true, message: 'Complaint moved to trash.' });
     } catch (err) {
         console.error('[deleteComplaint]', err);
         res.status(500).json({ success: false, message: 'Failed to delete complaint.' });
@@ -811,15 +806,24 @@ export const addComplaintUpdate = async (req, res) => {
                 });
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE complaint_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]);
+                await pool.query(
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                    ['Complaint', id, 'SMS', rec.phone.trim(), finalSms]
+                ).catch(err => console.warn('[Log failed]', err.message));
             }
 
             // Send Email if selected
             if (rec?.email && channels.includes('email') && custom_email_message?.trim()) {
+                const emailMsg = custom_email_message.trim();
                 sendNotificationEmail({
                     to: rec.email,
                     subject: `Update on your Complaint ${rec.reference_no || ''}`,
-                    message: custom_email_message.trim()
+                    message: emailMsg
                 }).catch(err => console.error('[addComplaintUpdate Email Error]', err));
+                await pool.query(
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                    ['Complaint', id, 'Email', rec.email.trim(), emailMsg]
+                ).catch(err => console.warn('[Log failed]', err.message));
             }
         }
 

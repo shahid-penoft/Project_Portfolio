@@ -43,7 +43,6 @@ const runPurge = async () => {
 };
 
 export const initTrashPurge = () => {
-  // Run every day at 2:00 AM
-  cron.schedule('0 2 * * *', runPurge, { timezone: 'Asia/Kolkata' });
-  console.log('[TrashPurge] Cron job scheduled — daily at 02:00 IST.');
+  // Auto-deletion disabled to preserve monotonic ID sequences and historical audit data
+  console.log('[TrashPurge] Automatic trash purge is disabled.');
 };

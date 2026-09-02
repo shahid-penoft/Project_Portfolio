@@ -347,16 +347,7 @@ export const updateLetter = async (req, res) => {
 // DELETE /api/admin/letters/:id
 // ─────────────────────────────────────────────────────────────
 export const deleteLetter = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [result] = await pool.query('DELETE FROM mla_letters WHERE id = ?', [id]);
-        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Letter not found.' });
-        auditLog(req, { action: 'Deleted', module: 'Letters', details: `Letter ID ${id} permanently deleted`, resource: `letters/${id}`, severity: 'error' });
-        res.json({ success: true, message: 'Letter deleted successfully.' });
-    } catch (err) {
-        console.error('[deleteLetter]', err);
-        res.status(500).json({ success: false, message: 'Failed to delete letter.' });
-    }
+    return trashLetter(req, res);
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -402,19 +393,10 @@ export const restoreLetter = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// DELETE /api/admin/letters/:id/permanent  (force hard-delete from trash)
+// DELETE /api/admin/letters/:id/permanent
 // ─────────────────────────────────────────────────────────────
 export const permanentDeleteLetter = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [result] = await pool.query('DELETE FROM mla_letters WHERE id = ?', [id]);
-        if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Letter not found.' });
-        auditLog(req, { action: 'Deleted', module: 'Letters', details: `Letter ID ${id} permanently deleted from trash`, resource: `letters/${id}`, severity: 'error' });
-        res.json({ success: true, message: 'Letter permanently deleted.' });
-    } catch (err) {
-        console.error('[permanentDeleteLetter]', err);
-        res.status(500).json({ success: false, message: 'Failed to permanently delete letter.' });
-    }
+    return trashLetter(req, res);
 };
 
 

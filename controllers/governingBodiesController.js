@@ -518,26 +518,7 @@ export const updateGoverningBody = async (req, res) => {
 
 // DELETE /api/admin/governing-bodies/:id  (permanent delete — requires ?force=true)
 export const deleteGoverningBody = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { force } = req.query;
-
-        if (force !== 'true') {
-            return errorResponse(res, 'Permanent deletion requires ?force=true. Use PATCH /trash to soft-delete.', 400);
-        }
-
-        const [result] = await db.query('DELETE FROM governing_representatives WHERE id = ?', [id]);
-        
-        if (!result.affectedRows) {
-            return errorResponse(res, 'Governing body representative not found.', 404);
-        }
-
-        auditLog(req, { action: 'Deleted', module: 'Governing Body', details: `Governing body representative ID ${id} permanently deleted`, resource: `governing-bodies/${id}`, severity: 'error' });
-        return successResponse(res, null, 'Governing body representative permanently deleted.');
-    } catch (error) {
-        console.error('[deleteGoverningBody]', error);
-        return errorResponse(res, 'Server error deleting representative.');
-    }
+    return trashGoverningBody(req, res);
 };
 
 // PATCH /api/admin/governing-bodies/:id/trash  (soft delete)

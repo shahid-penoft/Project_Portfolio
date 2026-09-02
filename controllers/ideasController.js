@@ -566,21 +566,16 @@ export const restoreIdea = async (req, res) => {
 export const deleteIdea = async (req, res) => {
     try {
         const { id } = req.params;
-        const { force } = req.query;
 
-        if (force !== 'true') {
-            return res.status(400).json({ success: false, message: 'Permanent deletion requires ?force=true. Use PATCH /trash to soft-delete.' });
-        }
-
-        const [media]       = await pool.query('SELECT file_url FROM idea_media       WHERE idea_id = ?', [id]);
-        const [attachments] = await pool.query('SELECT file_url FROM idea_attachments WHERE idea_id = ?', [id]);
-        await Promise.all([...media, ...attachments].map(r => deleteS3Object(r.file_url)));
-
-        const [result] = await pool.query('DELETE FROM ideas WHERE id = ?', [id]);
+        const [result] = await pool.query(
+            'UPDATE ideas SET is_deleted = 1, deleted_at = NOW(), updated_by_admin_id = ? WHERE id = ?',
+            [req.admin?.id || null, id]
+        );
         if (result.affectedRows === 0) return res.status(404).json({ success: false, message: 'Idea not found.' });
 
-        auditLog(req, { action: 'Deleted', module: 'Ideas', details: `Idea ID ${id} permanently deleted`, resource: `ideas/${id}`, severity: 'error' });
-        res.json({ success: true, message: 'Idea permanently deleted.' });
+        await logActivity(id, 'Idea moved to Trash', req.admin?.id);
+        auditLog(req, { action: 'Trashed', module: 'Ideas', details: `Idea ID ${id} moved to trash`, resource: `ideas/${id}`, severity: 'info' });
+        res.json({ success: true, message: 'Idea moved to trash.' });
     } catch (err) {
         console.error('[deleteIdea]', err);
         res.status(500).json({ success: false, message: 'Failed to delete idea.' });
@@ -646,15 +641,24 @@ export const addIdeaUpdate = async (req, res) => {
                 });
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE idea_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]);
+                await pool.query(
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                    ['Idea', id, 'SMS', rec.phone.trim(), finalSms]
+                ).catch(err => console.warn('[Log failed]', err.message));
             }
 
             // Send Email if selected
             if (rec?.email && channels.includes('email') && custom_email_message?.trim()) {
+                const emailMsg = custom_email_message.trim();
                 sendNotificationEmail({
                     to: rec.email,
                     subject: `Update on your Idea ${rec.reference_no || ''}`,
-                    message: custom_email_message.trim()
+                    message: emailMsg
                 }).catch(err => console.error('[addIdeaUpdate Email Error]', err));
+                await pool.query(
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+                    ['Idea', id, 'Email', rec.email.trim(), emailMsg]
+                ).catch(err => console.warn('[Log failed]', err.message));
             }
         }
 

@@ -967,16 +967,18 @@ export const restoreRequest = async (req, res) => {
 export const permanentDeleteRequest = async (req, res) => {
   try {
     const { id } = req.params;
-    // Hard-delete from DB (no is_deleted guard — permanent regardless of state)
-    const [result] = await pool.query(`DELETE FROM cm_fund_requests WHERE id = ?`, [id]);
+    const [result] = await pool.query(
+      `UPDATE cm_fund_requests SET is_deleted = 1, deleted_at = NOW(), deleted_by_id = ? WHERE id = ?`,
+      [req.user?.id || req.admin?.id || null, id]
+    );
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Application not found' });
     }
-    auditLog(req, { action: 'Deleted', module: 'CM Funds', details: `CM Funds application ${id} permanently deleted`, resource: `cm-funds/${id}`, severity: 'error' });
-    res.json({ message: 'Application permanently deleted' });
+    auditLog(req, { action: 'Trashed', module: 'CM Funds', details: `CM Funds application ${id} moved to trash`, resource: `cm-funds/${id}`, severity: 'info' });
+    res.json({ message: 'Application moved to trash' });
   } catch (err) {
     console.error('Error in permanentDeleteRequest:', err);
-    res.status(500).json({ error: 'Failed to permanently delete application' });
+    res.status(500).json({ error: 'Failed to delete application' });
   }
 };
 

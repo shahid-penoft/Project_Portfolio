@@ -1488,21 +1488,7 @@ export const restoreProject = async (req, res) => {
 
 // ── DELETE /api/projects/:id/permanent  (force hard-delete) ─────
 export const permanentDeleteProject = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [rows] = await db.query('SELECT images, videos FROM projects WHERE id = ?', [id]);
-        if (!rows.length) return errorResponse(res, 'Project not found.', 404);
-
-        // Delete image & video files from disk
-        parseImages(rows[0].images).forEach(deleteFile);
-        parseVideos(rows[0].videos).forEach(deleteFile);
-
-        await db.query('DELETE FROM projects WHERE id = ?', [id]);
-        return successResponse(res, { id }, 'Project permanently deleted.');
-    } catch (err) {
-        console.error('[permanentDeleteProject]', err);
-        return errorResponse(res, 'Server error permanently deleting project.');
-    }
+    return trashProject(req, res);
 };
 
 // ── POST /api/projects/trash/bulk-restore ──────────────────────
@@ -1539,25 +1525,15 @@ export const bulkPermanentDeleteProjects = async (req, res) => {
         const numericIds = ids.map(id => typeof id === 'string' ? parseInt(id.replace(/[^0-9]/g, '')) : id).filter(Boolean);
         if (numericIds.length === 0) return errorResponse(res, 'No valid project IDs provided.', 400);
 
-        const [rows] = await db.query(
-            `SELECT images, videos FROM projects WHERE id IN (${numericIds.map(() => '?').join(',')})`,
-            numericIds
-        );
-
-        rows.forEach(r => {
-            parseImages(r.images).forEach(deleteFile);
-            parseVideos(r.videos).forEach(deleteFile);
-        });
-
         const [result] = await db.query(
-            `DELETE FROM projects WHERE id IN (${numericIds.map(() => '?').join(',')})`,
-            numericIds
+            `UPDATE projects SET is_deleted = 1, deleted_at = NOW(), deleted_by = ? WHERE id IN (${numericIds.map(() => '?').join(',')})`,
+            [req.user?.name || req.user?.username || 'Admin', ...numericIds]
         );
 
-        return successResponse(res, { deletedCount: result.affectedRows }, `Permanently deleted ${result.affectedRows} project(s).`);
+        return successResponse(res, { deletedCount: result.affectedRows }, `Moved ${result.affectedRows} project(s) to trash.`);
     } catch (err) {
         console.error('[bulkPermanentDeleteProjects]', err);
-        return errorResponse(res, 'Server error bulk permanently deleting projects.');
+        return errorResponse(res, 'Server error processing projects.');
     }
 };
 

@@ -64,20 +64,24 @@ export const getCommunications = async (req, res) => {
           c.status,
           c.created_at AS _createdAt,
           (SELECT COUNT(*) FROM complaint_updates WHERE complaint_id = c.id) AS _updatesCount,
-          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', created_at)
+          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM complaint_updates WHERE complaint_id = c.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
               'id', cl1.id,
               'channels', (
                   SELECT GROUP_CONCAT(DISTINCT cl2.channel)
                   FROM communications_logs cl2
-                  WHERE cl2.entity_type = 'Complaint' AND cl2.entity_id = c.id
-                  AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
-                  AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                  WHERE cl2.entity_type COLLATE utf8mb4_unicode_ci = 'Complaint' 
+                    AND (cl2.entity_id COLLATE utf8mb4_unicode_ci = CAST(c.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl2.entity_id COLLATE utf8mb4_unicode_ci = c.reference_no COLLATE utf8mb4_unicode_ci)
+                    AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                    AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
               ),
-              'created_at', cl1.created_at
-           ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Complaint' AND cl1.entity_id = c.id ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
-          (SELECT JSON_OBJECT('scheduled_at', j.scheduled_at, 'channels', j.channels)
+              'created_at', DATE_FORMAT(cl1.created_at, '%Y-%m-%dT%H:%i:%s.000Z')
+           ) FROM communications_logs cl1 
+             WHERE cl1.entity_type COLLATE utf8mb4_unicode_ci = 'Complaint' 
+               AND (cl1.entity_id COLLATE utf8mb4_unicode_ci = CAST(c.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl1.entity_id COLLATE utf8mb4_unicode_ci = c.reference_no COLLATE utf8mb4_unicode_ci)
+             ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
+          (SELECT JSON_OBJECT('scheduled_at', DATE_FORMAT(j.scheduled_at, '%Y-%m-%dT%H:%i:%s.000Z'), 'channels', j.channels)
            FROM bulk_send_jobs j
            WHERE j.status = 'scheduled' AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', c.id, 'module', 'C-'), '$.contacts') = 1
            ORDER BY j.scheduled_at ASC LIMIT 1) AS scheduled_communication
@@ -109,20 +113,24 @@ export const getCommunications = async (req, res) => {
           i.status,
           i.created_at AS _createdAt,
           (SELECT COUNT(*) FROM issue_updates WHERE issue_id = i.id) AS _updatesCount,
-          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', created_at)
+          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM issue_updates WHERE issue_id = i.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
               'id', cl1.id,
               'channels', (
                   SELECT GROUP_CONCAT(DISTINCT cl2.channel)
                   FROM communications_logs cl2
-                  WHERE cl2.entity_type = 'Issue' AND cl2.entity_id = i.id
-                  AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
-                  AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                  WHERE cl2.entity_type COLLATE utf8mb4_unicode_ci = 'Issue' 
+                    AND (cl2.entity_id COLLATE utf8mb4_unicode_ci = CAST(i.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl2.entity_id COLLATE utf8mb4_unicode_ci = i.reference_no COLLATE utf8mb4_unicode_ci)
+                    AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                    AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
               ),
-              'created_at', cl1.created_at
-           ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Issue' AND cl1.entity_id = i.id ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
-          (SELECT JSON_OBJECT('scheduled_at', j.scheduled_at, 'channels', j.channels)
+              'created_at', DATE_FORMAT(cl1.created_at, '%Y-%m-%dT%H:%i:%s.000Z')
+           ) FROM communications_logs cl1 
+             WHERE cl1.entity_type COLLATE utf8mb4_unicode_ci = 'Issue' 
+               AND (cl1.entity_id COLLATE utf8mb4_unicode_ci = CAST(i.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl1.entity_id COLLATE utf8mb4_unicode_ci = i.reference_no COLLATE utf8mb4_unicode_ci)
+             ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
+          (SELECT JSON_OBJECT('scheduled_at', DATE_FORMAT(j.scheduled_at, '%Y-%m-%dT%H:%i:%s.000Z'), 'channels', j.channels)
            FROM bulk_send_jobs j
            WHERE j.status = 'scheduled' AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', i.id, 'module', 'P-'), '$.contacts') = 1
            ORDER BY j.scheduled_at ASC LIMIT 1) AS scheduled_communication
@@ -154,20 +162,24 @@ export const getCommunications = async (req, res) => {
           id.status,
           id.created_at AS _createdAt,
           (SELECT COUNT(*) FROM idea_updates WHERE idea_id = id.id) AS _updatesCount,
-          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', created_at)
+          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM idea_updates WHERE idea_id = id.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
               'id', cl1.id,
               'channels', (
                   SELECT GROUP_CONCAT(DISTINCT cl2.channel)
                   FROM communications_logs cl2
-                  WHERE cl2.entity_type = 'Idea' AND cl2.entity_id = id.id
-                  AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
-                  AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                  WHERE cl2.entity_type COLLATE utf8mb4_unicode_ci = 'Idea' 
+                    AND (cl2.entity_id COLLATE utf8mb4_unicode_ci = CAST(id.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl2.entity_id COLLATE utf8mb4_unicode_ci = id.reference_no COLLATE utf8mb4_unicode_ci)
+                    AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                    AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
               ),
-              'created_at', cl1.created_at
-           ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Idea' AND cl1.entity_id = id.id ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
-          (SELECT JSON_OBJECT('scheduled_at', j.scheduled_at, 'channels', j.channels)
+              'created_at', DATE_FORMAT(cl1.created_at, '%Y-%m-%dT%H:%i:%s.000Z')
+           ) FROM communications_logs cl1 
+             WHERE cl1.entity_type COLLATE utf8mb4_unicode_ci = 'Idea' 
+               AND (cl1.entity_id COLLATE utf8mb4_unicode_ci = CAST(id.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl1.entity_id COLLATE utf8mb4_unicode_ci = id.reference_no COLLATE utf8mb4_unicode_ci)
+             ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
+          (SELECT JSON_OBJECT('scheduled_at', DATE_FORMAT(j.scheduled_at, '%Y-%m-%dT%H:%i:%s.000Z'), 'channels', j.channels)
            FROM bulk_send_jobs j
            WHERE j.status = 'scheduled' AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', id.id, 'module', 'I-'), '$.contacts') = 1
            ORDER BY j.scheduled_at ASC LIMIT 1) AS scheduled_communication
@@ -199,20 +211,24 @@ export const getCommunications = async (req, res) => {
           s.status,
           s.created_at AS _createdAt,
           (SELECT COUNT(*) FROM suggestion_updates WHERE suggestion_id = s.id) AS _updatesCount,
-          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', created_at)
+          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM suggestion_updates WHERE suggestion_id = s.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
               'id', cl1.id,
               'channels', (
                   SELECT GROUP_CONCAT(DISTINCT cl2.channel)
                   FROM communications_logs cl2
-                  WHERE cl2.entity_type = 'Suggestion' AND cl2.entity_id = s.id
-                  AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
-                  AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                  WHERE cl2.entity_type COLLATE utf8mb4_unicode_ci = 'Suggestion' 
+                    AND (cl2.entity_id COLLATE utf8mb4_unicode_ci = CAST(s.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl2.entity_id COLLATE utf8mb4_unicode_ci = s.reference_no COLLATE utf8mb4_unicode_ci)
+                    AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                    AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
               ),
-              'created_at', cl1.created_at
-           ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Suggestion' AND cl1.entity_id = s.id ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
-          (SELECT JSON_OBJECT('scheduled_at', j.scheduled_at, 'channels', j.channels)
+              'created_at', DATE_FORMAT(cl1.created_at, '%Y-%m-%dT%H:%i:%s.000Z')
+           ) FROM communications_logs cl1 
+             WHERE cl1.entity_type COLLATE utf8mb4_unicode_ci = 'Suggestion' 
+               AND (cl1.entity_id COLLATE utf8mb4_unicode_ci = CAST(s.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl1.entity_id COLLATE utf8mb4_unicode_ci = s.reference_no COLLATE utf8mb4_unicode_ci)
+             ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
+          (SELECT JSON_OBJECT('scheduled_at', DATE_FORMAT(j.scheduled_at, '%Y-%m-%dT%H:%i:%s.000Z'), 'channels', j.channels)
            FROM bulk_send_jobs j
            WHERE j.status = 'scheduled' AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', s.id, 'module', 'S-'), '$.contacts') = 1
            ORDER BY j.scheduled_at ASC LIMIT 1) AS scheduled_communication
@@ -244,20 +260,24 @@ export const getCommunications = async (req, res) => {
           f.status,
           f.created_at AS _createdAt,
           (SELECT COUNT(*) FROM cm_fund_updates WHERE request_id = f.id) AS _updatesCount,
-          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', created_at)
+          (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM cm_fund_updates WHERE request_id = f.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
               'id', cl1.id,
               'channels', (
                   SELECT GROUP_CONCAT(DISTINCT cl2.channel)
                   FROM communications_logs cl2
-                  WHERE cl2.entity_type = 'Application' AND cl2.entity_id = f.id
-                  AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
-                  AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                  WHERE cl2.entity_type COLLATE utf8mb4_unicode_ci = 'Application' 
+                    AND (cl2.entity_id COLLATE utf8mb4_unicode_ci = CAST(f.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl2.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('A-', f.id) COLLATE utf8mb4_unicode_ci OR cl2.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('CM-', f.id) COLLATE utf8mb4_unicode_ci)
+                    AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                    AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
               ),
-              'created_at', cl1.created_at
-           ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Application' AND cl1.entity_id = f.id ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
-          (SELECT JSON_OBJECT('scheduled_at', j.scheduled_at, 'channels', j.channels)
+              'created_at', DATE_FORMAT(cl1.created_at, '%Y-%m-%dT%H:%i:%s.000Z')
+           ) FROM communications_logs cl1 
+             WHERE cl1.entity_type COLLATE utf8mb4_unicode_ci = 'Application' 
+               AND (cl1.entity_id COLLATE utf8mb4_unicode_ci = CAST(f.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl1.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('A-', f.id) COLLATE utf8mb4_unicode_ci OR cl1.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('CM-', f.id) COLLATE utf8mb4_unicode_ci)
+             ORDER BY cl1.created_at DESC LIMIT 1) AS last_communication,
+          (SELECT JSON_OBJECT('scheduled_at', DATE_FORMAT(j.scheduled_at, '%Y-%m-%dT%H:%i:%s.000Z'), 'channels', j.channels)
            FROM bulk_send_jobs j
            WHERE j.status = 'scheduled' AND JSON_CONTAINS(j.payload, JSON_OBJECT('id', f.id, 'module', 'F-'), '$.contacts') = 1
            ORDER BY j.scheduled_at ASC LIMIT 1) AS scheduled_communication
@@ -423,10 +443,10 @@ export const getCommunications = async (req, res) => {
         return new Date(dateStr);
       };
 
-      const lastCommDateObj = lastComm?.created_at ? parseUTC(lastComm.created_at) : (r._createdAt ? parseUTC(r._createdAt) : new Date(0));
+      const lastCommDateObj = lastComm?.created_at ? parseUTC(lastComm.created_at) : null;
       const lastCommunicationTypes = lastComm?.channels
-        ? lastComm.channels.split(',')
-        : (lastComm?.channel ? [lastComm.channel] : []);
+        ? String(lastComm.channels).split(',').map(s => s.trim()).filter(Boolean)
+        : (lastComm?.channel ? [String(lastComm.channel).trim()] : []);
 
       const schDateObj = scheduledComm?.scheduled_at ? parseUTC(scheduledComm.scheduled_at) : null;
       const schTypes = scheduledComm?.channels
@@ -451,12 +471,15 @@ export const getCommunications = async (req, res) => {
         wardName: r.wardName || '',
         status: r.status || '—',
         statusText: lastUpdate?.title || 'We are reviewing your submission.',
-        lastCommunicationDate: lastCommDateObj ? lastCommDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—',
-        lastCommunicationTime: lastCommDateObj ? lastCommDateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—',
+        lastCommunicationDate: lastCommDateObj ? lastCommDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
+        lastCommunicationTime: lastCommDateObj ? lastCommDateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : null,
         lastCommunicationTypes,
         scheduledDate: schDateObj ? schDateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null,
         scheduledTime: schDateObj ? schDateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : null,
         scheduledTypes: schMappedTypes,
+        last_communication: lastComm,
+        last_update: lastUpdate,
+        scheduled_communication: scheduledComm,
         _createdAt: r._createdAt,
         _updatesCount: r._updatesCount || 0,
       };
