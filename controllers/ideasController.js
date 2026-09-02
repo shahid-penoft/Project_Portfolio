@@ -640,7 +640,7 @@ export const addIdeaUpdate = async (req, res) => {
                     dateFiled: rec.date_filed,
                 });
                 sendSMSSafe(rec.phone, finalSms);
-                await pool.query('UPDATE idea_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]);
+                await pool.query('UPDATE idea_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]).catch(err => console.warn('[sms_sent update failed]', err.message));
                 await pool.query(
                     `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
                     ['Idea', id, 'SMS', rec.phone.trim(), finalSms]
