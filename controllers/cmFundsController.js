@@ -30,6 +30,18 @@ const deleteS3Object = async (url) => {
     }
 };
 
+const parseDateToYMD = (val) => {
+    if (!val || val === '—' || val === 'null' || val === 'undefined') return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(val).trim())) return String(val).trim();
+    const cleaned = String(val).trim().replace(/Sept/i, 'Sep');
+    const d = new Date(cleaned);
+    if (isNaN(d.getTime())) return null;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
 /**
  * Helper to resolve raw category input (which could be an ID in cm_fund_categories,
  * an ID in mla_dropdown_lists, or a category name string) to a valid cm_fund_categories(id)
@@ -355,7 +367,7 @@ export const createRequest = async (req, res) => {
     const recommenderName     = b.recommender_name    || b.recommenderName    || null;
     const recommenderContact  = b.recommender_contact || b.recommenderContact || null;
     const remarks             = b.remarks             || null;
-    const dateFiled           = b.date_filed          || null;
+    const dateFiled           = parseDateToYMD(b.date_filed || b.dateFiled) || new Date().toISOString().split('T')[0];
     const statusDetails       = b.status_details      || null;
 
     if (!applicationType || !applicantName) {
@@ -756,7 +768,11 @@ export const updateRequest = async (req, res) => {
       'description', 'bank_name', 'account_number', 'ifsc_code', 'branch', 'account_holder_name', 'recommended_by'
     ]);
 
+    const processedDbKeys = new Set();
+
     for (const [camelKey, dbKey] of Object.entries(bodyToDb)) {
+      if (processedDbKeys.has(dbKey)) continue;
+
       // Check for either the snake_case key (from FormData) or the camelCase key
       let value = req.body[dbKey] !== undefined ? req.body[dbKey] : req.body[camelKey];
       
@@ -770,9 +786,13 @@ export const updateRequest = async (req, res) => {
       if (dbKey === 'category_id' && value) {
         value = await resolveCategoryId(pool, value);
       }
+      if (dbKey === 'date_filed' && value !== undefined) {
+        value = parseDateToYMD(value);
+      }
       if (value !== undefined) {
+        processedDbKeys.add(dbKey);
         setParts.push(`${dbKey} = ?`);
-        if (value === '') {
+        if (value === '' || value === null) {
           values.push(notNullFields.has(dbKey) ? '' : null);
         } else {
           values.push(value);
