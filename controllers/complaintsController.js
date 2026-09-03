@@ -203,12 +203,13 @@ const fetchFullComplaint = async (id) => {
         ORDER BY ct.created_at ASC
     `, [realId]);
     const [activity] = await pool.query(`
-        SELECT ca.*, au.full_name as author_name 
+        SELECT ca.*, COALESCE(au.full_name, c.complainant_name, 'Citizen') as author_name 
         FROM complaint_activity ca
         LEFT JOIN admin_users au ON ca.admin_user_id = au.id
+        LEFT JOIN complaints c ON ca.complaint_id = c.id
         WHERE ca.complaint_id = ? 
         ORDER BY ca.created_at DESC
-    `, [id]);
+    `, [realId]);
 
     return { ...complaint, remarks: complaint.internal_note || '', updates: mappedUpdates, media, attachments, team, activity };
 };

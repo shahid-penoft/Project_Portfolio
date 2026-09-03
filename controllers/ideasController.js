@@ -121,9 +121,10 @@ const fetchFullIdea = async (id) => {
         ORDER BY it.created_at ASC
     `, [realId]);
     const [activity]    = await pool.query(`
-        SELECT ia.*, au.full_name as author_name 
+        SELECT ia.*, COALESCE(au.full_name, i.complainant_name, 'Citizen') as author_name 
         FROM idea_activity ia
         LEFT JOIN admin_users au ON ia.admin_user_id = au.id
+        LEFT JOIN ideas i ON ia.idea_id = i.id
         WHERE ia.idea_id = ? 
         ORDER BY ia.created_at DESC
     `, [realId]);

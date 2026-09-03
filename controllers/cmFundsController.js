@@ -472,6 +472,14 @@ export const createRequest = async (req, res) => {
           moduleLabel: 'Application',
         });
       } else {
+        if (applicantName && applicantName.trim() && applicantName.trim().toLowerCase() !== 'citizen') {
+          const nameTrimmed = applicantName.trim();
+          message = message
+            .replace(/^Hi Citizen,/mi, `Hi ${nameTrimmed},`)
+            .replace(/^Hi Citizen /mi, `Hi ${nameTrimmed} `)
+            .replace(/\{applicant_name\}/gi, nameTrimmed)
+            .replace(/\{name\}/gi, nameTrimmed);
+        }
         message = message
           .replace(/\{tracking_id\}/gi, appId)
           .replace(/\{reference_no\}/gi, appId)
@@ -593,6 +601,14 @@ export const createDraftRequest = async (req, res) => {
           referenceNo: appId,
         });
       } else {
+        if (applicantName && applicantName.trim() && applicantName.trim().toLowerCase() !== 'citizen') {
+          const nameTrimmed = applicantName.trim();
+          message = message
+            .replace(/^Hi Citizen,/mi, `Hi ${nameTrimmed},`)
+            .replace(/^Hi Citizen /mi, `Hi ${nameTrimmed} `)
+            .replace(/\{applicant_name\}/gi, nameTrimmed)
+            .replace(/\{name\}/gi, nameTrimmed);
+        }
         message = message
           .replace(/\{tracking_id\}/gi, appId)
           .replace(/\{reference_no\}/gi, appId)
