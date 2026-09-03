@@ -463,7 +463,7 @@ export const createRequest = async (req, res) => {
     // Notify Applicant
     if (b.notify_applicant === 'true' && applicantPhone) {
       let message = b.custom_message;
-      if (!message) {
+      if (!message || message.trim() === '') {
         message = submissionConfirmationSMS({
           name: applicantName,
           dateFiled: dateFiled || new Date().toISOString().split('T')[0],
@@ -473,10 +473,11 @@ export const createRequest = async (req, res) => {
         });
       } else {
         message = message
-          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`)
+          .replace(/\{tracking_id\}/gi, appId)
+          .replace(/\{reference_no\}/gi, appId)
           .replace(/\[Pending ID\]/gi, appId)
           .replace(/\[PendingID\]/gi, appId)
-          .replace(/{reference_no}/g, appId);
+          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`);
       }
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
@@ -585,7 +586,7 @@ export const createDraftRequest = async (req, res) => {
     // Notify Applicant
     if (b.notify_applicant === 'true' && applicantPhone) {
       let message = b.custom_message;
-      if (!message) {
+      if (!message || message.trim() === '') {
         message = submissionConfirmationSMS({
           name: applicantName,
           dateFiled: new Date().toISOString().split('T')[0],
@@ -593,10 +594,11 @@ export const createDraftRequest = async (req, res) => {
         });
       } else {
         message = message
-          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`)
+          .replace(/\{tracking_id\}/gi, appId)
+          .replace(/\{reference_no\}/gi, appId)
           .replace(/\[Pending ID\]/gi, appId)
           .replace(/\[PendingID\]/gi, appId)
-          .replace(/{reference_no}/g, appId);
+          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`);
       }
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
