@@ -584,11 +584,20 @@ export const createDraftRequest = async (req, res) => {
 
     // Notify Applicant
     if (b.notify_applicant === 'true' && applicantPhone) {
-      const message = b.custom_message || submissionConfirmationSMS({
-        name: applicantName,
-        dateFiled: new Date().toISOString().split('T')[0],
-        referenceNo: appId,
-      });
+      let message = b.custom_message;
+      if (!message) {
+        message = submissionConfirmationSMS({
+          name: applicantName,
+          dateFiled: new Date().toISOString().split('T')[0],
+          referenceNo: appId,
+        });
+      } else {
+        message = message
+          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`)
+          .replace(/\[Pending ID\]/gi, appId)
+          .replace(/\[PendingID\]/gi, appId)
+          .replace(/{reference_no}/g, appId);
+      }
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
         module: 'cm-funds',
