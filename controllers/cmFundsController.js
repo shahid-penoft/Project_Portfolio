@@ -462,13 +462,22 @@ export const createRequest = async (req, res) => {
 
     // Notify Applicant
     if (b.notify_applicant === 'true' && applicantPhone) {
-      const message = b.custom_message || submissionConfirmationSMS({
-        name: applicantName,
-        dateFiled: dateFiled || new Date().toISOString().split('T')[0],
-        referenceNo: appId,
-        statusDetails: statusDetails,
-        moduleLabel: 'Application',
-      });
+      let message = b.custom_message;
+      if (!message) {
+        message = submissionConfirmationSMS({
+          name: applicantName,
+          dateFiled: dateFiled || new Date().toISOString().split('T')[0],
+          referenceNo: appId,
+          statusDetails: statusDetails,
+          moduleLabel: 'Application',
+        });
+      } else {
+        message = message
+          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`)
+          .replace(/\[Pending ID\]/gi, appId)
+          .replace(/\[PendingID\]/gi, appId)
+          .replace(/{reference_no}/g, appId);
+      }
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
         module: 'cm-funds',
@@ -639,8 +648,9 @@ export const getRequest = async (req, res) => {
     `, [id]);
 
     const [timeline] = await pool.query(`
-      SELECT t.*, u.full_name as actor_name
+      SELECT t.*, COALESCE(u.full_name, r.applicant_name, 'Applicant') as actor_name
       FROM cm_fund_timeline_events t
+      LEFT JOIN cm_fund_requests r ON t.request_id = r.id
       LEFT JOIN admin_users u ON t.actor_id = u.id
       WHERE t.request_id = ?
       ORDER BY t.created_at DESC
@@ -689,8 +699,8 @@ export const getRequest = async (req, res) => {
     const [commLogs] = await pool.query(
       `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
        FROM communications_logs 
-       WHERE (entity_type = 'Application' OR entity_type = 'CM_Fund' OR entity_type = 'cm_fund') AND (entity_id = ? OR message LIKE ?)`,
-      [id, `%${id}%`]
+       WHERE (entity_type = 'Application' OR entity_type = 'CM_Fund' OR entity_type = 'cm_fund') AND entity_id = ?`,
+      [id]
     );
 
     const commLogsMapped = commLogs.map(cl => ({
