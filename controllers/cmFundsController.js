@@ -336,6 +336,7 @@ export const createRequest = async (req, res) => {
     const applicantName       = b.applicant_name      || b.applicantName;
     const applicationType     = b.application_type    || b.applicationType || 'CMDRF';
     const applicantPhone      = b.applicant_phone     || b.applicantPhone     || '';
+    const email               = b.email               || b.applicant_email    || b.applicantEmail     || null;
     const alternatePhone      = b.alternate_phone     || b.alternatePhone     || null;
     const aadhaarNumber       = b.aadhaar_number      || b.aadhaarNumber      || null;
     const rationCardNumber    = b.ration_card_number  || b.rationCardNumber   || null;
@@ -387,15 +388,15 @@ export const createRequest = async (req, res) => {
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
-        id, application_title, applicant_name, applicant_phone, alternate_phone, aadhaar_number, ration_card_number, pan_card_number,
+        id, application_title, applicant_name, applicant_phone, email, alternate_phone, aadhaar_number, ration_card_number, pan_card_number,
         local_body_id, ward_id, address_line1, address_line2, address, location, latitude, longitude, city, district, state, pincode, application_type,
         category_id, sub_category, priority, amount_requested, description,
         bank_name, account_number, ifsc_code, branch, account_holder_name,
         recommended_by, recommender_name, recommender_contact, remarks,
         status, assigned_officer_id, submitted_by_id, date_filed
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      appId, applicationTitle, applicantName, applicantPhone, alternatePhone, aadhaarNumber, rationCardNumber, panCardNumber,
+      appId, applicationTitle, applicantName, applicantPhone, email, alternatePhone, aadhaarNumber, rationCardNumber, panCardNumber,
       localBody, ward, addressLine1, addressLine2, address, location, latitude, longitude, city, district, state, pincode, applicationType,
       categoryId, subCategory, priority, amountRequested, description,
       bankName, accountNumber, ifscCode, branch, accountHolderName,
@@ -522,6 +523,7 @@ export const createDraftRequest = async (req, res) => {
     const applicantName    = b.applicant_name   || b.applicantName;
     const applicationType  = b.application_type || b.applicationType || 'CMDRF';
     const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
+    const email            = b.email            || b.applicant_email || b.applicantEmail || null;
     const applicationTitle = b.application_title || b.applicationTitle || null;
     const rawCategoryId    = b.category_id      || b.category;
     const categoryId       = await resolveCategoryId(pool, rawCategoryId);
@@ -548,16 +550,18 @@ export const createDraftRequest = async (req, res) => {
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
-        id, application_title, applicant_name, applicant_phone, category_id, sub_category, priority,
+        id, application_title, applicant_name, applicant_phone, email, category_id, sub_category, priority,
         amount_requested, description, remarks,
         status, submitted_by_id,
         address_line1, local_body_id, ward_id, city, district, state, pincode, application_type,
         bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?,
+                'Draft', ?,
                 ?, ?, ?, '', '', 'Kerala', '', ?,
                 '', '', '', '', '', ?)
     `, [
-      appId, applicationTitle, applicantName, applicantPhone, categoryId, subCategory, priority,
+      appId, applicationTitle, applicantName, applicantPhone, email, categoryId, subCategory, priority,
       amountRequested, description, remarks,
       userId,
       addressLine1, localBody, ward, applicationType,
@@ -784,6 +788,7 @@ export const updateRequest = async (req, res) => {
     const bodyToDb = {
       applicationTitle: 'application_title', panCardNumber: 'pan_card_number', address: 'address', location: 'location', latitude: 'latitude', longitude: 'longitude',
       applicantName: 'applicant_name', applicantPhone: 'applicant_phone', alternatePhone: 'alternate_phone', 
+      email: 'email', applicantEmail: 'email', applicant_email: 'email',
       aadhaarNumber: 'aadhaar_number', rationCardNumber: 'ration_card_number',
       localBody: 'local_body_id', ward: 'ward_id', addressLine1: 'address_line1', addressLine2: 'address_line2', 
       city: 'city', district: 'district', state: 'state', pincode: 'pincode', applicationType: 'application_type',
@@ -1081,7 +1086,10 @@ export const addUpdate = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const [requestRows] = await connection.query(`SELECT applicant_name, email, applicant_phone, status, created_at as date_filed FROM cm_fund_requests WHERE id = ?`, [id]);
+    const [requestRows] = await connection.query(
+      `SELECT applicant_name, applicant_phone, email, status, created_at as date_filed FROM cm_fund_requests WHERE id = ?`,
+      [id]
+    );
     if (requestRows.length === 0) {
       await connection.rollback();
       return res.status(404).json({ error: 'Application not found' });
@@ -1159,9 +1167,10 @@ export const addUpdate = async (req, res) => {
       }
 
       // Send Email if selected
-      if (application.email && channels.includes('email') && custom_email_message?.trim()) {
+      const targetEmail = req.body.email || req.body.applicant_email || null;
+      if (targetEmail && channels.includes('email') && custom_email_message?.trim()) {
           sendNotificationEmail({
-              to: application.email,
+              to: targetEmail,
               subject: `Update on your CM Fund Application #${id}`,
               message: custom_email_message.trim()
           }).catch(err => console.error('[addCmFundUpdate Email Error]', err));
@@ -1169,7 +1178,7 @@ export const addUpdate = async (req, res) => {
           // Log Email communication
           await pool.query(
             `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-            ['Application', id, 'Email', application.email, custom_email_message.trim()]
+            ['Application', id, 'Email', targetEmail, custom_email_message.trim()]
           ).catch(err => console.warn('[addCmFundUpdate Email Log failed]', err.message));
       }
     }
