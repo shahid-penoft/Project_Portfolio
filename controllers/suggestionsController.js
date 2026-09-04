@@ -333,7 +333,7 @@ export const createSuggestion = async (req, res) => {
         `, [
             reference_no,
             title,
-            category || await getDropdownDefault('suggestion_category') || 'Other',
+            category || await getDropdownDefault('system_category') || 'Other',
             priority || await getDropdownDefault('suggestion_priority') || 'Medium',
             initialStatus,
             description || null,

@@ -432,7 +432,7 @@ export const createIssue = async (req, res) => {
         `, [
             reference_no,
             title,
-            category || await getDropdownDefault('issue_category') || 'Other',
+            category || await getDropdownDefault('system_category') || 'Other',
             affected_by || null,
             resolved_date || null,
             priority || await getDropdownDefault('issue_priority') || 'Medium',

@@ -6,43 +6,76 @@ import pool from '../configs/db.js';
 //  deletedCol: the soft-delete flag column name used in that table.
 // ─────────────────────────────────────────────────────────────────────────────
 const CASCADE_MAP = {
+    // Shared System-wide Category (Complaints, Issues, Ideas, Suggestions)
+    system_category: [
+        { table: 'complaints', col: 'category', module: 'Complaints', deletedCol: 'is_deleted' },
+        { table: 'issues', col: 'category', module: 'Public Issues', deletedCol: 'is_deleted' },
+        { table: 'ideas', col: 'category', module: 'Ideas', deletedCol: 'is_deleted' },
+        { table: 'suggestions', col: 'category', module: 'Suggestions', deletedCol: 'is_deleted' },
+    ],
     // Complaints
-    complaint_priority:  { table: 'complaints',      col: 'priority',  module: 'Complaints',   deletedCol: 'is_deleted' },
-    complaint_status:    { table: 'complaints',      col: 'status',    module: 'Complaints',   deletedCol: 'is_deleted' },
-    complaint_category:  { table: 'complaints',      col: 'category',  module: 'Complaints',   deletedCol: 'is_deleted' },
+    complaint_priority: { table: 'complaints', col: 'priority', module: 'Complaints', deletedCol: 'is_deleted' },
+    complaint_status: { table: 'complaints', col: 'status', module: 'Complaints', deletedCol: 'is_deleted' },
     // Issues
-    issue_priority:      { table: 'issues',          col: 'priority',  module: 'Issues',       deletedCol: 'is_deleted' },
-    issue_status:        { table: 'issues',          col: 'status',    module: 'Issues',       deletedCol: 'is_deleted' },
-    issue_category:      { table: 'issues',          col: 'category',  module: 'Issues',       deletedCol: 'is_deleted' },
+    issue_priority: { table: 'issues', col: 'priority', module: 'Issues', deletedCol: 'is_deleted' },
+    issue_status: { table: 'issues', col: 'status', module: 'Issues', deletedCol: 'is_deleted' },
     // Ideas
-    idea_priority:       { table: 'ideas',           col: 'priority',  module: 'Ideas',        deletedCol: 'is_deleted' },
-    idea_status:         { table: 'ideas',           col: 'status',    module: 'Ideas',        deletedCol: 'is_deleted' },
-    idea_category:       { table: 'ideas',           col: 'category',  module: 'Ideas',        deletedCol: 'is_deleted' },
+    idea_priority: { table: 'ideas', col: 'priority', module: 'Ideas', deletedCol: 'is_deleted' },
+    idea_status: { table: 'ideas', col: 'status', module: 'Ideas', deletedCol: 'is_deleted' },
     // Suggestions
-    suggestion_priority: { table: 'suggestions',     col: 'priority',  module: 'Suggestions',  deletedCol: 'is_deleted' },
-    suggestion_status:   { table: 'suggestions',     col: 'status',    module: 'Suggestions',  deletedCol: 'is_deleted' },
-    suggestion_category: { table: 'suggestions',     col: 'category',  module: 'Suggestions',  deletedCol: 'is_deleted' },
+    suggestion_priority: { table: 'suggestions', col: 'priority', module: 'Suggestions', deletedCol: 'is_deleted' },
+    suggestion_status: { table: 'suggestions', col: 'status', module: 'Suggestions', deletedCol: 'is_deleted' },
     // CSR
-    csr_status:          { table: 'csr_organisations', col: 'status',  module: 'CSR',          deletedCol: 'deleted'    },
-    csr_org_type:        { table: 'csr_organisations', col: 'type',    module: 'CSR',          deletedCol: 'deleted'    },
-    csr_followup_type:   { table: 'csr_followups',     col: 'type',    module: 'CSR',          deletedCol: null         },
-    csr_report_type:     { table: 'csr_reports',       col: 'type',    module: 'CSR',          deletedCol: null         },
+    csr_status: { table: 'csr_organisations', col: 'status', module: 'CSR', deletedCol: 'deleted' },
+    csr_org_type: { table: 'csr_organisations', col: 'type', module: 'CSR', deletedCol: 'deleted' },
+    csr_followup_type: { table: 'csr_followups', col: 'type', module: 'CSR', deletedCol: null },
+    csr_report_type: { table: 'csr_reports', col: 'type', module: 'CSR', deletedCol: null },
     // Projects
     project_sub_type_portfolio: { table: 'projects', col: 'project_sub_type', module: 'Projects', deletedCol: null },
     // CM Funds
-    cmfund_status:       { table: 'cm_fund_requests', col: 'status',         module: 'CM Funds',     deletedCol: 'is_deleted' },
-    cm_fund_district:    { table: 'cm_fund_requests', col: 'district',       module: 'CM Funds',     deletedCol: 'is_deleted' },
-    cm_fund_recommender: { table: 'cm_fund_requests', col: 'recommended_by', module: 'CM Funds',     deletedCol: 'is_deleted' },
+    cm_fund_category: { table: 'cm_fund_requests', col: 'category', module: 'CM Funds', deletedCol: 'is_deleted' },
+    cmfund_status: { table: 'cm_fund_requests', col: 'status', module: 'CM Funds', deletedCol: 'is_deleted' },
+    cm_fund_district: { table: 'cm_fund_requests', col: 'district', module: 'CM Funds', deletedCol: 'is_deleted' },
+    cm_fund_recommender: { table: 'cm_fund_requests', col: 'recommended_by', module: 'CM Funds', deletedCol: 'is_deleted' },
     // Governing Bodies
-    governing_designation:      { table: 'governing_body_staffs', col: 'designation', module: 'Governing Bodies', deletedCol: null },
+    governing_designation: { table: 'governing_body_staffs', col: 'designation', module: 'Governing Bodies', deletedCol: null },
     governing_additional_roles: { table: 'governing_representatives', col: 'additional_roles', module: 'Governing Bodies', deletedCol: 'is_deleted', isJson: true },
     // Information Center
-    information_center_domain:  { table: 'information_posts', col: 'domains', module: 'Information Center', deletedCol: null, isJson: true },
+    information_center_domain: { table: 'information_posts', col: 'domains', module: 'Information Center', deletedCol: null, isJson: true },
     // CSR (Additional)
-    csr_focus_domain:           { table: 'csr_organisations', col: 'domains', module: 'CSR', deletedCol: 'deleted', isJson: true },
+    csr_focus_domain: { table: 'csr_organisations', col: 'domains', module: 'CSR', deletedCol: 'deleted', isJson: true },
     // Generics (Used globally but tracked where most critical)
-    state_district:             { table: 'local_bodies', col: 'district', module: 'System', deletedCol: null },
+    state_district: { table: 'local_bodies', col: 'district', module: 'System', deletedCol: null },
 };
+
+export function getCascadeMappings(key) {
+    const raw = CASCADE_MAP[key];
+    if (!raw) return [];
+    return Array.isArray(raw) ? raw : [raw];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helper: normalize module name aliases to DB canonical values
+// ─────────────────────────────────────────────────────────────────────────────
+export function normalizeModuleName(mod) {
+    if (!mod) return mod;
+    const lower = mod.trim().toLowerCase();
+    if (lower === 'applications' || lower === 'cm_funds' || lower === 'cm-funds' || lower === 'cm funds') {
+        return 'CM Funds';
+    }
+    if (lower === 'issues' || lower === 'public_issues' || lower === 'public-issues' || lower === 'public issues') {
+        return 'Issues';
+    }
+    if (lower === 'complaints') return 'Complaints';
+    if (lower === 'ideas') return 'Ideas';
+    if (lower === 'suggestions') return 'Suggestions';
+    if (lower === 'projects') return 'Projects';
+    if (lower === 'csr') return 'CSR';
+    if (lower === 'governing bodies' || lower === 'governing-bodies' || lower === 'governing_bodies') return 'Governing Bodies';
+    if (lower === 'website' || lower === 'website pages') return 'Website';
+    return mod;
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Helper: build unlimited-depth recursive tree from flat rows
@@ -88,21 +121,21 @@ function buildRenameAndDeleteDiff(existingRows, newItems) {
     const flatNew = flattenItems(newItems);
 
     // Build lookup maps
-    const existingById  = {};  // id → value
+    const existingById = {};  // id → value
     const existingByVal = {};  // lowerValue → value (original casing)
     for (const row of existingRows) {
-        existingById[row.id]                     = row.value;
-        existingByVal[row.value.toLowerCase()]   = row.value;
+        existingById[row.id] = row.value;
+        existingByVal[row.value.toLowerCase()] = row.value;
     }
 
-    const newById  = {};  // id → value
+    const newById = {};  // id → value
     const newByVal = {};  // lowerValue → value
     for (const item of flatNew) {
-        if (item.id) newById[item.id]             = item.value;
-        newByVal[item.value.toLowerCase()]        = item.value;
+        if (item.id) newById[item.id] = item.value;
+        newByVal[item.value.toLowerCase()] = item.value;
     }
 
-    const renames   = [];
+    const renames = [];
     const deletions = [];
 
     // Detect renames: existing id still in new list but with different value
@@ -125,64 +158,70 @@ function buildRenameAndDeleteDiff(existingRows, newItems) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Helper: get impact count for a single value in a cascade-mapped table
+//  Helper: get impact count for a single value in a cascade-mapped table (supports multi-table)
 // ─────────────────────────────────────────────────────────────────────────────
 async function getCascadeCount(connection, key, value) {
-    const mapping = CASCADE_MAP[key];
-    if (!mapping) return 0;
-    const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
-    
-    let query, params;
-    if (mapping.isJson) {
-        query = `SELECT COUNT(*) AS count FROM \`${mapping.table}\` WHERE JSON_CONTAINS(\`${mapping.col}\`, ?) ${whereDeleted}`;
-        params = [JSON.stringify(value)];
-    } else {
-        query = `SELECT COUNT(*) AS count FROM \`${mapping.table}\` WHERE \`${mapping.col}\` = ? ${whereDeleted}`;
-        params = [value];
+    const mappings = getCascadeMappings(key);
+    if (!mappings.length) return 0;
+    let totalCount = 0;
+
+    for (const mapping of mappings) {
+        const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
+        let query, params;
+        if (mapping.isJson) {
+            query = `SELECT COUNT(*) AS count FROM \`${mapping.table}\` WHERE JSON_CONTAINS(\`${mapping.col}\`, ?) ${whereDeleted}`;
+            params = [JSON.stringify(value)];
+        } else {
+            query = `SELECT COUNT(*) AS count FROM \`${mapping.table}\` WHERE \`${mapping.col}\` = ? ${whereDeleted}`;
+            params = [value];
+        }
+
+        const [[{ count }]] = await connection.query(query, params);
+        totalCount += Number(count);
     }
-    
-    const [[{ count }]] = await connection.query(query, params);
-    return Number(count);
+    return totalCount;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Helper: execute cascade UPDATE for a rename
+//  Helper: execute cascade UPDATE for a rename (supports multi-table)
 // ─────────────────────────────────────────────────────────────────────────────
 async function applyCascadeRename(connection, key, oldValue, newValue) {
-    const mapping = CASCADE_MAP[key];
-    if (!mapping) return 0;
-    const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
-    
-    if (mapping.isJson) {
-        // Fetch affected rows to modify JSON in JS (safest for MySQL 5.7+ JSON arrays)
-        const [rows] = await connection.query(
-            `SELECT id, \`${mapping.col}\` AS jsonCol FROM \`${mapping.table}\` WHERE JSON_CONTAINS(\`${mapping.col}\`, ?) ${whereDeleted}`,
-            [JSON.stringify(oldValue)]
-        );
-        let affected = 0;
-        for (const row of rows) {
-            let arr = [];
-            try {
-                arr = typeof row.jsonCol === 'string' ? JSON.parse(row.jsonCol) : (row.jsonCol || []);
-            } catch (e) { continue; }
-            
-            if (Array.isArray(arr)) {
-                const updatedArr = arr.map(v => v === oldValue ? newValue : v);
-                await connection.query(
-                    `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE id = ?`,
-                    [JSON.stringify(updatedArr), row.id]
-                );
-                affected++;
+    const mappings = getCascadeMappings(key);
+    if (!mappings.length) return 0;
+    let totalAffected = 0;
+
+    for (const mapping of mappings) {
+        const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
+
+        if (mapping.isJson) {
+            const [rows] = await connection.query(
+                `SELECT id, \`${mapping.col}\` AS jsonCol FROM \`${mapping.table}\` WHERE JSON_CONTAINS(\`${mapping.col}\`, ?) ${whereDeleted}`,
+                [JSON.stringify(oldValue)]
+            );
+            for (const row of rows) {
+                let arr = [];
+                try {
+                    arr = typeof row.jsonCol === 'string' ? JSON.parse(row.jsonCol) : (row.jsonCol || []);
+                } catch (e) { continue; }
+
+                if (Array.isArray(arr)) {
+                    const updatedArr = arr.map(v => v === oldValue ? newValue : v);
+                    await connection.query(
+                        `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE id = ?`,
+                        [JSON.stringify(updatedArr), row.id]
+                    );
+                    totalAffected++;
+                }
             }
+        } else {
+            const [result] = await connection.query(
+                `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE \`${mapping.col}\` = ? ${whereDeleted}`,
+                [newValue, oldValue]
+            );
+            totalAffected += result.affectedRows;
         }
-        return affected;
-    } else {
-        const [result] = await connection.query(
-            `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE \`${mapping.col}\` = ? ${whereDeleted}`,
-            [newValue, oldValue]
-        );
-        return result.affectedRows;
     }
+    return totalAffected;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -208,12 +247,12 @@ export const getDropdownDefault = async (key) => {
 //  Helper: recursively insert items into mla_dropdown_lists
 // ─────────────────────────────────────────────────────────────────────────────
 const insertTreeItems = async (connection, items, key, module, subCategory, status, parentId = 0) => {
-    const dbStatus   = status === true || status === 'Active' ? 'Active' : 'Disabled';
+    const dbStatus = status === true || status === 'Active' ? 'Active' : 'Disabled';
     const dbParentId = parentId ? parseInt(parentId, 10) : 0;
     const seenValuesAtLevel = new Set();
 
     for (let i = 0; i < items.length; i++) {
-        const item  = items[i];
+        const item = items[i];
         const label = item.name || item.label || '';
         const value = (item.value || label).trim();
 
@@ -228,12 +267,12 @@ const insertTreeItems = async (connection, items, key, module, subCategory, stat
         }
         seenValuesAtLevel.add(lowerVal);
 
-        const color     = item.color     || null;
-        const icon      = item.icon      || null;
+        const color = item.color || null;
+        const icon = item.icon || null;
         const sortOrder = item.sort_order !== undefined ? item.sort_order : (i + 1) * 10;
         const isDefault = item.is_default ? 1 : 0;
 
-        const isSystem  = item.is_system ? 1 : (value.toLowerCase() === 'draft' ? 1 : 0);
+        const isSystem = item.is_system ? 1 : (value.toLowerCase() === 'draft' ? 1 : 0);
 
         let newId;
         try {
@@ -270,6 +309,14 @@ export const getDropdowns = async (req, res) => {
         const { key, module, status } = req.query;
 
         if (key) {
+            const KEY_ALIASES = {
+                application_category:    'cm_fund_category',
+                application_district:    'cm_fund_district',
+                application_recommender: 'cm_fund_recommender',
+                application_status:      'cmfund_status',
+            };
+            const targetKey = KEY_ALIASES[key] || key;
+
             // ── Single-key fetch for forms (returns nested tree) ──
             const [rows] = await pool.query(
                 `SELECT id, \`key\`, label, value, color, icon, sort_order, is_default,
@@ -277,16 +324,34 @@ export const getDropdowns = async (req, res) => {
                  FROM mla_dropdown_lists
                  WHERE \`key\` = ? AND status = 'Active'
                  ORDER BY sort_order ASC`,
-                [key]
+                [targetKey]
             );
             return res.json({ success: true, data: buildTree(rows) });
         }
 
         // ── Admin manager list — grouped by key ───────────────
+        const PEOPLES_CORNER_MODULES = ['Complaints', 'Issues', 'Ideas', 'Suggestions'];
+        const DEPRECATED_LEGACY_KEYS = ['complaint_category', 'issue_category', 'idea_category', 'suggestion_category'];
+
         const conditions = [];
-        const params     = [];
-        if (module && module !== 'All') { conditions.push('module = ?'); params.push(module); }
-        if (status)                     { conditions.push('status = ?'); params.push(status); }
+        const params = [];
+        const targetModule = normalizeModuleName(module);
+
+        // Always exclude deprecated legacy flat keys
+        conditions.push(`\`key\` NOT IN (${DEPRECATED_LEGACY_KEYS.map(() => '?').join(', ')})`);
+        params.push(...DEPRECATED_LEGACY_KEYS);
+
+        if (targetModule && targetModule !== 'All') {
+            if (PEOPLES_CORNER_MODULES.includes(targetModule)) {
+                // People's Corner modules share system_category as their active category dropdown
+                conditions.push('(module = ? OR `key` = ?)');
+                params.push(targetModule, 'system_category');
+            } else {
+                conditions.push('module = ?');
+                params.push(targetModule);
+            }
+        }
+        if (status) { conditions.push('status = ?'); params.push(status); }
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -308,19 +373,29 @@ export const getDropdowns = async (req, res) => {
             grouped[r.key].items.push(r);
         });
 
-        const keyToLabel = (k) => (k || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const FRIENDLY_KEY_LABELS = {
+            system_category:     'Categories',
+            cm_fund_category:    'Application Category',
+            cm_fund_district:    'Application District',
+            cm_fund_recommender: 'Application Recommender',
+            cmfund_status:       'Application Status',
+        };
+
+        const keyToLabel = (k) => FRIENDLY_KEY_LABELS[k] || (k || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
         const result = Object.values(grouped).map(g => {
             const treeItems = buildTree(g.items);
+            const isSharedCategory = g.key === 'system_category';
             return {
                 ...g,
-                id:          g.items[0]?.id || null,
-                name:        keyToLabel(g.key),
-                type:        g.items.some(it => it.parent_id && it.parent_id !== 0) ? 'nested' : 'single',
-                category:    g.module,
-                subcategory: g.sub_category,
-                items:       treeItems,
-                item_count:  g.items.length,
+                id: g.items[0]?.id || null,
+                name: keyToLabel(g.key),
+                type: g.items.some(it => it.parent_id && it.parent_id !== 0) ? 'nested' : 'single',
+                category: isSharedCategory && targetModule && targetModule !== 'All' ? targetModule : g.module,
+                subcategory: isSharedCategory ? 'Categories' : (g.sub_category || 'General'),
+                is_shared: isSharedCategory,
+                items: treeItems,
+                item_count: g.items.length,
             };
         });
 
@@ -362,8 +437,8 @@ export const createDropdown = async (req, res) => {
         const { key, name, category, module, subcategory, sub_category, items, status } = req.body;
 
         if (Array.isArray(items)) {
-            const finalKey         = key || (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
-            const finalModule      = category || module;
+            const finalKey = key || (name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+            const finalModule = normalizeModuleName(category || module);
             const finalSubCategory = subcategory || sub_category;
 
             if (!finalKey || !finalModule) {
@@ -397,10 +472,10 @@ export const createDropdown = async (req, res) => {
 
         // ── Single item creation ──
         const { label, value, parent_id, color, icon, sort_order } = req.body;
-        const singleKey         = key;
-        const singleModule      = module;
+        const singleKey = key;
+        const singleModule = module;
         const singleSubCategory = sub_category;
-        const dbParentId        = parent_id ? parseInt(parent_id, 10) : 0;
+        const dbParentId = parent_id ? parseInt(parent_id, 10) : 0;
 
         if (!singleKey || !singleModule || !label || !value) {
             return res.status(400).json({ success: false, message: 'key, module, label, and value are required.' });
@@ -436,7 +511,7 @@ export const createDropdown = async (req, res) => {
         const [[row]] = await connection.query('SELECT * FROM mla_dropdown_lists WHERE id = ?', [result.insertId]);
         return res.status(201).json({ success: true, data: row });
     } catch (err) {
-        if (inTransaction) { try { await connection.rollback(); } catch (_) {} }
+        if (inTransaction) { try { await connection.rollback(); } catch (_) { } }
         console.error('[createDropdown]', err);
         res.status(500).json({ success: false, message: 'Failed to create dropdown.' });
     } finally {
@@ -472,44 +547,45 @@ export const previewDropdownUpdate = async (req, res) => {
         const { renames, deletions } = buildRenameAndDeleteDiff(existingRows, items);
 
         // Flatten new items to find additions (values not in existing)
-        const flatNew      = flattenItems(items);
+        const flatNew = flattenItems(items);
         const existingVals = new Set(existingRows.map(r => r.value.toLowerCase()));
-        const additions    = flatNew.map(i => i.value).filter(v => !existingVals.has(v.toLowerCase()));
+        const additions = flatNew.map(i => i.value).filter(v => !existingVals.has(v.toLowerCase()));
 
-        const mapping = CASCADE_MAP[finalKey];
+        const mappings = getCascadeMappings(finalKey);
+        const primaryMapping = mappings[0] || null;
 
-        // Enrich renames with impact counts
+        // Enrich renames with impact counts across all mapped tables
         const enrichedRenames = await Promise.all(renames.map(async ({ oldValue, newValue }) => {
-            const affectedCount = mapping ? await getCascadeCount(pool, finalKey, oldValue) : 0;
+            const affectedCount = mappings.length ? await getCascadeCount(pool, finalKey, oldValue) : 0;
             return {
                 oldValue,
                 newValue,
                 affectedCount,
-                module: mapping?.module || null,
-                table:  mapping?.table  || null,
-                col:    mapping?.col    || null,
+                module: mappings.map(m => m.module).join(', ') || null,
+                table: mappings.map(m => m.table).join(', ') || null,
+                col: primaryMapping?.col || null,
             };
         }));
 
-        // Enrich deletions with impact counts
+        // Enrich deletions with impact counts across all mapped tables
         const enrichedDeletions = await Promise.all(deletions.map(async (value) => {
-            const affectedCount = mapping ? await getCascadeCount(pool, finalKey, value) : 0;
+            const affectedCount = mappings.length ? await getCascadeCount(pool, finalKey, value) : 0;
             return {
                 value,
                 affectedCount,
-                module: mapping?.module || null,
-                table:  mapping?.table  || null,
-                col:    mapping?.col    || null,
+                module: mappings.map(m => m.module).join(', ') || null,
+                table: mappings.map(m => m.table).join(', ') || null,
+                col: primaryMapping?.col || null,
             };
         }));
 
         const hasImpact = enrichedRenames.some(r => r.affectedCount > 0) ||
-                          enrichedDeletions.some(d => d.affectedCount > 0);
+            enrichedDeletions.some(d => d.affectedCount > 0);
 
         return res.json({
             success: true,
             data: {
-                renames:   enrichedRenames,
+                renames: enrichedRenames,
                 deletions: enrichedDeletions,
                 additions,
                 hasImpact,
@@ -538,10 +614,16 @@ export const updateDropdown = async (req, res) => {
             const [[firstItem]] = await connection.query('SELECT `key` FROM mla_dropdown_lists WHERE id = ? LIMIT 1', [id]);
             if (!firstItem) return res.status(404).json({ success: false, message: 'Dropdown not found.' });
 
-            const oldKey          = firstItem.key;
-            const finalKey        = key || oldKey;
-            const finalModule     = category || module;
-            const finalSubCategory = subcategory || sub_category;
+            const oldKey = firstItem.key;
+            const finalKey = key || oldKey;
+
+            // system_category must always remain anchored to General / System module
+            const finalModule = finalKey === 'system_category'
+                ? 'General / System'
+                : normalizeModuleName(category || module);
+            const finalSubCategory = finalKey === 'system_category'
+                ? 'System-wide'
+                : (subcategory || sub_category);
 
             // Load existing rows BEFORE delete to compute diff
             const [existingRows] = await connection.query(
@@ -579,19 +661,21 @@ export const updateDropdown = async (req, res) => {
                 // Records left with status='' from the ENUM era are never caught by
                 // cascade renames (which target specific old values). This sweep
                 // auto-heals them on every dropdown save by setting '' → default.
-                const { table, col, deletedCol } = CASCADE_MAP[finalKey];
-                const whereDeleted = deletedCol ? `AND \`${deletedCol}\` = 0` : '';
+                const mappings = getCascadeMappings(finalKey);
                 const [[defaultRow]] = await connection.query(
                     `SELECT value FROM mla_dropdown_lists WHERE \`key\` = ? AND is_default = 1 AND status = 'Active' LIMIT 1`,
                     [finalKey]
                 );
                 if (defaultRow?.value) {
-                    const [sweep] = await connection.query(
-                        `UPDATE \`${table}\` SET \`${col}\` = ? WHERE \`${col}\` = '' ${whereDeleted}`,
-                        [defaultRow.value]
-                    );
-                    if (sweep.affectedRows > 0) {
-                        console.info(`[updateDropdown] Empty-string sweep: key="${finalKey}" reset ${sweep.affectedRows} rows to default "${defaultRow.value}"`);
+                    for (const mapping of mappings) {
+                        const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
+                        const [sweep] = await connection.query(
+                            `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE \`${mapping.col}\` = '' ${whereDeleted}`,
+                            [defaultRow.value]
+                        );
+                        if (sweep.affectedRows > 0) {
+                            console.info(`[updateDropdown] Empty-string sweep: key="${finalKey}" table="${mapping.table}" reset ${sweep.affectedRows} rows to default "${defaultRow.value}"`);
+                        }
                     }
                 }
             }
@@ -610,7 +694,7 @@ export const updateDropdown = async (req, res) => {
                 [id]
             );
             if (itemRow) {
-                const targetValue   = (value || label || itemRow.value).trim();
+                const targetValue = (value || label || itemRow.value).trim();
                 const targetParentId = parent_id !== undefined ? (parent_id ? parseInt(parent_id, 10) : 0) : itemRow.parent_id;
                 const [[dup]] = await connection.query(
                     `SELECT id FROM mla_dropdown_lists WHERE \`key\` = ? AND id != ? AND LOWER(value) = LOWER(?) AND IFNULL(parent_id, 0) = ? LIMIT 1`,
@@ -643,7 +727,7 @@ export const updateDropdown = async (req, res) => {
         const [[row]] = await connection.query('SELECT * FROM mla_dropdown_lists WHERE id = ?', [id]);
         return res.json({ success: true, data: row });
     } catch (err) {
-        if (inTransaction) { try { await connection.rollback(); } catch (_) {} }
+        if (inTransaction) { try { await connection.rollback(); } catch (_) { } }
         console.error('[updateDropdown]', err);
         res.status(500).json({ success: false, message: 'Failed to update dropdown.' });
     } finally {
@@ -680,7 +764,7 @@ export const reorderDropdowns = async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 export const deleteDropdown = async (req, res) => {
     try {
-        const { id }    = req.params;
+        const { id } = req.params;
         const forceDelete = req.query.force === 'true';
 
         if (!isNaN(Number(id))) {
@@ -699,20 +783,21 @@ export const deleteDropdown = async (req, res) => {
             }
 
             if (!forceDelete) {
-                const mapping = CASCADE_MAP[itemRow.key];
-                if (mapping) {
+                const mappings = getCascadeMappings(itemRow.key);
+                if (mappings.length) {
                     const affectedCount = await getCascadeCount(pool, itemRow.key, itemRow.value);
                     if (affectedCount > 0) {
+                        const moduleNames = mappings.map(m => m.module).join(', ');
                         return res.status(409).json({
                             success: false,
-                            code:    'HAS_IMPACT',
-                            message: `"${itemRow.label || itemRow.value}" is used by ${affectedCount} record(s) in ${mapping.module}. Pass ?force=true to delete anyway.`,
+                            code: 'HAS_IMPACT',
+                            message: `"${itemRow.label || itemRow.value}" is used by ${affectedCount} record(s) in ${moduleNames}. Pass ?force=true to delete anyway.`,
                             data: {
-                                value:        itemRow.value,
+                                value: itemRow.value,
                                 affectedCount,
-                                module:       mapping.module,
-                                table:        mapping.table,
-                                col:          mapping.col,
+                                module: moduleNames,
+                                table: mappings.map(m => m.table).join(', '),
+                                col: mappings[0]?.col || null,
                             },
                         });
                     }
@@ -772,11 +857,20 @@ export const getDropdownImpact = async (req, res) => {
         const { key, value } = req.query;
         if (!key || !value) return res.status(400).json({ success: false, message: 'key and value are required.' });
 
-        const mapping = CASCADE_MAP[key];
-        if (!mapping) return res.json({ success: true, data: { count: 0 } });
+        const mappings = getCascadeMappings(key);
+        if (!mappings.length) return res.json({ success: true, data: { count: 0 } });
 
         const count = await getCascadeCount(pool, key, value);
-        return res.json({ success: true, data: { key, value, count, module: mapping.module, table: mapping.table } });
+        return res.json({
+            success: true,
+            data: {
+                key,
+                value,
+                count,
+                module: mappings.map(m => m.module).join(', '),
+                table: mappings.map(m => m.table).join(', ')
+            }
+        });
     } catch (err) {
         console.error('[getDropdownImpact]', err);
         res.status(500).json({ success: false, message: 'Failed to get impact count.' });

@@ -332,7 +332,7 @@ export const createIdea = async (req, res) => {
         `, [
             reference_no,
             title,
-            category || await getDropdownDefault('idea_category') || 'Other',
+            category || await getDropdownDefault('system_category') || 'Other',
             priority || await getDropdownDefault('idea_priority') || 'Medium',
             initialStatus,
             description || null,

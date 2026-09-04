@@ -78,7 +78,8 @@ async function resolveCategoryId(connection, rawCategoryId) {
 }
 
 const generateAppId = async (connection, applicationType) => {
-  const isCmdrf = applicationType && applicationType.toUpperCase() === 'CMDRF';
+  const typeUpper = (applicationType || '').toUpperCase().trim();
+  const isCmdrf = typeUpper === 'CMDRF' || typeUpper === 'CM FUND';
   const prefix = isCmdrf ? 'CM-' : 'A-';
 
   const [rows] = await connection.query(
@@ -184,9 +185,19 @@ export const listRequests = async (req, res) => {
 
     const rawAppType = application_type || applicationType;
     if (rawAppType && rawAppType !== 'All') {
-      const appTypes = rawAppType.split(',');
+      const appTypes = rawAppType.split(',').map(t => t.trim());
+      const expandedTypes = new Set(appTypes);
+      appTypes.forEach(t => {
+        const clean = t.toLowerCase().replace(/[^a-z]/g, '');
+        if (clean === 'tgrants' || clean === 'tgrantz') {
+          expandedTypes.add('T-Grants');
+          expandedTypes.add('TGrantz');
+          expandedTypes.add('T-Grantz');
+          expandedTypes.add('t- grantz');
+        }
+      });
       baseQuery += ` AND r.application_type IN (?)`;
-      queryParams.push(appTypes);
+      queryParams.push(Array.from(expandedTypes));
     }
 
     const rawCategory = category || category_id;
@@ -549,22 +560,22 @@ export const createDraftRequest = async (req, res) => {
     const appId = await generateAppId(connection, applicationType);
     const userId = req.admin ? req.admin.id : null;
 
+    const dateFiled = parseDateToYMD(b.date_filed || b.dateFiled) || new Date().toISOString().split('T')[0];
+
     await connection.query(`
       INSERT INTO cm_fund_requests (
         id, application_title, applicant_name, applicant_phone, email, category_id, sub_category, priority,
         amount_requested, description, remarks,
         status, submitted_by_id,
         address_line1, local_body_id, ward_id, city, district, state, pincode, application_type,
-        bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
-                ?, ?, ?, '', '', 'Kerala', '', ?,
-                '', '', '', '', '', ?)
+        bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by, date_filed
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       appId, applicationTitle, applicantName, applicantPhone, email, categoryId, subCategory, priority,
       amountRequested, description, remarks,
       status, userId,
-      addressLine1, localBody, ward, applicationType,
-      recommendedBy
+      addressLine1, localBody, ward, '', '', 'Kerala', '', applicationType,
+      '', '', '', '', '', recommendedBy, dateFiled
     ]);
 
     await connection.query(`
