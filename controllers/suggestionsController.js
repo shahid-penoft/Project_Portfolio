@@ -122,9 +122,10 @@ const fetchFullSuggestion = async (id) => {
         ORDER BY st.created_at ASC
     `, [realId]);
     const [activity]    = await pool.query(`
-        SELECT sa.*, au.full_name as author_name 
+        SELECT sa.*, COALESCE(au.full_name, s.complainant_name, 'Citizen') as author_name 
         FROM suggestion_activity sa
         LEFT JOIN admin_users au ON sa.admin_user_id = au.id
+        LEFT JOIN suggestions s ON sa.suggestion_id = s.id
         WHERE sa.suggestion_id = ? 
         ORDER BY sa.created_at DESC
     `, [realId]);

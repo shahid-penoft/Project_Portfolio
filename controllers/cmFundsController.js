@@ -8,38 +8,38 @@ import { sendNotificationEmail } from '../utils/email.js';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 const s3Client = new S3Client({
-    region: process.env.AWS_REGION || 'us-east-1',
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-    },
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+  },
 });
 const s3Bucket = process.env.AWS_S3_BUCKET || 'my-portfolio-bucket';
 
 const keyFromUrl = (url) => {
-    try { return new URL(url).pathname.replace(/^\//, ''); } catch { return null; }
+  try { return new URL(url).pathname.replace(/^\//, ''); } catch { return null; }
 };
 
 const deleteS3Object = async (url) => {
-    const key = keyFromUrl(url);
-    if (!key) return;
-    try {
-        await s3Client.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: key }));
-    } catch (err) {
-        console.warn('[S3 delete warn]', key, err.message);
-    }
+  const key = keyFromUrl(url);
+  if (!key) return;
+  try {
+    await s3Client.send(new DeleteObjectCommand({ Bucket: s3Bucket, Key: key }));
+  } catch (err) {
+    console.warn('[S3 delete warn]', key, err.message);
+  }
 };
 
 const parseDateToYMD = (val) => {
-    if (!val || val === '—' || val === 'null' || val === 'undefined') return null;
-    if (/^\d{4}-\d{2}-\d{2}$/.test(String(val).trim())) return String(val).trim();
-    const cleaned = String(val).trim().replace(/Sept/i, 'Sep');
-    const d = new Date(cleaned);
-    if (isNaN(d.getTime())) return null;
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  if (!val || val === '—' || val === 'null' || val === 'undefined') return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(val).trim())) return String(val).trim();
+  const cleaned = String(val).trim().replace(/Sept/i, 'Sep');
+  const d = new Date(cleaned);
+  if (isNaN(d.getTime())) return null;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 /**
@@ -48,39 +48,39 @@ const parseDateToYMD = (val) => {
  * or NULL if invalid.
  */
 async function resolveCategoryId(connection, rawCategoryId) {
-    if (!rawCategoryId || rawCategoryId === 'undefined' || rawCategoryId === 'null') return null;
+  if (!rawCategoryId || rawCategoryId === 'undefined' || rawCategoryId === 'null') return null;
 
-    // 1. Check if rawCategoryId exists directly in cm_fund_categories
-    const [existing] = await connection.query('SELECT id FROM cm_fund_categories WHERE id = ?', [rawCategoryId]);
-    if (existing.length > 0) return existing[0].id;
+  // 1. Check if rawCategoryId exists directly in cm_fund_categories
+  const [existing] = await connection.query('SELECT id FROM cm_fund_categories WHERE id = ?', [rawCategoryId]);
+  if (existing.length > 0) return existing[0].id;
 
-    // 2. If rawCategoryId is numeric, check if it matches an option in mla_dropdown_lists
-    let categoryName = String(rawCategoryId).trim();
-    if (!isNaN(rawCategoryId)) {
-        const [dropOpt] = await connection.query('SELECT value FROM mla_dropdown_lists WHERE id = ?', [rawCategoryId]);
-        if (dropOpt.length > 0) {
-            categoryName = dropOpt[0].value;
-        }
+  // 2. If rawCategoryId is numeric, check if it matches an option in mla_dropdown_lists
+  let categoryName = String(rawCategoryId).trim();
+  if (!isNaN(rawCategoryId)) {
+    const [dropOpt] = await connection.query('SELECT value FROM mla_dropdown_lists WHERE id = ?', [rawCategoryId]);
+    if (dropOpt.length > 0) {
+      categoryName = dropOpt[0].value;
     }
+  }
 
-    // 3. Search cm_fund_categories by name
-    const [byName] = await connection.query('SELECT id FROM cm_fund_categories WHERE name = ? LIMIT 1', [categoryName]);
-    if (byName.length > 0) return byName[0].id;
+  // 3. Search cm_fund_categories by name
+  const [byName] = await connection.query('SELECT id FROM cm_fund_categories WHERE name = ? LIMIT 1', [categoryName]);
+  if (byName.length > 0) return byName[0].id;
 
-    // 4. If not found, attempt to insert into cm_fund_categories so foreign key constraint succeeds
-    try {
-        const [ins] = await connection.query('INSERT INTO cm_fund_categories (name, application_type) VALUES (?, ?)', [categoryName, 'General']);
-        return ins.insertId;
-    } catch (e) {
-        console.warn('[resolveCategoryId] Fallback lookup failed:', e.message);
-        return null;
-    }
+  // 4. If not found, attempt to insert into cm_fund_categories so foreign key constraint succeeds
+  try {
+    const [ins] = await connection.query('INSERT INTO cm_fund_categories (name, application_type) VALUES (?, ?)', [categoryName, 'General']);
+    return ins.insertId;
+  } catch (e) {
+    console.warn('[resolveCategoryId] Fallback lookup failed:', e.message);
+    return null;
+  }
 }
 
 const generateAppId = async (connection, applicationType) => {
   const isCmdrf = applicationType && applicationType.toUpperCase() === 'CMDRF';
   const prefix = isCmdrf ? 'CM-' : 'A-';
-  
+
   const [rows] = await connection.query(
     `SELECT id FROM cm_fund_requests WHERE id LIKE ? ORDER BY CAST(SUBSTR(id, ?) AS UNSIGNED) DESC LIMIT 1`,
     [`${prefix}%`, prefix.length + 1]
@@ -113,16 +113,16 @@ export const getNextAppId = async (req, res) => {
 
 export const listRequests = async (req, res) => {
   try {
-    const { 
-      status, priority, search, search_field, searchField, sort, order, 
+    const {
+      status, priority, search, search_field, searchField, sort, order,
       application_type, applicationType,
       category, category_id,
       local_body_id, localBody,
       ward_id, ward,
       startDate, endDate,
-      page = 1, limit = 8 
+      page = 1, limit = 8
     } = req.query;
-    
+
     const isTrash = req.query.is_deleted === '1' || req.query.trash === 'true';
 
     let baseQuery = `
@@ -287,7 +287,7 @@ export const listRequests = async (req, res) => {
 
     // Pagination
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    
+
     // Total count query
     const countQuery = `SELECT COUNT(*) as total FROM (${baseQuery}) as t`;
     const [countRows] = await pool.query(countQuery, queryParams);
@@ -301,7 +301,7 @@ export const listRequests = async (req, res) => {
     const [statusRows] = await pool.query(`
       SELECT status, COUNT(*) as count FROM cm_fund_requests GROUP BY status
     `);
-    
+
     const counts = { all: 0 };
     let totalCount = 0;
     statusRows.forEach(row => {
@@ -332,43 +332,44 @@ export const createRequest = async (req, res) => {
   try {
     // Accept both snake_case (FormData from frontend) and camelCase
     const b = req.body;
-    const applicationTitle    = b.application_title   || b.applicationTitle   || null;
-    const applicantName       = b.applicant_name      || b.applicantName;
-    const applicationType     = b.application_type    || b.applicationType || 'CMDRF';
-    const applicantPhone      = b.applicant_phone     || b.applicantPhone     || '';
-    const alternatePhone      = b.alternate_phone     || b.alternatePhone     || null;
-    const aadhaarNumber       = b.aadhaar_number      || b.aadhaarNumber      || null;
-    const rationCardNumber    = b.ration_card_number  || b.rationCardNumber   || null;
-    const panCardNumber       = b.pan_card_number     || b.panCardNumber      || null;
-    const localBody           = b.local_body          || b.localBody          || null;
-    const ward                = b.ward                                         || null;
-    const addressLine1        = b.address_line1       || b.addressLine1       || '';
-    const addressLine2        = b.address_line2       || b.addressLine2       || null;
-    const address             = b.address             || null;
-    const location            = b.location            || null;
-    const latitude            = b.latitude            || null;
-    const longitude           = b.longitude           || null;
-    const city                = b.city                || '';
-    const district            = b.district            || '';
-    const state               = b.state               || 'Kerala';
-    const pincode             = b.pincode             || '';
-    const rawCategoryId       = b.category_id         || b.category;
-    const categoryId          = await resolveCategoryId(pool, rawCategoryId);
-    const subCategory         = b.sub_category        || b.subCategory        || null;
-    const priority            = b.priority            || 'Normal';
-    const amountRequested     = b.amount_requested    || b.amountRequested    || null;
-    const description         = b.description         || '';
-    const bankName            = b.bank_name           || b.bankName           || '';
-    const accountNumber       = b.account_number      || b.accountNumber      || '';
-    const ifscCode            = b.ifsc_code           || b.ifscCode           || '';
-    const branch              = b.branch              || '';
-    const accountHolderName   = b.account_holder_name || b.accountHolderName  || '';
-    const recommendedBy       = b.recommended_by      || b.recommendedBy      || '';
-    const recommenderName     = b.recommender_name    || b.recommenderName    || null;
-    const recommenderContact  = b.recommender_contact || b.recommenderContact || null;
-    const remarks             = b.remarks             || null;
-    const dateFiled           = parseDateToYMD(b.date_filed || b.dateFiled) || new Date().toISOString().split('T')[0];
-    const statusDetails       = b.status_details      || null;
+    const applicationTitle = b.application_title || b.applicationTitle || null;
+    const applicantName = b.applicant_name || b.applicantName;
+    const applicationType = b.application_type || b.applicationType || 'CMDRF';
+    const applicantPhone = b.applicant_phone || b.applicantPhone || '';
+    const email = b.email || b.applicant_email || b.applicantEmail || null;
+    const alternatePhone = b.alternate_phone || b.alternatePhone || null;
+    const aadhaarNumber = b.aadhaar_number || b.aadhaarNumber || null;
+    const rationCardNumber = b.ration_card_number || b.rationCardNumber || null;
+    const panCardNumber = b.pan_card_number || b.panCardNumber || null;
+    const localBody = b.local_body || b.localBody || null;
+    const ward = b.ward || null;
+    const addressLine1 = b.address_line1 || b.addressLine1 || '';
+    const addressLine2 = b.address_line2 || b.addressLine2 || null;
+    const address = b.address || null;
+    const location = b.location || null;
+    const latitude = b.latitude || null;
+    const longitude = b.longitude || null;
+    const city = b.city || '';
+    const district = b.district || '';
+    const state = b.state || 'Kerala';
+    const pincode = b.pincode || '';
+    const rawCategoryId = b.category_id || b.category;
+    const categoryId = await resolveCategoryId(pool, rawCategoryId);
+    const subCategory = b.sub_category || b.subCategory || null;
+    const priority = b.priority || 'Normal';
+    const amountRequested = b.amount_requested || b.amountRequested || null;
+    const description = b.description || '';
+    const bankName = b.bank_name || b.bankName || '';
+    const accountNumber = b.account_number || b.accountNumber || '';
+    const ifscCode = b.ifsc_code || b.ifscCode || '';
+    const branch = b.branch || '';
+    const accountHolderName = b.account_holder_name || b.accountHolderName || '';
+    const recommendedBy = b.recommended_by || b.recommendedBy || '';
+    const recommenderName = b.recommender_name || b.recommenderName || null;
+    const recommenderContact = b.recommender_contact || b.recommenderContact || null;
+    const remarks = b.remarks || null;
+    const dateFiled = parseDateToYMD(b.date_filed || b.dateFiled) || new Date().toISOString().split('T')[0];
+    const statusDetails = b.status_details || null;
 
     if (!applicationType || !applicantName) {
       return res.status(400).json({ error: 'Missing required fields: Application Type or Applicant Name' });
@@ -387,15 +388,15 @@ export const createRequest = async (req, res) => {
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
-        id, application_title, applicant_name, applicant_phone, alternate_phone, aadhaar_number, ration_card_number, pan_card_number,
+        id, application_title, applicant_name, applicant_phone, email, alternate_phone, aadhaar_number, ration_card_number, pan_card_number,
         local_body_id, ward_id, address_line1, address_line2, address, location, latitude, longitude, city, district, state, pincode, application_type,
         category_id, sub_category, priority, amount_requested, description,
         bank_name, account_number, ifsc_code, branch, account_holder_name,
         recommended_by, recommender_name, recommender_contact, remarks,
         status, assigned_officer_id, submitted_by_id, date_filed
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      appId, applicationTitle, applicantName, applicantPhone, alternatePhone, aadhaarNumber, rationCardNumber, panCardNumber,
+      appId, applicationTitle, applicantName, applicantPhone, email, alternatePhone, aadhaarNumber, rationCardNumber, panCardNumber,
       localBody, ward, addressLine1, addressLine2, address, location, latitude, longitude, city, district, state, pincode, applicationType,
       categoryId, subCategory, priority, amountRequested, description,
       bankName, accountNumber, ifscCode, branch, accountHolderName,
@@ -415,7 +416,7 @@ export const createRequest = async (req, res) => {
         }
 
         const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
-        
+
         await connection.query(`
           INSERT INTO cm_fund_request_documents (request_id, doc_type_id, file_url, original_filename)
           VALUES (?, ?, ?, ?)
@@ -438,17 +439,17 @@ export const createRequest = async (req, res) => {
     // - Admin creation without status_details → insert nothing (no regression)
     const sdTrimmed = statusDetails?.trim();
     const updateTitle = sdTrimmed || (isAdminCreation ? null : 'We are reviewing your submission.');
-    const updateNote  = sdTrimmed || (isAdminCreation ? null : `Your application has been registered and is under initial review by the MLA Office.\n\nApplicant: ${applicantName}\nTracking ID: ${appId}`);
+    const updateNote = sdTrimmed || (isAdminCreation ? null : `Your application has been registered and is under initial review by the MLA Office.\n\nApplicant: ${applicantName}\nTracking ID: ${appId}`);
     if (updateTitle) {
-        try {
-            await pool.query(
-                `INSERT INTO cm_fund_updates (request_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
-                [appId, updateTitle, updateNote]
-            );
-        } catch (updateErr) {
-            // Non-fatal — log but don't fail the overall response
-            console.warn('[createRequest] Failed to insert initial review update:', updateErr.message);
-        }
+      try {
+        await pool.query(
+          `INSERT INTO cm_fund_updates (request_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
+          [appId, updateTitle, updateNote]
+        );
+      } catch (updateErr) {
+        // Non-fatal — log but don't fail the overall response
+        console.warn('[createRequest] Failed to insert initial review update:', updateErr.message);
+      }
     }
 
     // Notify all admins
@@ -463,7 +464,7 @@ export const createRequest = async (req, res) => {
     // Notify Applicant
     if (b.notify_applicant === 'true' && applicantPhone) {
       let message = b.custom_message;
-      if (!message) {
+      if (!message || message.trim() === '') {
         message = submissionConfirmationSMS({
           name: applicantName,
           dateFiled: dateFiled || new Date().toISOString().split('T')[0],
@@ -472,11 +473,20 @@ export const createRequest = async (req, res) => {
           moduleLabel: 'Application',
         });
       } else {
+        if (applicantName && applicantName.trim() && applicantName.trim().toLowerCase() !== 'citizen') {
+          const nameTrimmed = applicantName.trim();
+          message = message
+            .replace(/^Hi Citizen,/mi, `Hi ${nameTrimmed},`)
+            .replace(/^Hi Citizen /mi, `Hi ${nameTrimmed} `)
+            .replace(/\{applicant_name\}/gi, nameTrimmed)
+            .replace(/\{name\}/gi, nameTrimmed);
+        }
         message = message
-          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`)
+          .replace(/\{tracking_id\}/gi, appId)
+          .replace(/\{reference_no\}/gi, appId)
           .replace(/\[Pending ID\]/gi, appId)
           .replace(/\[PendingID\]/gi, appId)
-          .replace(/{reference_no}/g, appId);
+          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`);
       }
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
@@ -486,8 +496,8 @@ export const createRequest = async (req, res) => {
 
       // Log SMS communication
       await pool.query(
-          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-          ['Application', appId, 'SMS', applicantPhone, message]
+        `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+        ['Application', appId, 'SMS', applicantPhone, message]
       ).catch(err => console.warn('[Log failed]', err.message));
     }
 
@@ -510,22 +520,23 @@ export const createDraftRequest = async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const b = req.body;
-    const applicantName    = b.applicant_name   || b.applicantName;
-    const applicationType  = b.application_type || b.applicationType || 'CMDRF';
-    const applicantPhone   = b.applicant_phone  || b.applicantPhone || b.phone;
+    const applicantName = b.applicant_name || b.applicantName;
+    const applicationType = b.application_type || b.applicationType || 'CMDRF';
+    const applicantPhone = b.applicant_phone || b.applicantPhone || b.phone;
+    const email = b.email || b.applicant_email || b.applicantEmail || null;
     const applicationTitle = b.application_title || b.applicationTitle || null;
-    const rawCategoryId    = b.category_id      || b.category;
-    const categoryId       = await resolveCategoryId(pool, rawCategoryId);
-    const subCategory      = b.sub_category     || b.subCategory || null;
-    const addressLine1     = b.address_line1    || b.addressLine1 || b.house_name || '';
-    const localBody        = b.local_body       || b.localBody || null;
-    const ward             = b.ward             || null;
-    const recommendedBy    = b.recommended_by   || b.recommendedBy || '';
-    const amountRequested  = b.amount_requested || b.amountRequested || null;
-    const description      = b.description      || '';
-    const priority         = b.priority         || 'Normal';
-    const remarks          = b.remarks          || null;
-    const status           = b.status           || 'Draft';
+    const rawCategoryId = b.category_id || b.category;
+    const categoryId = await resolveCategoryId(pool, rawCategoryId);
+    const subCategory = b.sub_category || b.subCategory || null;
+    const addressLine1 = b.address_line1 || b.addressLine1 || b.house_name || '';
+    const localBody = b.local_body || b.localBody || null;
+    const ward = b.ward || null;
+    const recommendedBy = b.recommended_by || b.recommendedBy || '';
+    const amountRequested = b.amount_requested || b.amountRequested || null;
+    const description = b.description || '';
+    const priority = b.priority || 'Normal';
+    const remarks = b.remarks || null;
+    const status = b.status || 'Draft';
 
     if (!applicantName || !applicantPhone) {
       return res.status(400).json({
@@ -535,21 +546,21 @@ export const createDraftRequest = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const appId  = await generateAppId(connection, applicationType);
+    const appId = await generateAppId(connection, applicationType);
     const userId = req.admin ? req.admin.id : null;
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
-        id, application_title, applicant_name, applicant_phone, category_id, sub_category, priority,
+        id, application_title, applicant_name, applicant_phone, email, category_id, sub_category, priority,
         amount_requested, description, remarks,
         status, submitted_by_id,
         address_line1, local_body_id, ward_id, city, district, state, pincode, application_type,
         bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
                 ?, ?, ?, '', '', 'Kerala', '', ?,
                 '', '', '', '', '', ?)
     `, [
-      appId, applicationTitle, applicantName, applicantPhone, categoryId, subCategory, priority,
+      appId, applicationTitle, applicantName, applicantPhone, email, categoryId, subCategory, priority,
       amountRequested, description, remarks,
       status, userId,
       addressLine1, localBody, ward, applicationType,
@@ -575,7 +586,7 @@ export const createDraftRequest = async (req, res) => {
         }
 
         const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
-        
+
         await connection.query(`
           INSERT INTO cm_fund_request_documents (request_id, doc_type_id, file_url, original_filename)
           VALUES (?, ?, ?, ?)
@@ -585,11 +596,29 @@ export const createDraftRequest = async (req, res) => {
 
     // Notify Applicant
     if (b.notify_applicant === 'true' && applicantPhone) {
-      const message = b.custom_message || submissionConfirmationSMS({
-        name: applicantName,
-        dateFiled: new Date().toISOString().split('T')[0],
-        referenceNo: appId,
-      });
+      let message = b.custom_message;
+      if (!message || message.trim() === '') {
+        message = submissionConfirmationSMS({
+          name: applicantName,
+          dateFiled: new Date().toISOString().split('T')[0],
+          referenceNo: appId,
+        });
+      } else {
+        if (applicantName && applicantName.trim() && applicantName.trim().toLowerCase() !== 'citizen') {
+          const nameTrimmed = applicantName.trim();
+          message = message
+            .replace(/^Hi Citizen,/mi, `Hi ${nameTrimmed},`)
+            .replace(/^Hi Citizen /mi, `Hi ${nameTrimmed} `)
+            .replace(/\{applicant_name\}/gi, nameTrimmed)
+            .replace(/\{name\}/gi, nameTrimmed);
+        }
+        message = message
+          .replace(/\{tracking_id\}/gi, appId)
+          .replace(/\{reference_no\}/gi, appId)
+          .replace(/\[Pending ID\]/gi, appId)
+          .replace(/\[PendingID\]/gi, appId)
+          .replace(/Tracking ID:\s*[A-Za-z0-9_-]+/gi, `Tracking ID: ${appId}`);
+      }
       await sendSMSSafe(applicantPhone, message, {
         referenceNo: appId,
         module: 'cm-funds',
@@ -696,7 +725,7 @@ export const getRequest = async (req, res) => {
         }
       }
     });
-    
+
     const [commLogs] = await pool.query(
       `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
        FROM communications_logs 
@@ -741,7 +770,7 @@ export const updateRequest = async (req, res) => {
   try {
     const { id } = req.params;
     const statusDetails = req.body.status_details || null;
-    
+
     // Partial update allowed
     const updatableFields = [
       'application_title', 'applicant_name', 'applicant_phone', 'alternate_phone', 'aadhaar_number', 'ration_card_number', 'pan_card_number',
@@ -757,22 +786,23 @@ export const updateRequest = async (req, res) => {
     // Map body keys to DB columns
     const bodyToDb = {
       applicationTitle: 'application_title', panCardNumber: 'pan_card_number', address: 'address', location: 'location', latitude: 'latitude', longitude: 'longitude',
-      applicantName: 'applicant_name', applicantPhone: 'applicant_phone', alternatePhone: 'alternate_phone', 
+      applicantName: 'applicant_name', applicantPhone: 'applicant_phone', alternatePhone: 'alternate_phone',
+      email: 'email', applicantEmail: 'email', applicant_email: 'email',
       aadhaarNumber: 'aadhaar_number', rationCardNumber: 'ration_card_number',
-      localBody: 'local_body_id', ward: 'ward_id', addressLine1: 'address_line1', addressLine2: 'address_line2', 
+      localBody: 'local_body_id', ward: 'ward_id', addressLine1: 'address_line1', addressLine2: 'address_line2',
       city: 'city', district: 'district', state: 'state', pincode: 'pincode', applicationType: 'application_type',
-      category: 'category_id', subCategory: 'sub_category', priority: 'priority', 
+      category: 'category_id', subCategory: 'sub_category', priority: 'priority',
       amountRequested: 'amount_requested', description: 'description',
-      bankName: 'bank_name', accountNumber: 'account_number', ifscCode: 'ifsc_code', 
+      bankName: 'bank_name', accountNumber: 'account_number', ifscCode: 'ifsc_code',
       branch: 'branch', accountHolderName: 'account_holder_name',
-      recommendedBy: 'recommended_by', recommenderName: 'recommender_name', 
+      recommendedBy: 'recommended_by', recommenderName: 'recommender_name',
       recommenderContact: 'recommender_contact', remarks: 'remarks',
       status: 'status', officer: 'assigned_officer_id', assignedOfficerId: 'assigned_officer_id',
       dateFiled: 'date_filed', date_filed: 'date_filed'
     };
 
     const sanitize = (val) => (val === 'undefined' || val === 'null') ? '' : val;
-    
+
     // Fields that are NOT NULL in the database schema
     const notNullFields = new Set([
       'applicant_name', 'applicant_phone', 'address_line1', 'city', 'district', 'pincode',
@@ -786,11 +816,11 @@ export const updateRequest = async (req, res) => {
 
       // Check for either the snake_case key (from FormData) or the camelCase key
       let value = req.body[dbKey] !== undefined ? req.body[dbKey] : req.body[camelKey];
-      
+
       if (typeof value === 'string') {
         value = sanitize(value);
       }
-      
+
       if (dbKey === 'assigned_officer_id' && value === 'Unassigned') {
         value = null;
       }
@@ -817,7 +847,7 @@ export const updateRequest = async (req, res) => {
 
     // Ensure required fields are not being nullified or are provided if updating
     const getVal = (snake, camel) => req.body[snake] !== undefined ? req.body[snake] : req.body[camel];
-    
+
     const checkAppType = sanitize(getVal('application_type', 'applicationType'));
     const checkAppName = sanitize(getVal('applicant_name', 'applicantName'));
     const checkCategory = sanitize(getVal('category_id', 'category'));
@@ -857,17 +887,17 @@ export const updateRequest = async (req, res) => {
         }
 
         const fileUrl = file.location || `/uploads/cm_fund_documents/${file.filename}`;
-        
+
         // Upsert strategy for documents (remove old one first if exists)
         await connection.query(`DELETE FROM cm_fund_request_documents WHERE request_id = ? AND doc_type_id = ?`, [id, docId]);
-        
+
         await connection.query(`
           INSERT INTO cm_fund_request_documents (request_id, doc_type_id, file_url, original_filename)
           VALUES (?, ?, ?, ?)
         `, [id, docId, fileUrl, file.originalname]);
       }
     }
-    
+
     // Add timeline event
     const userId = req.admin ? req.admin.id : null;
     await connection.query(`
@@ -899,26 +929,26 @@ export const updateStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { status, approvedAmount } = req.body;
-    
+
     if (!status) return res.status(400).json({ error: 'Status is required' });
 
     await connection.beginTransaction();
 
     const [rows] = await connection.query('SELECT status FROM cm_fund_requests WHERE id = ?', [id]);
     if (rows.length === 0) {
-       await connection.rollback();
-       return res.status(404).json({ error: 'Request not found' });
+      await connection.rollback();
+      return res.status(404).json({ error: 'Request not found' });
     }
     const oldStatus = rows[0].status;
 
     if (oldStatus === status) {
-       await connection.rollback();
-       return res.json({ message: 'Status is already ' + status });
+      await connection.rollback();
+      return res.json({ message: 'Status is already ' + status });
     }
 
     const updateQuery = `UPDATE cm_fund_requests SET status = ?, updated_by_admin_id = ? ${approvedAmount !== undefined ? ', approved_amount = ?' : ''} WHERE id = ?`;
     const updateParams = approvedAmount !== undefined ? [status, req.admin?.id || null, approvedAmount, id] : [status, req.admin?.id || null, id];
-    
+
     await connection.query(updateQuery, updateParams);
 
     // Event type logic
@@ -1025,7 +1055,7 @@ export const downloadPdf = async (req, res) => {
     `, [id]);
 
     if (rows.length === 0) return res.status(404).json({ error: 'Request not found' });
-    
+
     const [settings] = await pool.query(`
       SELECT value FROM site_settings WHERE setting_key = 'mla_letter_template' LIMIT 1
     `);
@@ -1055,7 +1085,10 @@ export const addUpdate = async (req, res) => {
 
     await connection.beginTransaction();
 
-    const [requestRows] = await connection.query(`SELECT applicant_name, email, applicant_phone, status, created_at as date_filed FROM cm_fund_requests WHERE id = ?`, [id]);
+    const [requestRows] = await connection.query(
+      `SELECT applicant_name, applicant_phone, email, status, created_at as date_filed FROM cm_fund_requests WHERE id = ?`,
+      [id]
+    );
     if (requestRows.length === 0) {
       await connection.rollback();
       return res.status(404).json({ error: 'Application not found' });
@@ -1067,7 +1100,7 @@ export const addUpdate = async (req, res) => {
       INSERT INTO cm_fund_updates (request_id, type, title, note, notify_complainant)
       VALUES (?, ?, ?, ?, ?)
     `, [id, type, title, note || null, isNotify ? 1 : 0]);
-    
+
     const updateId = result.insertId;
 
     // Insert Media
@@ -1077,7 +1110,7 @@ export const addUpdate = async (req, res) => {
         const isVideo = file.mimetype.startsWith('video/');
         let mediaType = isVideo ? 'video' : 'photo';
         if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
-            mediaType = 'document';
+          mediaType = 'document';
         }
         await connection.query(`
           INSERT INTO cm_fund_update_media (update_id, media_type, file_url, file_name)
@@ -1090,7 +1123,7 @@ export const addUpdate = async (req, res) => {
     let oldStatus = application.status;
     if (type !== application.status) {
       await connection.query(`UPDATE cm_fund_requests SET status = ?, updated_by_admin_id = ? WHERE id = ?`, [type, req.admin?.id || null, id]);
-      
+
       // Log Status Change Timeline Event
       await connection.query(`
         INSERT INTO cm_fund_timeline_events (request_id, event_type, from_status, to_status, actor_id, note)
@@ -1110,8 +1143,8 @@ export const addUpdate = async (req, res) => {
     if (isNotify) {
       let channels = [];
       try {
-          if (notify_channels) channels = JSON.parse(notify_channels);
-      } catch (e) {}
+        if (notify_channels) channels = JSON.parse(notify_channels);
+      } catch (e) { }
 
       // Send SMS if selected
       if (application.applicant_phone && channels.includes('sms')) {
@@ -1133,18 +1166,19 @@ export const addUpdate = async (req, res) => {
       }
 
       // Send Email if selected
-      if (application.email && channels.includes('email') && custom_email_message?.trim()) {
-          sendNotificationEmail({
-              to: application.email,
-              subject: `Update on your CM Fund Application #${id}`,
-              message: custom_email_message.trim()
-          }).catch(err => console.error('[addCmFundUpdate Email Error]', err));
+      const targetEmail = req.body.email || req.body.applicant_email || null;
+      if (targetEmail && channels.includes('email') && custom_email_message?.trim()) {
+        sendNotificationEmail({
+          to: targetEmail,
+          subject: `Update on your CM Fund Application #${id}`,
+          message: custom_email_message.trim()
+        }).catch(err => console.error('[addCmFundUpdate Email Error]', err));
 
-          // Log Email communication
-          await pool.query(
-            `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-            ['Application', id, 'Email', application.email, custom_email_message.trim()]
-          ).catch(err => console.warn('[addCmFundUpdate Email Log failed]', err.message));
+        // Log Email communication
+        await pool.query(
+          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
+          ['Application', id, 'Email', targetEmail, custom_email_message.trim()]
+        ).catch(err => console.warn('[addCmFundUpdate Email Log failed]', err.message));
       }
     }
 
@@ -1174,7 +1208,7 @@ export const editUpdate = async (req, res) => {
     );
 
     let retainedMedia = [];
-    try { if (retained_media_ids) retainedMedia = JSON.parse(retained_media_ids); } catch(e){}
+    try { if (retained_media_ids) retainedMedia = JSON.parse(retained_media_ids); } catch (e) { }
 
     const [currentMedia] = await connection.query('SELECT id, file_url FROM cm_fund_update_media WHERE update_id = ?', [updateId]);
     const mediaToDelete = currentMedia.filter(m => !retainedMedia.includes(m.id));
@@ -1190,7 +1224,7 @@ export const editUpdate = async (req, res) => {
         const isVideo = file.mimetype.startsWith('video/');
         let mediaType = isVideo ? 'video' : 'photo';
         if (!file.mimetype.startsWith('image/') && !file.mimetype.startsWith('video/')) {
-            mediaType = 'document';
+          mediaType = 'document';
         }
         await connection.query(`
           INSERT INTO cm_fund_update_media (update_id, media_type, file_url, file_name)
@@ -1220,7 +1254,7 @@ export const deleteUpdate = async (req, res) => {
   try {
     const { id, updateId } = req.params;
     const [result] = await pool.query('DELETE FROM cm_fund_updates WHERE id = ? AND request_id = ?', [updateId, id]);
-    
+
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Update not found' });
     }

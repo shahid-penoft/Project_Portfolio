@@ -202,9 +202,10 @@ const fetchFullIssue = async (id) => {
         ORDER BY ct.created_at ASC
     `, [realId]);
     const [activity]    = await pool.query(`
-        SELECT ca.*, au.full_name as author_name 
+        SELECT ca.*, COALESCE(au.full_name, i.submitter_name, 'Citizen') as author_name 
         FROM issue_activity ca
         LEFT JOIN admin_users au ON ca.admin_user_id = au.id
+        LEFT JOIN issues i ON ca.issue_id = i.id
         WHERE ca.issue_id = ? 
         ORDER BY ca.created_at DESC
     `, [realId]);

@@ -64,6 +64,14 @@ export const getCommunications = async (req, res) => {
           c.status,
           c.created_at AS _createdAt,
           (SELECT COUNT(*) FROM complaint_updates WHERE complaint_id = c.id) AS _updatesCount,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE cl.entity_type COLLATE utf8mb4_unicode_ci = 'Complaint' 
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(c.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = c.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'SMS') AS sms_count,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE cl.entity_type COLLATE utf8mb4_unicode_ci = 'Complaint' 
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(c.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = c.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'EMAIL') AS email_count,
           (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM complaint_updates WHERE complaint_id = c.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
@@ -113,6 +121,14 @@ export const getCommunications = async (req, res) => {
           i.status,
           i.created_at AS _createdAt,
           (SELECT COUNT(*) FROM issue_updates WHERE issue_id = i.id) AS _updatesCount,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE (cl.entity_type COLLATE utf8mb4_unicode_ci = 'Issue' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'Public_Issue' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'Public Issue')
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(i.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = i.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'SMS') AS sms_count,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE (cl.entity_type COLLATE utf8mb4_unicode_ci = 'Issue' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'Public_Issue' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'Public Issue')
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(i.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = i.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'EMAIL') AS email_count,
           (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM issue_updates WHERE issue_id = i.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
@@ -162,6 +178,14 @@ export const getCommunications = async (req, res) => {
           id.status,
           id.created_at AS _createdAt,
           (SELECT COUNT(*) FROM idea_updates WHERE idea_id = id.id) AS _updatesCount,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE cl.entity_type COLLATE utf8mb4_unicode_ci = 'Idea' 
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(id.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = id.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'SMS') AS sms_count,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE cl.entity_type COLLATE utf8mb4_unicode_ci = 'Idea' 
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(id.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = id.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'EMAIL') AS email_count,
           (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM idea_updates WHERE idea_id = id.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
@@ -211,6 +235,14 @@ export const getCommunications = async (req, res) => {
           s.status,
           s.created_at AS _createdAt,
           (SELECT COUNT(*) FROM suggestion_updates WHERE suggestion_id = s.id) AS _updatesCount,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE cl.entity_type COLLATE utf8mb4_unicode_ci = 'Suggestion' 
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(s.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = s.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'SMS') AS sms_count,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE cl.entity_type COLLATE utf8mb4_unicode_ci = 'Suggestion' 
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(s.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = s.reference_no COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'EMAIL') AS email_count,
           (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM suggestion_updates WHERE suggestion_id = s.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
@@ -250,7 +282,7 @@ export const getCommunications = async (req, res) => {
           f.application_title AS title,
           f.applicant_name AS contactName,
           f.applicant_phone AS contactPhone,
-          NULL AS contactEmail,
+          f.email AS contactEmail,
           COALESCE(f.address_line1, f.address, f.location) AS locationAddress,
           f.local_body_id AS localBodyId,
           lb.name AS localBody,
@@ -260,6 +292,14 @@ export const getCommunications = async (req, res) => {
           f.status,
           f.created_at AS _createdAt,
           (SELECT COUNT(*) FROM cm_fund_updates WHERE request_id = f.id) AS _updatesCount,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE (cl.entity_type COLLATE utf8mb4_unicode_ci = 'Application' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'CM_Fund' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'cm_fund')
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(f.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('A-', f.id) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('CM-', f.id) COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'SMS') AS sms_count,
+          (SELECT COUNT(*) FROM communications_logs cl 
+           WHERE (cl.entity_type COLLATE utf8mb4_unicode_ci = 'Application' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'CM_Fund' OR cl.entity_type COLLATE utf8mb4_unicode_ci = 'cm_fund')
+             AND (cl.entity_id COLLATE utf8mb4_unicode_ci = CAST(f.id AS CHAR) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('A-', f.id) COLLATE utf8mb4_unicode_ci OR cl.entity_id COLLATE utf8mb4_unicode_ci = CONCAT('CM-', f.id) COLLATE utf8mb4_unicode_ci)
+             AND UPPER(cl.channel) = 'EMAIL') AS email_count,
           (SELECT JSON_OBJECT('id', id, 'type', type, 'title', title, 'created_at', DATE_FORMAT(created_at, '%Y-%m-%dT%H:%i:%s.000Z'))
            FROM cm_fund_updates WHERE request_id = f.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) AS last_update,
           (SELECT JSON_OBJECT(
@@ -482,6 +522,8 @@ export const getCommunications = async (req, res) => {
         scheduled_communication: scheduledComm,
         _createdAt: r._createdAt,
         _updatesCount: r._updatesCount || 0,
+        smsCount: Number(r.sms_count || 0),
+        emailCount: Number(r.email_count || 0),
       };
     });
 
