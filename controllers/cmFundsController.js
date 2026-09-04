@@ -525,6 +525,7 @@ export const createDraftRequest = async (req, res) => {
     const description      = b.description      || '';
     const priority         = b.priority         || 'Normal';
     const remarks          = b.remarks          || null;
+    const status           = b.status           || 'Draft';
 
     if (!applicantName || !applicantPhone) {
       return res.status(400).json({
@@ -544,21 +545,21 @@ export const createDraftRequest = async (req, res) => {
         status, submitted_by_id,
         address_line1, local_body_id, ward_id, city, district, state, pincode, application_type,
         bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Draft', ?,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, '', '', 'Kerala', '', ?,
                 '', '', '', '', '', ?)
     `, [
       appId, applicationTitle, applicantName, applicantPhone, categoryId, subCategory, priority,
       amountRequested, description, remarks,
-      userId,
+      status, userId,
       addressLine1, localBody, ward, applicationType,
       recommendedBy
     ]);
 
     await connection.query(`
       INSERT INTO cm_fund_timeline_events (request_id, event_type, to_status, actor_id, note)
-      VALUES (?, 'Draft Created', 'Draft', ?, 'Quick draft saved via sidebar')
-    `, [appId, userId]);
+      VALUES (?, 'Status Initialized', ?, ?, 'Saved via quick form')
+    `, [appId, status, userId]);
 
     // Handle uploaded documents (including audioNotes which we will map to doc_audio_note)
     if (req.files && req.files.length > 0) {

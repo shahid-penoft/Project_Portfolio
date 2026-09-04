@@ -33,13 +33,13 @@ const parseRepRow = (row) => {
 };
 
 const validateBody = (body) => {
-    const { governing_body_type, local_body_id, name, role_id, phone, department, head_name, status } = body;
+    const { governing_body_type, local_body_id, name, role_id, phone, department, head_name, status, is_quick } = body;
     if (!governing_body_type || !['GRAM_PANCHAYAT', 'MUNICIPALITY', 'BLOCK_PANCHAYAT', 'DISTRICT_PANCHAYAT', 'OTHER'].includes(governing_body_type)) {
         return 'Invalid or missing governing_body_type.';
     }
 
-    // Skip strict validation for drafts
-    if (status === 'Draft') {
+    // Skip strict validation for drafts or quick form additions
+    if (status === 'Draft' || is_quick === 'true' || is_quick === true) {
         if (!name) return 'name is required.';
         if (!phone) return 'phone is required.';
         if (governing_body_type !== 'OTHER' && !local_body_id) return 'local_body_id is required.';
