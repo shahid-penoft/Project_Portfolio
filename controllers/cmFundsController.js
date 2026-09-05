@@ -619,8 +619,8 @@ export const createRequest = async (req, res) => {
 
       // Log SMS communication
       await pool.query(
-        `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-        ['Application', appId, 'SMS', applicantPhone, message]
+        `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+        ['Application', appId, 'SMS', applicantPhone, message, req.admin?.id || null]
       ).catch(err => console.warn('[Log failed]', err.message));
     }
 
@@ -750,8 +750,8 @@ export const createDraftRequest = async (req, res) => {
 
       // Log SMS communication so it shows in the Communications tab
       await pool.query(
-        `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-        ['Application', appId, 'SMS', applicantPhone, message]
+        `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+        ['Application', appId, 'SMS', applicantPhone, message, req.admin?.id || null]
       ).catch(err => console.warn('[createDraftRequest SMS Log failed]', err.message));
     }
 
@@ -818,8 +818,9 @@ export const getRequest = async (req, res) => {
     `, [id]);
 
     const [updates] = await pool.query(`
-      SELECT u.*, m.media_type, m.file_url, m.file_name
+      SELECT u.*, au.full_name AS author_name, au.full_name AS admin_name, m.media_type, m.file_url, m.file_name
       FROM cm_fund_updates u
+      LEFT JOIN admin_users au ON u.admin_user_id = au.id
       LEFT JOIN cm_fund_update_media m ON u.id = m.update_id
       WHERE u.request_id = ?
       ORDER BY u.created_at DESC
@@ -836,6 +837,9 @@ export const getRequest = async (req, res) => {
           note: row.note,
           created_at: row.created_at,
           notify_complainant: row.notify_complainant,
+          admin_user_id: row.admin_user_id,
+          author_name: row.author_name,
+          admin_name: row.author_name,
           gallery: [],
           attachments: []
         };
@@ -858,9 +862,21 @@ export const getRequest = async (req, res) => {
     });
 
     const [commLogs] = await pool.query(
-      `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
-       FROM communications_logs 
-       WHERE (entity_type = 'Application' OR entity_type = 'CM_Fund' OR entity_type = 'cm_fund') AND entity_id = ?`,
+      `SELECT cl.id, 
+              'Communication' AS type, 
+              CONCAT(cl.channel, ' Sent') AS title, 
+              cl.channel,
+              cl.message AS note, 
+              cl.created_at, 
+              'communications_logs' as _source,
+              cl.admin_user_id,
+              au.full_name AS sent_by_name,
+              au.full_name AS author_name
+       FROM communications_logs cl
+       LEFT JOIN admin_users au ON cl.admin_user_id = au.id
+       WHERE (cl.entity_type = 'Application' OR cl.entity_type = 'CM_Fund' OR cl.entity_type = 'cm_fund') 
+         AND cl.entity_id COLLATE utf8mb4_unicode_ci = ?
+       ORDER BY cl.created_at DESC`,
       [id]
     );
 
@@ -873,6 +889,9 @@ export const getRequest = async (req, res) => {
       note: cl.note,
       created_at: cl.created_at,
       _source: 'communications_logs',
+      admin_user_id: cl.admin_user_id,
+      sent_by_name: cl.sent_by_name,
+      author_name: cl.sent_by_name,
       gallery: [],
       attachments: []
     }));
@@ -1228,9 +1247,9 @@ export const addUpdate = async (req, res) => {
 
     // Insert the update
     const [result] = await connection.query(`
-      INSERT INTO cm_fund_updates (request_id, type, title, note, notify_complainant)
-      VALUES (?, ?, ?, ?, ?)
-    `, [id, type, title, note || null, isNotify ? 1 : 0]);
+      INSERT INTO cm_fund_updates (request_id, type, title, note, notify_complainant, admin_user_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `, [id, type, title, note || null, isNotify ? 1 : 0, req.admin?.id || null]);
 
     const updateId = result.insertId;
 
@@ -1291,8 +1310,8 @@ export const addUpdate = async (req, res) => {
 
         // Log SMS communication
         await pool.query(
-          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-          ['Application', id, 'SMS', application.applicant_phone, smsMessage]
+          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+          ['Application', id, 'SMS', application.applicant_phone, smsMessage, req.admin?.id || null]
         ).catch(err => console.warn('[addCmFundUpdate SMS Log failed]', err.message));
       }
 
@@ -1307,8 +1326,8 @@ export const addUpdate = async (req, res) => {
 
         // Log Email communication
         await pool.query(
-          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-          ['Application', id, 'Email', targetEmail, custom_email_message.trim()]
+          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+          ['Application', id, 'Email', targetEmail, custom_email_message.trim(), req.admin?.id || null]
         ).catch(err => console.warn('[addCmFundUpdate Email Log failed]', err.message));
       }
     }

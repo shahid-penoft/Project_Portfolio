@@ -158,12 +158,33 @@ const fetchFullIssue = async (id) => {
 
     const realId = issue.id;
 
-    const [updates]        = await pool.query('SELECT * FROM issue_updates     WHERE issue_id = ? ORDER BY created_at ASC', [realId]);
+    const [updates] = await pool.query(`
+        SELECT u.*, au.full_name AS author_name, au.full_name AS admin_name
+        FROM issue_updates u
+        LEFT JOIN admin_users au ON u.admin_user_id = au.id
+        WHERE u.issue_id = ? 
+        ORDER BY u.created_at ASC
+    `, [realId]);
+
     const [commLogs] = await pool.query(
-        `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
-         FROM communications_logs 
-         WHERE entity_type = 'Issue' AND entity_id = ?`, 
-        [realId]
+        `SELECT cl.id, 
+                'Communication' AS type, 
+                CONCAT(cl.channel, ' Sent') AS title, 
+                cl.channel,
+                cl.message AS note, 
+                cl.created_at, 
+                'communications_logs' as _source,
+                cl.admin_user_id,
+                au.full_name AS sent_by_name,
+                au.full_name AS author_name
+         FROM communications_logs cl
+         LEFT JOIN admin_users au ON cl.admin_user_id = au.id
+         WHERE cl.entity_type = 'Issue' AND (
+             cl.entity_id COLLATE utf8mb4_unicode_ci = ? 
+             OR cl.entity_id COLLATE utf8mb4_unicode_ci = ?
+         )
+         ORDER BY cl.created_at ASC`, 
+        [String(realId), String(issue.reference_no || realId)]
     );
     const combinedUpdatesRaw = [...updates, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
@@ -478,8 +499,8 @@ export const createIssue = async (req, res) => {
         const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : `Your public issue report has been registered and is under initial review by the MLA Office.\n\nSubmitter: ${submitter_name}\nTracking ID: ${reference_no}`);
         if (updateTitle) {
             await pool.query(
-                `INSERT INTO issue_updates (issue_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
-                [newId, updateTitle, updateNote]
+                `INSERT INTO issue_updates (issue_id, type, title, note, admin_user_id, created_at) VALUES (?, 'Status Update', ?, ?, ?, NOW())`,
+                [newId, updateTitle, updateNote, adminId]
             );
         }
 
@@ -523,9 +544,10 @@ export const createIssue = async (req, res) => {
             sendSMSSafe(phone.trim(), smsBody);
 
             // Log SMS communication
+            const commAdminId = adminId;
             await pool.query(
-                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                ['Issue', newId, 'SMS', phone.trim(), smsBody]
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                ['Issue', newId, 'SMS', phone.trim(), smsBody, commAdminId]
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
@@ -550,9 +572,10 @@ export const createIssue = async (req, res) => {
             });
 
             // Log Email communication
+            const commAdminId = adminId;
             await pool.query(
-                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                ['Issue', newId, 'Email', email.trim(), emailBody]
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                ['Issue', newId, 'Email', email.trim(), emailBody, commAdminId]
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
@@ -743,8 +766,8 @@ export const addIssueUpdate = async (req, res) => {
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
-            'INSERT INTO issue_updates (issue_id, type, title, note) VALUES (?,?,?,?)',
-            [id, type || 'Status Update', title, note || null]
+            'INSERT INTO issue_updates (issue_id, type, title, note, admin_user_id) VALUES (?,?,?,?,?)',
+            [id, type || 'Status Update', title, note || null, req.admin?.id || null]
         );
         const updateId = result.insertId;
 
@@ -816,8 +839,8 @@ export const addIssueUpdate = async (req, res) => {
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE issue_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]).catch(err => console.warn('[sms_sent update failed]', err.message));
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                    ['Issue', id, 'SMS', rec.phone.trim(), finalSms]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                    ['Issue', id, 'SMS', rec.phone.trim(), finalSms, req.admin?.id || null]
                 ).catch(err => console.warn('[Log failed]', err.message));
             }
 
@@ -830,8 +853,8 @@ export const addIssueUpdate = async (req, res) => {
                     message: emailMsg
                 }).catch(err => console.error('[addIssueUpdate Email Error]', err));
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                    ['Issue', id, 'Email', rec.email.trim(), emailMsg]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                    ['Issue', id, 'Email', rec.email.trim(), emailMsg, req.admin?.id || null]
                 ).catch(err => console.warn('[Log failed]', err.message));
             }
         }

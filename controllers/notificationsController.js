@@ -172,7 +172,7 @@ export const sendBulkNotification = async (req, res) => {
     // ── Process asynchronously (fire-and-forget) ────────────────
     if (!scheduledAt) {
         setImmediate(() =>
-            processBulkJob({ jobId, contacts, channels })
+            processBulkJob({ jobId, contacts, channels, adminUserId: req.admin?.id || null })
                 .catch(err => {
                     console.error('[BulkSend] Unhandled error in processBulkJob:', err.message);
                     pool.query(
@@ -303,7 +303,7 @@ const sendWithRetry = async (fn, contactId, channel, maxRetries = 3) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // logCommunication helper — writes to centralized polymorphic table
 // ─────────────────────────────────────────────────────────────────────────────
-const logCommunication = async (modulePrefix, entityId, channel, recipient, message) => {
+const logCommunication = async (modulePrefix, entityId, channel, recipient, message, adminUserId = null) => {
     try {
         if (!modulePrefix || !entityId) return; // Cannot log without association
 
@@ -318,9 +318,9 @@ const logCommunication = async (modulePrefix, entityId, channel, recipient, mess
         if (!entityType) return; // Unknown module type
 
         await pool.query(
-            `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [entityType, entityId, channel, recipient, message]
+            `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) 
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [entityType, entityId, channel, recipient, message, adminUserId]
         );
     } catch (err) {
         console.error(`[logCommunication] Error logging ${channel} to ${entityType} ${entityId}:`, err.message);
@@ -336,7 +336,7 @@ const logCommunication = async (modulePrefix, entityId, channel, recipient, mess
 //   • On any 429 in a batch → halve batchSize, double delay (capped)
 //   • After RECOVER_AFTER_CLEAN consecutive clean batches → recover size/delay
 // ─────────────────────────────────────────────────────────────────────────────
-export const processBulkJob = async ({ jobId, contacts, channels, messages, subject }) => {
+export const processBulkJob = async ({ jobId, contacts, channels, messages, subject, adminUserId = null }) => {
     const INITIAL_BATCH_SIZE  = 10;
     const INITIAL_DELAY_MS    = 2_000;
     const MIN_BATCH_SIZE      = 1;
@@ -405,7 +405,7 @@ export const processBulkJob = async ({ jobId, contacts, channels, messages, subj
                         contact.id, 'sms'
                     );
                     contactSentAny = true;
-                    await logCommunication(contact.module, contact.id, 'SMS', phone, pSms);
+                    await logCommunication(contact.module, contact.id, 'SMS', phone, pSms, adminUserId);
                 } catch (err) {
                     const status = err?.response?.status || err?.status || err?.statusCode;
                     if (status === 429) batchHad429 = true;
@@ -426,7 +426,7 @@ export const processBulkJob = async ({ jobId, contacts, channels, messages, subj
                         contact.id, 'email'
                     );
                     contactSentAny = true;
-                    await logCommunication(contact.module, contact.id, 'Email', contact.email, emailObj.body);
+                    await logCommunication(contact.module, contact.id, 'Email', contact.email, emailObj.body, adminUserId);
                 } catch (err) {
                     const status = err?.response?.status || err?.status || err?.statusCode;
                     if (status === 429) batchHad429 = true;
@@ -445,7 +445,7 @@ export const processBulkJob = async ({ jobId, contacts, channels, messages, subj
                         contact.id, 'whatsapp'
                     );
                     contactSentAny = true;
-                    await logCommunication(contact.module, contact.id, 'WhatsApp', waPhone, pWhatsapp);
+                    await logCommunication(contact.module, contact.id, 'WhatsApp', waPhone, pWhatsapp, adminUserId);
                 } catch (err) {
                     const status = err?.response?.status || err?.status || err?.statusCode;
                     if (status === 429) batchHad429 = true;

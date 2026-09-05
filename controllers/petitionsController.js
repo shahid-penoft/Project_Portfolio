@@ -138,10 +138,21 @@ const fetchUpdates = async (source, petitionId) => {
         if (source === 'cm_fund') entityType = 'Application';
 
         const [commLogs] = await pool.query(
-            `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
-             FROM communications_logs 
-             WHERE entity_type = ? AND entity_id = ?`,
-            [entityType, petitionId]
+            `SELECT cl.id, 
+                    'Communication' AS type, 
+                    CONCAT(cl.channel, ' Sent') AS title, 
+                    cl.channel,
+                    cl.message AS note, 
+                    cl.created_at, 
+                    'communications_logs' as _source,
+                    cl.admin_user_id,
+                    au.full_name AS sent_by_name,
+                    au.full_name AS author_name
+             FROM communications_logs cl
+             LEFT JOIN admin_users au ON cl.admin_user_id = au.id
+             WHERE cl.entity_type = ? AND cl.entity_id COLLATE utf8mb4_unicode_ci = ?
+             ORDER BY cl.created_at ASC`,
+            [entityType, String(petitionId)]
         );
 
         const combined = [...rows, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));

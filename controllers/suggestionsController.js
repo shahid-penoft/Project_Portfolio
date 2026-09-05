@@ -78,12 +78,33 @@ const fetchFullSuggestion = async (id) => {
 
     const realId = suggestion.id;
 
-    const [updates]        = await pool.query('SELECT * FROM suggestion_updates     WHERE suggestion_id = ? ORDER BY created_at ASC', [realId]);
+    const [updates] = await pool.query(`
+        SELECT u.*, au.full_name AS author_name, au.full_name AS admin_name
+        FROM suggestion_updates u
+        LEFT JOIN admin_users au ON u.admin_user_id = au.id
+        WHERE u.suggestion_id = ? 
+        ORDER BY u.created_at ASC
+    `, [realId]);
+
     const [commLogs] = await pool.query(
-        `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
-         FROM communications_logs 
-         WHERE entity_type = 'Suggestion' AND entity_id = ?`, 
-        [realId]
+        `SELECT cl.id, 
+                'Communication' AS type, 
+                CONCAT(cl.channel, ' Sent') AS title, 
+                cl.channel,
+                cl.message AS note, 
+                cl.created_at, 
+                'communications_logs' as _source,
+                cl.admin_user_id,
+                au.full_name AS sent_by_name,
+                au.full_name AS author_name
+         FROM communications_logs cl
+         LEFT JOIN admin_users au ON cl.admin_user_id = au.id
+         WHERE cl.entity_type = 'Suggestion' AND (
+             cl.entity_id COLLATE utf8mb4_unicode_ci = ? 
+             OR cl.entity_id COLLATE utf8mb4_unicode_ci = ?
+         )
+         ORDER BY cl.created_at ASC`, 
+        [String(realId), String(suggestion.reference_no || realId)]
     );
     const combinedUpdatesRaw = [...updates, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
@@ -384,8 +405,8 @@ export const createSuggestion = async (req, res) => {
         const updateNote  = sdTrimmed ? null : (isAdminCreation ? null : `Your suggestion has been registered and is under initial review by the MLA Office.\n\nContributor: ${complainant_name}\nTracking ID: ${reference_no}`);
         if (updateTitle) {
             await pool.query(
-                `INSERT INTO suggestion_updates (suggestion_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
-                [newId, updateTitle, updateNote]
+                `INSERT INTO suggestion_updates (suggestion_id, type, title, note, admin_user_id, created_at) VALUES (?, 'Status Update', ?, ?, ?, NOW())`,
+                [newId, updateTitle, updateNote, adminId]
             );
         }
 
@@ -420,9 +441,10 @@ export const createSuggestion = async (req, res) => {
             sendSMSSafe(phone.trim(), smsBody);
 
             // Log SMS communication
+            const commAdminId = adminId;
             await pool.query(
-                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                ['Suggestion', newId, 'SMS', phone.trim(), smsBody]
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                ['Suggestion', newId, 'SMS', phone.trim(), smsBody, commAdminId]
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
@@ -447,9 +469,10 @@ export const createSuggestion = async (req, res) => {
             });
 
             // Log Email communication
+            const commAdminId = adminId;
             await pool.query(
-                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                ['Suggestion', newId, 'Email', email.trim(), emailBody]
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                ['Suggestion', newId, 'Email', email.trim(), emailBody, commAdminId]
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
@@ -620,8 +643,8 @@ export const addSuggestionUpdate = async (req, res) => {
 
         // FIX: 4 columns → 4 placeholders (was incorrectly 6)
         const [result] = await pool.query(
-            'INSERT INTO suggestion_updates (suggestion_id, type, title, note) VALUES (?,?,?,?)',
-            [id, type || 'Status Update', title, note || null]
+            'INSERT INTO suggestion_updates (suggestion_id, type, title, note, admin_user_id) VALUES (?,?,?,?,?)',
+            [id, type || 'Status Update', title, note || null, req.admin?.id || null]
         );
         const updateId = result.insertId;
 
@@ -694,8 +717,8 @@ export const addSuggestionUpdate = async (req, res) => {
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE suggestion_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]).catch(err => console.warn('[sms_sent update failed]', err.message));
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                    ['Suggestion', id, 'SMS', rec.phone.trim(), finalSms]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                    ['Suggestion', id, 'SMS', rec.phone.trim(), finalSms, req.admin?.id || null]
                 ).catch(err => console.warn('[Log failed]', err.message));
             }
 
@@ -708,8 +731,8 @@ export const addSuggestionUpdate = async (req, res) => {
                     message: emailMsg
                 }).catch(err => console.error('[addSuggestionUpdate Email Error]', err));
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                    ['Suggestion', id, 'Email', rec.email.trim(), emailMsg]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                    ['Suggestion', id, 'Email', rec.email.trim(), emailMsg, req.admin?.id || null]
                 ).catch(err => console.warn('[Log failed]', err.message));
             }
         }

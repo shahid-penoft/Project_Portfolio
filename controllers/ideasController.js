@@ -77,12 +77,33 @@ const fetchFullIdea = async (id) => {
 
     const realId = idea.id;
 
-    const [updates]        = await pool.query('SELECT * FROM idea_updates     WHERE idea_id = ? ORDER BY created_at ASC', [realId]);
+    const [updates] = await pool.query(`
+        SELECT u.*, au.full_name AS author_name, au.full_name AS admin_name
+        FROM idea_updates u
+        LEFT JOIN admin_users au ON u.admin_user_id = au.id
+        WHERE u.idea_id = ? 
+        ORDER BY u.created_at ASC
+    `, [realId]);
+
     const [commLogs] = await pool.query(
-        `SELECT id, 'Communication' AS type, CONCAT(channel, ' Sent') AS title, message AS note, created_at, 'communications_logs' as _source 
-         FROM communications_logs 
-         WHERE entity_type = 'Idea' AND entity_id = ?`, 
-        [realId]
+        `SELECT cl.id, 
+                'Communication' AS type, 
+                CONCAT(cl.channel, ' Sent') AS title, 
+                cl.channel,
+                cl.message AS note, 
+                cl.created_at, 
+                'communications_logs' as _source,
+                cl.admin_user_id,
+                au.full_name AS sent_by_name,
+                au.full_name AS author_name
+         FROM communications_logs cl
+         LEFT JOIN admin_users au ON cl.admin_user_id = au.id
+         WHERE cl.entity_type = 'Idea' AND (
+             cl.entity_id COLLATE utf8mb4_unicode_ci = ? 
+             OR cl.entity_id COLLATE utf8mb4_unicode_ci = ?
+         )
+         ORDER BY cl.created_at ASC`, 
+        [String(realId), String(idea.reference_no || realId)]
     );
     const combinedUpdatesRaw = [...updates, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
@@ -376,8 +397,8 @@ export const createIdea = async (req, res) => {
         const updateNote  = sdTrimmed || (isAdminCreation ? null : `Your idea has been registered and is under initial review by the MLA Office.\n\nContributor: ${complainant_name}\nTracking ID: ${reference_no}`);
         if (updateTitle) {
             await pool.query(
-                `INSERT INTO idea_updates (idea_id, type, title, note, created_at) VALUES (?, 'Status Update', ?, ?, NOW())`,
-                [newId, updateTitle, updateNote]
+                `INSERT INTO idea_updates (idea_id, type, title, note, admin_user_id, created_at) VALUES (?, 'Status Update', ?, ?, ?, NOW())`,
+                [newId, updateTitle, updateNote, adminId]
             );
         }
 
@@ -421,9 +442,10 @@ export const createIdea = async (req, res) => {
             sendSMSSafe(phone.trim(), smsBody);
 
             // Log SMS communication
+            const commAdminId = adminId;
             await pool.query(
-                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                ['Idea', newId, 'SMS', phone.trim(), smsBody]
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                ['Idea', newId, 'SMS', phone.trim(), smsBody, commAdminId]
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
@@ -449,9 +471,10 @@ export const createIdea = async (req, res) => {
             });
 
             // Log Email communication
+            const commAdminId = adminId;
             await pool.query(
-                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                ['Idea', newId, 'Email', email.trim(), emailBody]
+                `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                ['Idea', newId, 'Email', email.trim(), emailBody, commAdminId]
             ).catch(err => console.warn('[Log failed]', err.message));
         }
 
@@ -599,8 +622,8 @@ export const addIdeaUpdate = async (req, res) => {
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
         const [result] = await pool.query(
-            'INSERT INTO idea_updates (idea_id, type, title, note) VALUES (?,?,?,?)',
-            [id, type || 'Status Update', title, note || null]
+            'INSERT INTO idea_updates (idea_id, type, title, note, admin_user_id) VALUES (?,?,?,?,?)',
+            [id, type || 'Status Update', title, note || null, req.admin?.id || null]
         );
         const updateId = result.insertId;
 
@@ -652,8 +675,8 @@ export const addIdeaUpdate = async (req, res) => {
                 sendSMSSafe(rec.phone, finalSms);
                 await pool.query('UPDATE idea_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]).catch(err => console.warn('[sms_sent update failed]', err.message));
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                    ['Idea', id, 'SMS', rec.phone.trim(), finalSms]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                    ['Idea', id, 'SMS', rec.phone.trim(), finalSms, req.admin?.id || null]
                 ).catch(err => console.warn('[Log failed]', err.message));
             }
 
@@ -666,8 +689,8 @@ export const addIdeaUpdate = async (req, res) => {
                     message: emailMsg
                 }).catch(err => console.error('[addIdeaUpdate Email Error]', err));
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message) VALUES (?, ?, ?, ?, ?)`,
-                    ['Idea', id, 'Email', rec.email.trim(), emailMsg]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+                    ['Idea', id, 'Email', rec.email.trim(), emailMsg, req.admin?.id || null]
                 ).catch(err => console.warn('[Log failed]', err.message));
             }
         }
