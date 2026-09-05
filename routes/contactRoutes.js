@@ -7,6 +7,8 @@ import {
     getEnquiryById,
     updateEnquiryStatus,
     deleteEnquiry,
+    trashEnquiry,
+    restoreEnquiry,
     sendSMS,
     sendEmail,
     sendWhatsApp,
@@ -16,6 +18,7 @@ import {
     getEnquiryStats,
     getEnquiryNotes,
     addEnquiryNote,
+    deleteEnquiryNote,
     getConstituentProfile,
     getAutomations,
     upsertAutomation,
@@ -52,6 +55,8 @@ router.delete('/config/custom-fields/:id', deleteCustomField);
 // ─── Wildcard /:id routes (must come AFTER all named segment routes) ──
 router.get('/:id', getEnquiryById);
 router.patch('/:id/status', updateEnquiryStatus);
+router.patch('/:id/trash', trashEnquiry);
+router.patch('/:id/restore', restoreEnquiry);
 router.delete('/:id', deleteEnquiry);
 
 // ─── Communication Routes ───────────────────────────────────────
@@ -64,6 +69,7 @@ router.get('/:id/communications', getCommunications);
 // ─── Notes & Custom Values ─────────────────────────────────────
 router.get('/:id/notes', getEnquiryNotes);
 router.post('/:id/notes', addEnquiryNote);
+router.delete('/:id/notes/:noteId', deleteEnquiryNote);
 router.post('/:id/custom-values', updateEnquiryCustomValue);
 
 export default router;

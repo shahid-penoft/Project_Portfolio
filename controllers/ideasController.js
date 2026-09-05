@@ -146,6 +146,13 @@ export const getIdeas = async (req, res) => {
             conditions.push('i.is_deleted = 0');
         }
 
+        // Intake source filter
+        const srcFilter = req.query.submission_source || req.query.source;
+        if (srcFilter) {
+            conditions.push('i.submission_source = ?');
+            params.push(srcFilter);
+        }
+
         if (!req.isAdmin && req.constituent) {
             conditions.push('i.constituent_user_id = ?');
             params.push(req.constituent.id);
@@ -320,6 +327,7 @@ export const createIdea = async (req, res) => {
         const constituentId = req.constituent?.id || null;
         const adminId       = req.admin?.id       || null;
         const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        const submission_source = isAdminCreation ? 'Admin Panel' : 'Public Portal';
         const initialStatus = status || (isAdminCreation ? (await getDropdownDefault('idea_status') || 'Pending') : 'Draft');
 
         const [result] = await pool.query(`
@@ -327,8 +335,8 @@ export const createIdea = async (req, res) => {
               (reference_no, title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
                complainant_name, phone, alternative_phone, email,
                local_body_id, ward_id, department,
-               constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               constituent_user_id, filed_by_admin_id, date_filed, submission_source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -352,6 +360,7 @@ export const createIdea = async (req, res) => {
             constituentId,
             adminId,
             date_filed || new Date().toISOString().split('T')[0],
+            submission_source,
         ]);
 
         const newId = result.insertId;

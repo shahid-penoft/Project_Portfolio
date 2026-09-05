@@ -222,7 +222,8 @@ export const getComplaints = async (req, res) => {
     try {
         const { 
             status, category, department, priority, search, search_field, searchField, page = 1, limit = 20, trash,
-            local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id 
+            local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id,
+            source, submission_source
         } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -234,6 +235,13 @@ export const getComplaints = async (req, res) => {
             conditions.push('c.is_deleted = 1');
         } else {
             conditions.push('c.is_deleted = 0');
+        }
+
+        // Intake source filter
+        const srcFilter = submission_source || source;
+        if (srcFilter) {
+            conditions.push('c.submission_source = ?');
+            params.push(srcFilter);
         }
 
         // Constituent scoping — only see own complaints
@@ -425,6 +433,7 @@ export const createComplaint = async (req, res) => {
         const constituentId = req.constituent?.id || null;
         const adminId = req.admin?.id || null;
         const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        const submission_source = isAdminCreation ? 'Admin Panel' : 'Public Portal';
         const initialStatus = status || (isAdminCreation ? (await getDropdownDefault('complaint_status') || 'Pending') : 'Draft');
 
         const [result] = await pool.query(`
@@ -432,8 +441,8 @@ export const createComplaint = async (req, res) => {
               (reference_no, title, category, priority, status, description, location, address, address_line1, latitude, longitude, internal_note,
                complainant_name, phone, alternative_phone, email,
                local_body_id, ward_id, department,
-               constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               constituent_user_id, filed_by_admin_id, date_filed, submission_source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -457,6 +466,7 @@ export const createComplaint = async (req, res) => {
             constituentId,
             adminId,
             date_filed || new Date().toISOString().split('T')[0],
+            submission_source,
         ]);
 
         const newId = result.insertId;

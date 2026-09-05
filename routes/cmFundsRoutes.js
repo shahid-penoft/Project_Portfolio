@@ -4,6 +4,11 @@ import { uploadCMFundDocsS3 } from '../configs/multerS3.js';
 
 import {
   listRequests,
+  listCmdrfRequests,
+  listMlaFundRequests,
+  listGeneralRequests,
+  listTGrantsRequests,
+  getDraftCounts,
   createRequest,
   createDraftRequest,
   getRequest,
@@ -66,6 +71,11 @@ router.use(adminAuth);
 // ==========================================
 router.post('/draft', uploadCMFundDocsS3, createDraftRequest);         // ← Quick-add draft (minimal fields)
 router.get('/next-id', getNextAppId);
+router.get('/requests/cmdrf', listCmdrfRequests);
+router.get('/requests/mla-fund', listMlaFundRequests);
+router.get('/requests/general', listGeneralRequests);
+router.get('/requests/t-grants', listTGrantsRequests);
+router.get('/draft-counts', getDraftCounts);
 router.get('/requests', listRequests);
 router.post('/requests', uploadCMFundDocsS3, createRequest);
 

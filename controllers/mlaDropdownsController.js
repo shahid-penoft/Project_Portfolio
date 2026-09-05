@@ -46,6 +46,9 @@ const CASCADE_MAP = {
     csr_focus_domain: { table: 'csr_organisations', col: 'domains', module: 'CSR', deletedCol: 'deleted', isJson: true },
     // Generics (Used globally but tracked where most critical)
     state_district: { table: 'local_bodies', col: 'district', module: 'System', deletedCol: null },
+    // Enquiries
+    enquiry_status: { table: 'contact_enquiries', col: 'status', module: 'Enquiries', deletedCol: 'is_deleted' },
+    enquiry_category: { table: 'contact_enquiries', col: 'category', module: 'Enquiries', deletedCol: 'is_deleted' },
 };
 
 export function getCascadeMappings(key) {
@@ -73,6 +76,7 @@ export function normalizeModuleName(mod) {
     if (lower === 'csr') return 'CSR';
     if (lower === 'governing bodies' || lower === 'governing-bodies' || lower === 'governing_bodies') return 'Governing Bodies';
     if (lower === 'website' || lower === 'website pages') return 'Website';
+    if (lower === 'enquiries' || lower === 'enquiry') return 'Enquiries';
     return mod;
 }
 
@@ -319,7 +323,7 @@ export const getDropdowns = async (req, res) => {
 
             // ── Single-key fetch for forms (returns nested tree) ──
             const [rows] = await pool.query(
-                `SELECT id, \`key\`, label, value, color, icon, sort_order, is_default,
+                `SELECT id, \`key\`, label, value, color, icon, sort_order, is_default, is_system,
                         IFNULL(parent_id, 0) AS parent_id, status
                  FROM mla_dropdown_lists
                  WHERE \`key\` = ? AND status = 'Active'
@@ -357,7 +361,7 @@ export const getDropdowns = async (req, res) => {
 
         const [rows] = await pool.query(
             `SELECT id, \`key\`, module, sub_category, label, value, color, icon,
-                    sort_order, is_default, IFNULL(parent_id, 0) AS parent_id,
+                    sort_order, is_default, is_system, IFNULL(parent_id, 0) AS parent_id,
                     status, created_at, updated_at
              FROM mla_dropdown_lists
              ${where}
@@ -379,6 +383,8 @@ export const getDropdowns = async (req, res) => {
             cm_fund_district:    'Application District',
             cm_fund_recommender: 'Application Recommender',
             cmfund_status:       'Application Status',
+            enquiry_status:      'Enquiry Status',
+            enquiry_category:    'Enquiry Category',
         };
 
         const keyToLabel = (k) => FRIENDLY_KEY_LABELS[k] || (k || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -627,11 +633,29 @@ export const updateDropdown = async (req, res) => {
 
             // Load existing rows BEFORE delete to compute diff
             const [existingRows] = await connection.query(
-                'SELECT id, label, value FROM mla_dropdown_lists WHERE `key` = ?',
+                'SELECT id, label, value, is_system FROM mla_dropdown_lists WHERE `key` = ?',
                 [oldKey]
             );
 
-            const { renames } = buildRenameAndDeleteDiff(existingRows, items);
+            const { renames, deletions } = buildRenameAndDeleteDiff(existingRows, items);
+
+            // Prevent deletion or rename of system-protected items (e.g. Draft)
+            for (const row of existingRows) {
+                if (row.is_system || row.value.toLowerCase() === 'draft') {
+                    if (deletions.some(d => d.toLowerCase() === row.value.toLowerCase())) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `"${row.label || row.value}" is a system-protected item and cannot be removed.`
+                        });
+                    }
+                    if (renames.some(r => r.oldValue.toLowerCase() === row.value.toLowerCase())) {
+                        return res.status(400).json({
+                            success: false,
+                            message: `"${row.label || row.value}" is a system-protected item and cannot be renamed.`
+                        });
+                    }
+                }
+            }
 
             await connection.beginTransaction();
             inTransaction = true;

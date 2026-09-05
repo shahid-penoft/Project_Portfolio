@@ -233,6 +233,13 @@ export const getIssues = async (req, res) => {
             conditions.push('c.is_deleted = 0');
         }
 
+        // Intake source filter
+        const srcFilter = req.query.submission_source || req.query.source;
+        if (srcFilter) {
+            conditions.push('c.submission_source = ?');
+            params.push(srcFilter);
+        }
+
         // Constituent scoping — only see own issues
         if (!req.isAdmin && req.constituent) {
             conditions.push('c.constituent_user_id = ?');
@@ -420,6 +427,7 @@ export const createIssue = async (req, res) => {
         const constituentId = req.constituent?.id || null;
         const adminId       = req.admin?.id       || null;
         const isAdminCreation = req.headers?.['x-app-portal'] === 'admin' || (adminId && !constituentId);
+        const submission_source = isAdminCreation ? 'Admin Panel' : 'Public Portal';
         const initialStatus = status || (isAdminCreation ? (await getDropdownDefault('issue_status') || 'Pending') : 'Draft');
 
         const [result] = await pool.query(`
@@ -427,8 +435,8 @@ export const createIssue = async (req, res) => {
               (reference_no, title, category, affected_by, resolved_date, priority, status, description, location, address, latitude, longitude, internal_note,
                submitter_name, phone, alternative_phone, email,
                local_body_id, ward_id, department, address_line1,
-               constituent_user_id, filed_by_admin_id, date_filed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+               constituent_user_id, filed_by_admin_id, date_filed, submission_source)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         `, [
             reference_no,
             title,
@@ -454,6 +462,7 @@ export const createIssue = async (req, res) => {
             constituentId,
             adminId,
             date_filed || new Date().toISOString().split('T')[0],
+            submission_source,
         ]);
 
         const newId = result.insertId;

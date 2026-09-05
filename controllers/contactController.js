@@ -23,8 +23,8 @@ export const submitContact = async (req, res) => {
     try {
         const [result] = await pool.query(
             `INSERT INTO contact_enquiries
-             (full_name, mobile, email, panchayat_id, category, subject, message)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (full_name, mobile, email, panchayat_id, category, subject, message, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 full_name.trim(),
                 mobile.trim(),
@@ -33,6 +33,7 @@ export const submitContact = async (req, res) => {
                 category?.toLowerCase() || 'general',
                 subject?.trim() || null,
                 message.trim(),
+                'Draft',
             ]
         );
 
@@ -154,17 +155,24 @@ export const getEnquiries = async (req, res) => {
         let where = 'WHERE 1=1';
         const params = [];
 
+        const isTrash = req.query.is_deleted === '1' || req.query.trash === '1' || req.query.is_deleted === true || req.query.is_deleted === 'true';
+        if (isTrash) {
+            where += ' AND c.is_deleted = 1';
+        } else {
+            where += ' AND c.is_deleted = 0';
+        }
+
         if (search) {
             const like = `%${search}%`;
             where += ' AND (c.full_name LIKE ? OR c.email LIKE ? OR c.subject LIKE ? OR c.message LIKE ?)';
             params.push(like, like, like, like);
         }
         if (category && category !== 'all') {
-            where += ' AND c.category = ?';
-            params.push(category.toLowerCase());
+            where += ' AND LOWER(c.category) = LOWER(?)';
+            params.push(category);
         }
         if (status && status !== 'all') {
-            where += ' AND c.status = ?';
+            where += ' AND LOWER(c.status) = LOWER(?)';
             params.push(status);
         }
         if (panchayat_id && panchayat_id !== 'all') {
@@ -248,6 +256,13 @@ export const getEnquiryById = async (req, res) => {
             [req.params.id]
         );
         if (!row) return errorResponse(res, 'Enquiry not found.', 404);
+
+        const [notes] = await pool.query(
+            `SELECT * FROM enquiry_notes WHERE enquiry_id = ? ORDER BY created_at DESC`,
+            [req.params.id]
+        );
+        row.notes = notes;
+
         return successResponse(res, { data: row }, 'Enquiry fetched.');
     } catch (err) {
         console.error('[getEnquiryById]', err);
@@ -256,21 +271,30 @@ export const getEnquiryById = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-//  PATCH /api/contact/:id/status  — Admin: mark read/resolved
+//  PATCH /api/contact/:id/status  — Admin: update status
 // ─────────────────────────────────────────────────────────────
 export const updateEnquiryStatus = async (req, res) => {
-    const { status } = req.body;
-    const VALID = ['new', 'read', 'resolved'];
-    if (!VALID.includes(status)) {
-        return errorResponse(res, `status must be one of: ${VALID.join(', ')}.`, 400);
+    const { status, note, remarks } = req.body;
+    if (!status || typeof status !== 'string' || !status.trim()) {
+        return errorResponse(res, 'status is required.', 400);
     }
+    const cleanStatus = status.trim();
     try {
         const [r] = await pool.query(
-            'UPDATE contact_enquiries SET status = ? WHERE id = ?',
-            [status, req.params.id]
+            'UPDATE contact_enquiries SET status = ?, updated_at = NOW() WHERE id = ?',
+            [cleanStatus, req.params.id]
         );
         if (r.affectedRows === 0) return errorResponse(res, 'Enquiry not found.', 404);
-        return successResponse(res, null, `Enquiry marked as ${status}.`);
+
+        const noteContent = (note || remarks || '').trim();
+        if (noteContent) {
+            await pool.query(
+                'INSERT INTO enquiry_notes (enquiry_id, note) VALUES (?, ?)',
+                [req.params.id, noteContent]
+            );
+        }
+
+        return successResponse(res, { id: req.params.id, status: cleanStatus }, `Enquiry status updated to ${cleanStatus}.`);
     } catch (err) {
         console.error('[updateEnquiryStatus]', err);
         return errorResponse(res, 'Failed to update status.');
@@ -282,12 +306,56 @@ export const updateEnquiryStatus = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 export const deleteEnquiry = async (req, res) => {
     try {
-        const [r] = await pool.query('DELETE FROM contact_enquiries WHERE id = ?', [req.params.id]);
-        if (r.affectedRows === 0) return errorResponse(res, 'Enquiry not found.', 404);
-        return successResponse(res, null, 'Enquiry deleted.');
+        const { id } = req.params;
+        const force = req.query.force === 'true' || req.query.force === true;
+        if (force) {
+            const [r] = await pool.query('DELETE FROM contact_enquiries WHERE id = ?', [id]);
+            if (r.affectedRows === 0) return errorResponse(res, 'Enquiry not found.', 404);
+            return successResponse(res, null, 'Enquiry permanently deleted.');
+        } else {
+            const [r] = await pool.query('UPDATE contact_enquiries SET is_deleted = 1, deleted_at = NOW() WHERE id = ?', [id]);
+            if (r.affectedRows === 0) return errorResponse(res, 'Enquiry not found.', 404);
+            return successResponse(res, null, 'Enquiry moved to trash.');
+        }
     } catch (err) {
         console.error('[deleteEnquiry]', err);
         return errorResponse(res, 'Failed to delete enquiry.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  PATCH /api/contact/:id/trash  — Admin: Move enquiry to trash
+// ─────────────────────────────────────────────────────────────
+export const trashEnquiry = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [r] = await pool.query(
+            'UPDATE contact_enquiries SET is_deleted = 1, deleted_at = NOW() WHERE id = ? AND is_deleted = 0',
+            [id]
+        );
+        if (r.affectedRows === 0) return errorResponse(res, 'Enquiry not found or already in trash.', 404);
+        return successResponse(res, { id }, 'Enquiry moved to trash.');
+    } catch (err) {
+        console.error('[trashEnquiry]', err);
+        return errorResponse(res, 'Failed to move enquiry to trash.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  PATCH /api/contact/:id/restore  — Admin: Restore enquiry from trash
+// ─────────────────────────────────────────────────────────────
+export const restoreEnquiry = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [r] = await pool.query(
+            'UPDATE contact_enquiries SET is_deleted = 0, deleted_at = NULL WHERE id = ? AND is_deleted = 1',
+            [id]
+        );
+        if (r.affectedRows === 0) return errorResponse(res, 'Enquiry not found in trash.', 404);
+        return successResponse(res, { id }, 'Enquiry restored successfully.');
+    } catch (err) {
+        console.error('[restoreEnquiry]', err);
+        return errorResponse(res, 'Failed to restore enquiry.');
     }
 };
 
@@ -663,7 +731,7 @@ export const getEnquiryStats = async (req, res) => {
     try {
         const { panchayat_id, ward_id } = req.query;
 
-        const conditions = [];
+        const conditions = ["c.is_deleted = 0"];
         const params = [];
 
         if (panchayat_id) {
@@ -685,15 +753,40 @@ export const getEnquiryStats = async (req, res) => {
             return all.length ? `${base} AND ${all.join(' AND ')}` : base;
         };
 
-        // Core status counts
+        // Dynamic status breakdown
+        const [statusRows] = await pool.query(
+            buildWhere(
+                `SELECT c.status, COUNT(*) AS count
+                 FROM contact_enquiries c`
+            ) + ' GROUP BY c.status',
+            params
+        );
+
+        const statusCounts = {};
+        let totalCount = 0;
+        statusRows.forEach(r => {
+            const cnt = Number(r.count);
+            totalCount += cnt;
+            statusCounts[r.status] = cnt;
+            statusCounts[r.status.toLowerCase()] = cnt;
+        });
+
+        // Trashed enquiries count
+        const [[{ trashCount }]] = await pool.query(
+            "SELECT COUNT(*) AS trashCount FROM contact_enquiries WHERE is_deleted = 1"
+        );
+        statusCounts.trash = Number(trashCount || 0);
+        statusCounts.trashCount = Number(trashCount || 0);
+        statusCounts.draft = Number(statusCounts.draft || statusCounts.Draft || 0);
+        statusCounts.Draft = statusCounts.draft;
+        statusCounts.drafts = statusCounts.draft;
+
+        // Core totals and SLA metrics
         const [[totals]] = await pool.query(
             buildWhere(
                 `SELECT
                     COUNT(*) AS total,
-                    SUM(c.status = 'new')      AS new_count,
-                    SUM(c.status = 'read')     AS read_count,
-                    SUM(c.status = 'resolved') AS resolved_count,
-                    SUM(c.status != 'resolved' AND c.created_at < NOW() - INTERVAL 72 HOUR) AS overdue_count
+                    SUM(LOWER(c.status) != 'resolved' AND c.created_at < NOW() - INTERVAL 72 HOUR) AS overdue_count
                  FROM contact_enquiries c`
             ),
             params
@@ -765,16 +858,18 @@ export const getEnquiryStats = async (req, res) => {
             byPanchayat = rows;
         }
 
+        const totalEnquiries = Number(totals.total || totalCount);
+        const resolvedEnquiries = Number(statusCounts['Resolved'] || statusCounts['resolved'] || 0);
+
         return successResponse(res, {
             data: {
-                total: Number(totals.total),
-                new: Number(totals.new_count),
-                read: Number(totals.read_count),
-                resolved: Number(totals.resolved_count),
+                total: totalEnquiries,
+                ...statusCounts,
+                byStatus: statusCounts,
                 overdue: Number(totals.overdue_count || 0),
                 avg_resolution_hours: resolution.avg_hours ? Number(resolution.avg_hours) : null,
-                resolution_rate: totals.total > 0
-                    ? Math.round((Number(totals.resolved_count) / Number(totals.total)) * 100)
+                resolution_rate: totalEnquiries > 0
+                    ? Math.round((resolvedEnquiries / totalEnquiries) * 100)
                     : 0,
                 byCategory,
                 weeklyTrend,
@@ -879,10 +974,29 @@ export const addEnquiryNote = async (req, res) => {
             'INSERT INTO enquiry_notes (enquiry_id, note) VALUES (?, ?)',
             [req.params.id, note.trim()]
         );
-        return successResponse(res, { id: result.insertId }, 'Note added.', 201);
+        return successResponse(res, { id: result.insertId, note: note.trim() }, 'Note added.', 201);
     } catch (err) {
         console.error('[addEnquiryNote]', err);
         return errorResponse(res, 'Failed to add note.');
+    }
+};
+
+// ─────────────────────────────────────────────────────────────
+//  DELETE /api/contact/:id/notes/:noteId  — Admin: delete a note
+// ─────────────────────────────────────────────────────────────
+export const deleteEnquiryNote = async (req, res) => {
+    try {
+        const [result] = await pool.query(
+            'DELETE FROM enquiry_notes WHERE id = ? AND enquiry_id = ?',
+            [req.params.noteId, req.params.id]
+        );
+        if (result.affectedRows === 0) {
+            return errorResponse(res, 'Note not found.', 404);
+        }
+        return successResponse(res, null, 'Note deleted.');
+    } catch (err) {
+        console.error('[deleteEnquiryNote]', err);
+        return errorResponse(res, 'Failed to delete note.');
     }
 };
 

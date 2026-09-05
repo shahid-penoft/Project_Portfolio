@@ -112,6 +112,37 @@ export const getNextAppId = async (req, res) => {
   }
 };
 
+export const expandApplicationTypes = (rawAppType) => {
+  if (!rawAppType || rawAppType === 'All') return null;
+  const appTypes = String(rawAppType).split(',').map(t => t.trim()).filter(Boolean);
+  const expandedTypes = new Set(appTypes);
+  appTypes.forEach(t => {
+    const lower = t.toLowerCase().trim();
+    const clean = lower.replace(/[^a-z]/g, '');
+    if (clean === 'tgrants' || clean === 'tgrantz') {
+      expandedTypes.add('T-Grants');
+      expandedTypes.add('T Grants');
+      expandedTypes.add('TGrantz');
+      expandedTypes.add('T-Grantz');
+      expandedTypes.add('t- grantz');
+    } else if (clean === 'cmdrf' || clean === 'cmfund' || lower === 'cm fund' || lower === 'aid') {
+      expandedTypes.add('CMDRF');
+      expandedTypes.add('CM Fund');
+      expandedTypes.add('CM Relief Fund');
+      expandedTypes.add('Aid');
+    } else if (clean === 'mlafund' || clean === 'mla' || lower === 'mla fund') {
+      expandedTypes.add('MLA Fund');
+      expandedTypes.add('mlafund');
+      expandedTypes.add('MLA-Fund');
+    } else if (clean === 'general') {
+      expandedTypes.add('General');
+      expandedTypes.add('general');
+      expandedTypes.add('General Application');
+    }
+  });
+  return Array.from(expandedTypes);
+};
+
 export const listRequests = async (req, res) => {
   try {
     const {
@@ -133,7 +164,15 @@ export const listRequests = async (req, res) => {
              o.full_name as assigned_officer_name,
              d.full_name as deleted_by_name,
              lb.name as local_body_name,
-             CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name,
+             w.ward_no as ward_no,
+             w.place_name as ward_place_name,
+             IF(w.ward_no IS NOT NULL, 
+                IF(w.place_name IS NOT NULL AND TRIM(w.place_name) != '', 
+                   CONCAT('Ward ', w.ward_no, ' - ', w.place_name), 
+                   CONCAT('Ward ', w.ward_no)
+                ), 
+                w.place_name
+             ) as ward_name,
              (SELECT JSON_OBJECT(
                  'id', id, 'type', type, 'title', title, 'created_at', created_at
               ) FROM cm_fund_updates WHERE request_id = r.id AND type != 'Communication' ORDER BY created_at DESC LIMIT 1) as last_update,
@@ -184,20 +223,10 @@ export const listRequests = async (req, res) => {
     }
 
     const rawAppType = application_type || applicationType;
-    if (rawAppType && rawAppType !== 'All') {
-      const appTypes = rawAppType.split(',').map(t => t.trim());
-      const expandedTypes = new Set(appTypes);
-      appTypes.forEach(t => {
-        const clean = t.toLowerCase().replace(/[^a-z]/g, '');
-        if (clean === 'tgrants' || clean === 'tgrantz') {
-          expandedTypes.add('T-Grants');
-          expandedTypes.add('TGrantz');
-          expandedTypes.add('T-Grantz');
-          expandedTypes.add('t- grantz');
-        }
-      });
+    const expandedAppTypes = expandApplicationTypes(rawAppType);
+    if (expandedAppTypes && expandedAppTypes.length > 0) {
       baseQuery += ` AND r.application_type IN (?)`;
-      queryParams.push(Array.from(expandedTypes));
+      queryParams.push(expandedAppTypes);
     }
 
     const rawCategory = category || category_id;
@@ -219,6 +248,13 @@ export const listRequests = async (req, res) => {
       const wards = rawWard.split(',');
       baseQuery += ` AND r.ward_id IN (?)`;
       queryParams.push(wards);
+    }
+
+    const rawSource = req.query.submission_source || req.query.source;
+    if (rawSource && rawSource !== 'All') {
+      const sources = rawSource.split(',');
+      baseQuery += ` AND r.submission_source IN (?)`;
+      queryParams.push(sources);
     }
 
     if (startDate) {
@@ -308,18 +344,46 @@ export const listRequests = async (req, res) => {
     const dataQuery = `${baseQuery} ${orderClause} LIMIT ? OFFSET ?`;
     const [data] = await pool.query(dataQuery, [...queryParams, parseInt(limit), offset]);
 
-    // Status counts — keys match frontend Tabs display values
-    const [statusRows] = await pool.query(`
-      SELECT status, COUNT(*) as count FROM cm_fund_requests GROUP BY status
-    `);
+    // Status counts — scoped to application type and deletion status
+    let statusCountsQuery = `
+      SELECT status, COUNT(*) as count 
+      FROM cm_fund_requests 
+      WHERE is_deleted = ?
+    `;
+    const statusCountsParams = [isTrash ? 1 : 0];
+
+    if (expandedAppTypes && expandedAppTypes.length > 0) {
+      statusCountsQuery += ` AND application_type IN (?)`;
+      statusCountsParams.push(expandedAppTypes);
+    }
+    statusCountsQuery += ` GROUP BY status`;
+
+    const [statusRows] = await pool.query(statusCountsQuery, statusCountsParams);
 
     const counts = { all: 0 };
     let totalCount = 0;
     statusRows.forEach(row => {
-      totalCount += parseInt(row.count, 10);
-      counts[row.status] = parseInt(row.count, 10); // e.g. counts['Under Review'] = 3
+      const cnt = parseInt(row.count, 10);
+      totalCount += cnt;
+      counts[row.status] = cnt;
     });
     counts.all = totalCount;
+
+    // Type-scoped draft count for the Drafts tab
+    let draftCountQuery = `
+      SELECT COUNT(*) as count 
+      FROM cm_fund_requests 
+      WHERE is_deleted = 0 AND status = 'Draft'
+    `;
+    const draftCountParams = [];
+    if (expandedAppTypes && expandedAppTypes.length > 0) {
+      draftCountQuery += ` AND application_type IN (?)`;
+      draftCountParams.push(expandedAppTypes);
+    }
+    const [draftCountRows] = await pool.query(draftCountQuery, draftCountParams);
+    const draftCount = draftCountRows[0]?.count || 0;
+    counts.Drafts = draftCount;
+    counts.Draft = draftCount;
 
     res.json({
       data,
@@ -330,11 +394,58 @@ export const listRequests = async (req, res) => {
         total,
         totalPages: Math.ceil(total / limit)
       },
-      counts
+      counts,
+      draftCount
     });
   } catch (err) {
     console.error('Error in listRequests:', err);
     res.status(500).json({ error: 'Failed to fetch requests' });
+  }
+};
+
+export const listRequestsByType = (targetType) => {
+  return async (req, res) => {
+    req.query.application_type = targetType;
+    return listRequests(req, res);
+  };
+};
+
+export const listCmdrfRequests = listRequestsByType('CMDRF');
+export const listMlaFundRequests = listRequestsByType('MLA Fund');
+export const listGeneralRequests = listRequestsByType('General');
+export const listTGrantsRequests = listRequestsByType('T-Grants');
+
+export const getDraftCounts = async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT application_type, COUNT(*) as count 
+      FROM cm_fund_requests 
+      WHERE is_deleted = 0 AND status = 'Draft'
+      GROUP BY application_type
+    `);
+
+    const counts = {
+      all: 0,
+      CMDRF: 0,
+      'MLA Fund': 0,
+      General: 0,
+      'T-Grants': 0
+    };
+
+    rows.forEach(r => {
+      const type = r.application_type;
+      const count = parseInt(r.count, 10);
+      counts.all += count;
+      if (type === 'CMDRF') counts.CMDRF = count;
+      else if (type === 'General') counts.General = count;
+      else if (type === 'MLA Fund') counts['MLA Fund'] = count;
+      else if (type === 'T-Grants' || type === 'T Grants') counts['T-Grants'] += count;
+    });
+
+    res.json({ success: true, data: counts });
+  } catch (err) {
+    console.error('Error getting draft counts:', err);
+    res.status(500).json({ error: 'Failed to get draft counts' });
   }
 };
 
@@ -396,6 +507,7 @@ export const createRequest = async (req, res) => {
     let assignedOfficerId = b.assigned_officer_id || b.officer || null;
     if (assignedOfficerId === "Unassigned") assignedOfficerId = null;
     let initialStatus = b.status || (isAdminCreation ? 'Submitted' : 'Draft');
+    const submissionSource = isAdminCreation ? 'Admin Panel' : 'Public Portal';
 
     await connection.query(`
       INSERT INTO cm_fund_requests (
@@ -404,15 +516,15 @@ export const createRequest = async (req, res) => {
         category_id, sub_category, priority, amount_requested, description,
         bank_name, account_number, ifsc_code, branch, account_holder_name,
         recommended_by, recommender_name, recommender_contact, remarks,
-        status, assigned_officer_id, submitted_by_id, date_filed
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        status, assigned_officer_id, submitted_by_id, date_filed, submission_source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       appId, applicationTitle, applicantName, applicantPhone, email, alternatePhone, aadhaarNumber, rationCardNumber, panCardNumber,
       localBody, ward, addressLine1, addressLine2, address, location, latitude, longitude, city, district, state, pincode, applicationType,
       categoryId, subCategory, priority, amountRequested, description,
       bankName, accountNumber, ifscCode, branch, accountHolderName,
       recommendedBy, recommenderName, recommenderContact, remarks,
-      initialStatus, assignedOfficerId, userId, dateFiled
+      initialStatus, assignedOfficerId, userId, dateFiled, submissionSource
     ]);
 
     // Handle uploaded documents
@@ -568,14 +680,14 @@ export const createDraftRequest = async (req, res) => {
         amount_requested, description, remarks,
         status, submitted_by_id,
         address_line1, local_body_id, ward_id, city, district, state, pincode, application_type,
-        bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by, date_filed
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        bank_name, account_number, ifsc_code, branch, account_holder_name, recommended_by, date_filed, submission_source
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       appId, applicationTitle, applicantName, applicantPhone, email, categoryId, subCategory, priority,
       amountRequested, description, remarks,
       status, userId,
       addressLine1, localBody, ward, '', '', 'Kerala', '', applicationType,
-      '', '', '', '', '', recommendedBy, dateFiled
+      '', '', '', '', '', recommendedBy, dateFiled, 'Admin Panel'
     ]);
 
     await connection.query(`
@@ -666,7 +778,15 @@ export const getRequest = async (req, res) => {
              d.full_name as deleted_by_name,
              lb.name as local_body_name,
              up.full_name as updated_by_admin_name,
-             CONCAT('Ward ', w.ward_no, ' - ', w.place_name) as ward_name
+             w.ward_no as ward_no,
+             w.place_name as ward_place_name,
+             IF(w.ward_no IS NOT NULL, 
+                IF(w.place_name IS NOT NULL AND TRIM(w.place_name) != '', 
+                   CONCAT('Ward ', w.ward_no, ' - ', w.place_name), 
+                   CONCAT('Ward ', w.ward_no)
+                ), 
+                w.place_name
+             ) as ward_name
       FROM cm_fund_requests r
       LEFT JOIN cm_fund_categories c ON r.category_id = c.id
       LEFT JOIN admin_users u ON r.submitted_by_id = u.id

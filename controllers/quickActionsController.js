@@ -1,5 +1,6 @@
 import db from '../configs/db.js';
 import { successResponse, errorResponse } from '../utils/helpers.js';
+import { expandApplicationTypes } from './cmFundsController.js';
 
 const parseArrayParam = (param) => {
     if (!param) return [];
@@ -15,6 +16,8 @@ export const getUnifiedItems = async (req, res) => {
             limit = 10,
             search = '',
             module = 'all',
+            application_type = '',
+            applicationType = '',
             priority = '',
             daysLeft = '', // comma-separated: 'critical,warning,safe'
             sortBy = '', // 'Most Recent', 'Least Recent', 'Title A-Z', 'Title Z-A', 'Expiring Soon', 'Expiring Last', 'Recently Deleted'
@@ -55,10 +58,13 @@ export const getUnifiedItems = async (req, res) => {
                 IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 c.priority AS priority,
                 c.status AS status,
+                NULL AS application_type,
                 c.created_at AS created_at,
                 c.updated_at AS updated_at,
                 c.deleted_at AS deleted_at,
-                u.full_name AS created_by,
+                c.submission_source AS submission_source,
+                COALESCE(u.full_name, c.complainant_name) AS created_by,
+                c.complainant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM complaints c
             LEFT JOIN local_bodies lb ON c.local_body_id = lb.id
@@ -81,10 +87,13 @@ export const getUnifiedItems = async (req, res) => {
                 IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 i.priority AS priority,
                 i.status AS status,
+                NULL AS application_type,
                 i.created_at AS created_at,
                 i.updated_at AS updated_at,
                 i.deleted_at AS deleted_at,
-                u.full_name AS created_by,
+                i.submission_source AS submission_source,
+                COALESCE(u.full_name, i.submitter_name) AS created_by,
+                i.submitter_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM issues i
             LEFT JOIN local_bodies lb ON i.local_body_id = lb.id
@@ -107,10 +116,13 @@ export const getUnifiedItems = async (req, res) => {
                 IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 f.priority AS priority,
                 f.status AS status,
+                f.application_type AS application_type,
                 f.created_at AS created_at,
                 f.updated_at AS updated_at,
                 f.deleted_at AS deleted_at,
-                u.full_name AS created_by,
+                f.submission_source AS submission_source,
+                COALESCE(u.full_name, f.applicant_name) AS created_by,
+                f.applicant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM cm_fund_requests f
             LEFT JOIN local_bodies lb ON f.local_body_id = lb.id
@@ -133,10 +145,13 @@ export const getUnifiedItems = async (req, res) => {
                 NULL AS ward_name,
                 l.priority AS priority,
                 l.status AS status,
+                NULL AS application_type,
                 l.created_at AS created_at,
                 l.updated_at AS updated_at,
                 l.trashed_at AS deleted_at,
+                'Admin Panel' AS submission_source,
                 u.full_name AS created_by,
+                NULL AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM mla_letters l
             LEFT JOIN admin_users u ON l.prepared_by_user_id = u.id
@@ -157,10 +172,13 @@ export const getUnifiedItems = async (req, res) => {
                 IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 'Normal' AS priority,
                 g.status AS status,
+                NULL AS application_type,
                 g.created_at AS created_at,
                 g.updated_at AS updated_at,
                 g.deleted_at AS deleted_at,
+                'Admin Panel' AS submission_source,
                 u.full_name AS created_by,
+                NULL AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM governing_representatives g
             LEFT JOIN local_bodies lb ON g.local_body_id = lb.id
@@ -195,10 +213,13 @@ export const getUnifiedItems = async (req, res) => {
                 IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 id.priority AS priority,
                 id.status AS status,
+                NULL AS application_type,
                 id.created_at AS created_at,
                 id.updated_at AS updated_at,
                 id.deleted_at AS deleted_at,
-                u.full_name AS created_by,
+                id.submission_source AS submission_source,
+                COALESCE(u.full_name, id.complainant_name) AS created_by,
+                id.complainant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM ideas id
             LEFT JOIN local_bodies lb ON id.local_body_id = lb.id
@@ -221,10 +242,13 @@ export const getUnifiedItems = async (req, res) => {
                 IFNULL(w.place_name, IF(w.ward_no IS NOT NULL, CONCAT('Ward ', w.ward_no), NULL)) AS ward_name,
                 s.priority AS priority,
                 s.status AS status,
+                NULL AS application_type,
                 s.created_at AS created_at,
                 s.updated_at AS updated_at,
                 s.deleted_at AS deleted_at,
-                u.full_name AS created_by,
+                s.submission_source AS submission_source,
+                COALESCE(u.full_name, s.complainant_name) AS created_by,
+                s.complainant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM suggestions s
             LEFT JOIN local_bodies lb ON s.local_body_id = lb.id
@@ -246,6 +270,14 @@ export const getUnifiedItems = async (req, res) => {
             const placeholders = mArray.map(() => '?').join(',');
             outerQuery += ` AND module IN (${placeholders})`;
             params.push(...mArray);
+        }
+
+        const rawAppType = application_type || applicationType;
+        const expandedAppTypes = expandApplicationTypes(rawAppType);
+        if (expandedAppTypes && expandedAppTypes.length > 0) {
+            const placeholders = expandedAppTypes.map(() => '?').join(',');
+            outerQuery += ` AND (application_type IN (${placeholders}) OR module != 'Applications')`;
+            params.push(...expandedAppTypes);
         }
 
         const pArray = parseArrayParam(priority);
