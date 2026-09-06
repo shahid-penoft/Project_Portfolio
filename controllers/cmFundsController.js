@@ -818,7 +818,7 @@ export const getRequest = async (req, res) => {
     `, [id]);
 
     const [updates] = await pool.query(`
-      SELECT u.*, au.full_name AS author_name, au.full_name AS admin_name, m.media_type, m.file_url, m.file_name
+      SELECT u.*, au.full_name AS author_name, au.full_name AS admin_name, m.id AS media_id, m.media_type, m.file_url, m.file_name
       FROM cm_fund_updates u
       LEFT JOIN admin_users au ON u.admin_user_id = au.id
       LEFT JOIN cm_fund_update_media m ON u.id = m.update_id
@@ -840,6 +840,13 @@ export const getRequest = async (req, res) => {
           admin_user_id: row.admin_user_id,
           author_name: row.author_name,
           admin_name: row.author_name,
+          hide_from_public: row.hide_from_public,
+          comm_channel: row.comm_channel,
+          comm_sent_at: row.comm_sent_at,
+          sms_sent: row.sms_sent,
+          sms_body: row.sms_body,
+          email_sent: row.email_sent,
+          email_body: row.email_body,
           gallery: [],
           attachments: []
         };
@@ -847,13 +854,13 @@ export const getRequest = async (req, res) => {
       if (row.file_url) {
         if (row.media_type === 'document') {
           formattedUpdatesMap[row.id].attachments.push({
-            id: row.file_url,
+            id: row.media_id || row.file_url,
             name: row.file_name || 'Document',
             file_url: row.file_url
           });
         } else {
           formattedUpdatesMap[row.id].gallery.push({
-            id: row.file_url,
+            id: row.media_id || row.file_url,
             type: row.media_type,
             previewUrl: row.file_url
           });
@@ -866,6 +873,8 @@ export const getRequest = async (req, res) => {
               'Communication' AS type, 
               CONCAT(cl.channel, ' Sent') AS title, 
               cl.channel,
+              cl.recipient,
+              cl.update_id,
               cl.message AS note, 
               cl.created_at, 
               'communications_logs' as _source,
@@ -885,6 +894,9 @@ export const getRequest = async (req, res) => {
       rawId: cl.id,
       request_id: id,
       type: 'Communication',
+      channel: cl.channel,
+      recipient: cl.recipient,
+      update_id: cl.update_id,
       title: cl.title,
       note: cl.note,
       created_at: cl.created_at,
@@ -897,7 +909,7 @@ export const getRequest = async (req, res) => {
     }));
 
     // Convert map to array and merge with commLogs, then sort DESC
-    const updatesArray = [...Object.values(formattedUpdatesMap), ...commLogsMapped].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const updatesArray = [...Object.values(formattedUpdatesMap), ...commLogsMapped].sort((a, b) => (new Date(b.created_at) - new Date(a.created_at)) || ((Number(b.id) || 0) - (Number(a.id) || 0)));
 
     const [team] = await pool.query(`
       SELECT ct.id, ct.role_label, ct.created_at,
@@ -1245,11 +1257,13 @@ export const addUpdate = async (req, res) => {
     }
     const application = requestRows[0];
 
+    const isHidden = (req.body.hide_from_public === '1' || req.body.hide_from_public === 'true' || req.body.hide_from_public === 1 || req.body.hide_from_public === true) ? 1 : 0;
+
     // Insert the update
     const [result] = await connection.query(`
-      INSERT INTO cm_fund_updates (request_id, type, title, note, notify_complainant, admin_user_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [id, type, title, note || null, isNotify ? 1 : 0, req.admin?.id || null]);
+      INSERT INTO cm_fund_updates (request_id, type, title, note, notify_complainant, admin_user_id, hide_from_public)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [id, type, title, note || null, isNotify ? 1 : 0, req.admin?.id || null, isHidden]);
 
     const updateId = result.insertId;
 
@@ -1296,9 +1310,14 @@ export const addUpdate = async (req, res) => {
         if (notify_channels) channels = JSON.parse(notify_channels);
       } catch (e) { }
 
+      let didSendSms = false;
+      let didSendEmail = false;
+      let finalSms = null;
+      let finalEmail = null;
+
       // Send SMS if selected
       if (application.applicant_phone && channels.includes('sms')) {
-        const smsMessage = custom_sms_message || followUpUpdateSMS({
+        finalSms = custom_sms_message || followUpUpdateSMS({
           name: application.applicant_name,
           referenceNo: id,
           statusTitle: title,
@@ -1306,29 +1325,43 @@ export const addUpdate = async (req, res) => {
           updateDate: new Date(),
           dateFiled: application.date_filed,
         });
-        sendSMSSafe(application.applicant_phone, smsMessage);
+        sendSMSSafe(application.applicant_phone, finalSms);
+        didSendSms = true;
 
         // Log SMS communication
         await pool.query(
-          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
-          ['Application', id, 'SMS', application.applicant_phone, smsMessage, req.admin?.id || null]
+          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id, update_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['Application', id, 'SMS', application.applicant_phone, finalSms, req.admin?.id || null, updateId]
         ).catch(err => console.warn('[addCmFundUpdate SMS Log failed]', err.message));
       }
 
       // Send Email if selected
       const targetEmail = req.body.email || req.body.applicant_email || null;
       if (targetEmail && channels.includes('email') && custom_email_message?.trim()) {
+        finalEmail = custom_email_message.trim();
         sendNotificationEmail({
           to: targetEmail,
           subject: `Update on your CM Fund Application #${id}`,
-          message: custom_email_message.trim()
+          message: finalEmail
         }).catch(err => console.error('[addCmFundUpdate Email Error]', err));
+        didSendEmail = true;
 
         // Log Email communication
         await pool.query(
-          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
-          ['Application', id, 'Email', targetEmail, custom_email_message.trim(), req.admin?.id || null]
+          `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id, update_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ['Application', id, 'Email', targetEmail, finalEmail, req.admin?.id || null, updateId]
         ).catch(err => console.warn('[addCmFundUpdate Email Log failed]', err.message));
+      }
+
+      if (didSendSms || didSendEmail) {
+        const commChannel = (didSendSms && didSendEmail) ? 'both' : (didSendSms ? 'sms' : 'email');
+        const now = new Date();
+        await pool.query(
+          `UPDATE cm_fund_updates 
+           SET comm_channel = ?, comm_sent_at = ?, sms_sent = ?, sms_body = ?, email_sent = ?, email_body = ?
+           WHERE id = ?`,
+          [commChannel, now, didSendSms ? 1 : 0, finalSms, didSendEmail ? 1 : 0, finalEmail, updateId]
+        ).catch(err => console.warn('[addCmFundUpdate comm update failed]', err.message));
       }
     }
 
@@ -1348,13 +1381,23 @@ export const editUpdate = async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const { id, updateId } = req.params;
-    const { type, title, note, retained_media_ids } = req.body;
+    const { type, title, note, retained_media_ids, hide_from_public } = req.body;
 
     await connection.beginTransaction();
 
+    const updateFields = ['type = ?', 'title = ?', 'note = ?'];
+    const updateParams = [type, title, note || null];
+
+    if (hide_from_public !== undefined) {
+      const isHidden = (hide_from_public === '1' || hide_from_public === 'true' || hide_from_public === 1 || hide_from_public === true) ? 1 : 0;
+      updateFields.push('hide_from_public = ?');
+      updateParams.push(isHidden);
+    }
+
+    updateParams.push(updateId, id);
     await connection.query(
-      'UPDATE cm_fund_updates SET type = ?, title = ?, note = ? WHERE id = ? AND request_id = ?',
-      [type, title, note || null, updateId, id]
+      `UPDATE cm_fund_updates SET ${updateFields.join(', ')} WHERE id = ? AND request_id = ?`,
+      updateParams
     );
 
     let retainedMedia = [];

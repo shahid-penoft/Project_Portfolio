@@ -102,7 +102,7 @@ const UPDATES_META = {
     issue:      { table: 'issue_updates',       fk: 'issue_id'      },
     idea:       { table: 'idea_updates',         fk: 'idea_id'       },
     suggestion: { table: 'suggestion_updates',  fk: 'suggestion_id' },
-    cm_fund:    { table: 'cm_fund_request_updates', fk: 'request_id' },
+    cm_fund:    { table: 'cm_fund_updates',     fk: 'request_id'    },
     letter:     { table: 'mla_letter_activity',     fk: 'letter_id' },
 };
 
@@ -126,11 +126,14 @@ const fetchUpdates = async (source, petitionId) => {
     if (!meta) return [];
     try {
         const [rows] = await pool.query(
-            `SELECT * FROM \`${meta.table}\` WHERE \`${meta.fk}\` = ? ORDER BY created_at ASC LIMIT 15`,
+            `SELECT * FROM \`${meta.table}\` 
+             WHERE \`${meta.fk}\` = ? 
+               AND (hide_from_public = 0 OR hide_from_public IS NULL) 
+             ORDER BY created_at ASC LIMIT 15`,
             [petitionId]
         );
 
-        // Fetch communications logs
+        // Fetch communications logs (excluding those from hidden updates)
         let entityType = 'Complaint';
         if (source === 'issue') entityType = 'Issue';
         if (source === 'idea') entityType = 'Idea';
@@ -151,6 +154,7 @@ const fetchUpdates = async (source, petitionId) => {
              FROM communications_logs cl
              LEFT JOIN admin_users au ON cl.admin_user_id = au.id
              WHERE cl.entity_type = ? AND cl.entity_id COLLATE utf8mb4_unicode_ci = ?
+               AND (cl.update_id IS NULL OR cl.update_id NOT IN (SELECT id FROM \`${meta.table}\` WHERE hide_from_public = 1))
              ORDER BY cl.created_at ASC`,
             [entityType, String(petitionId)]
         );

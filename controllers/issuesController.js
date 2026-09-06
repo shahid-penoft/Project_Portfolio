@@ -171,6 +171,8 @@ const fetchFullIssue = async (id) => {
                 'Communication' AS type, 
                 CONCAT(cl.channel, ' Sent') AS title, 
                 cl.channel,
+                cl.recipient,
+                cl.update_id,
                 cl.message AS note, 
                 cl.created_at, 
                 'communications_logs' as _source,
@@ -186,7 +188,7 @@ const fetchFullIssue = async (id) => {
          ORDER BY cl.created_at ASC`, 
         [String(realId), String(issue.reference_no || realId)]
     );
-    const combinedUpdatesRaw = [...updates, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const combinedUpdatesRaw = [...updates, ...commLogs].sort((a, b) => (new Date(b.created_at) - new Date(a.created_at)) || ((Number(b.id) || 0) - (Number(a.id) || 0)));
 
     const [allMedia]       = await pool.query('SELECT * FROM issue_media       WHERE issue_id = ? ORDER BY created_at ASC', [realId]);
     const [allAttachments] = await pool.query('SELECT * FROM issue_attachments WHERE issue_id = ? ORDER BY created_at ASC', [realId]);
@@ -762,12 +764,14 @@ export const deleteIssue = async (req, res) => {
 export const addIssueUpdate = async (req, res) => {
     try {
         const { id } = req.params;
-        const { type, title, note, notify_complainant, custom_sms_message, custom_email_message, notify_channels } = req.body;
+        const { type, title, note, notify_complainant, custom_sms_message, custom_email_message, notify_channels, hide_from_public } = req.body;
         if (!title) return res.status(400).json({ success: false, message: 'title is required.' });
 
+        const isHidden = (hide_from_public === '1' || hide_from_public === 'true' || hide_from_public === 1 || hide_from_public === true) ? 1 : 0;
+
         const [result] = await pool.query(
-            'INSERT INTO issue_updates (issue_id, type, title, note, admin_user_id) VALUES (?,?,?,?,?)',
-            [id, type || 'Status Update', title, note || null, req.admin?.id || null]
+            'INSERT INTO issue_updates (issue_id, type, title, note, admin_user_id, hide_from_public) VALUES (?,?,?,?,?,?)',
+            [id, type || 'Status Update', title, note || null, req.admin?.id || null, isHidden]
         );
         const updateId = result.insertId;
 
@@ -827,9 +831,14 @@ export const addIssueUpdate = async (req, res) => {
                 'SELECT submitter_name, email, phone, reference_no, COALESCE(date_filed, created_at) AS date_filed FROM issues WHERE id = ?', [id]
             );
 
+            let didSendSms = false;
+            let didSendEmail = false;
+            let finalSms = null;
+            let finalEmail = null;
+
             // Send SMS if selected
             if (rec?.phone && channels.includes('sms')) {
-                const finalSms = custom_sms_message?.trim() || followUpUpdateSMS({
+                finalSms = custom_sms_message?.trim() || followUpUpdateSMS({
                     name: rec.submitter_name,
                     referenceNo: rec.reference_no,
                     statusTitle: title,
@@ -837,25 +846,37 @@ export const addIssueUpdate = async (req, res) => {
                     updateDate: new Date(),
                 });
                 sendSMSSafe(rec.phone, finalSms);
-                await pool.query('UPDATE issue_updates SET sms_sent = 1, sms_body = ? WHERE id = ?', [finalSms, updateId]).catch(err => console.warn('[sms_sent update failed]', err.message));
+                didSendSms = true;
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
-                    ['Issue', id, 'SMS', rec.phone.trim(), finalSms, req.admin?.id || null]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id, update_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    ['Issue', id, 'SMS', rec.phone.trim(), finalSms, req.admin?.id || null, updateId]
                 ).catch(err => console.warn('[Log failed]', err.message));
             }
 
             // Send Email if selected
             if (rec?.email && channels.includes('email') && custom_email_message?.trim()) {
-                const emailMsg = custom_email_message.trim();
+                finalEmail = custom_email_message.trim();
                 sendNotificationEmail({
                     to: rec.email,
                     subject: `Update on your Issue ${rec.reference_no || ''}`,
-                    message: emailMsg
+                    message: finalEmail
                 }).catch(err => console.error('[addIssueUpdate Email Error]', err));
+                didSendEmail = true;
                 await pool.query(
-                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
-                    ['Issue', id, 'Email', rec.email.trim(), emailMsg, req.admin?.id || null]
+                    `INSERT INTO communications_logs (entity_type, entity_id, channel, recipient, message, admin_user_id, update_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                    ['Issue', id, 'Email', rec.email.trim(), finalEmail, req.admin?.id || null, updateId]
                 ).catch(err => console.warn('[Log failed]', err.message));
+            }
+
+            if (didSendSms || didSendEmail) {
+                const commChannel = (didSendSms && didSendEmail) ? 'both' : (didSendSms ? 'sms' : 'email');
+                const now = new Date();
+                await pool.query(
+                    `UPDATE issue_updates 
+                     SET comm_channel = ?, comm_sent_at = ?, sms_sent = ?, sms_body = ?, email_sent = ?, email_body = ?
+                     WHERE id = ?`,
+                    [commChannel, now, didSendSms ? 1 : 0, finalSms, didSendEmail ? 1 : 0, finalEmail, updateId]
+                ).catch(err => console.warn('[comm update failed]', err.message));
             }
         }
 
@@ -873,11 +894,21 @@ export const addIssueUpdate = async (req, res) => {
 export const editIssueUpdate = async (req, res) => {
     try {
         const { id, updateId } = req.params;
-        const { type, title, note, retained_media_ids, retained_attachment_ids } = req.body;
+        const { type, title, note, retained_media_ids, retained_attachment_ids, hide_from_public } = req.body;
 
+        const updateFields = ['type = ?', 'title = ?', 'note = ?'];
+        const updateParams = [type || 'Status Update', title, note || null];
+
+        if (hide_from_public !== undefined) {
+            const isHidden = (hide_from_public === '1' || hide_from_public === 'true' || hide_from_public === 1 || hide_from_public === true) ? 1 : 0;
+            updateFields.push('hide_from_public = ?');
+            updateParams.push(isHidden);
+        }
+
+        updateParams.push(updateId, id);
         await pool.query(
-            'UPDATE issue_updates SET type = ?, title = ?, note = ? WHERE id = ? AND issue_id = ?',
-            [type || 'Status Update', title, note || null, updateId, id]
+            `UPDATE issue_updates SET ${updateFields.join(', ')} WHERE id = ? AND issue_id = ?`,
+            updateParams
         );
 
         let retainedMedia = [];
