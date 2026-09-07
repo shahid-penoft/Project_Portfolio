@@ -123,8 +123,8 @@ export const getUnifiedItems = async (req, res) => {
                 f.updated_at AS updated_at,
                 f.deleted_at AS deleted_at,
                 f.submission_source AS submission_source,
-                f.submitted_by_id AS created_by_id,
-                COALESCE(u.full_name, f.applicant_name) AS created_by,
+                IF(f.submission_source = 'Public Portal', NULL, f.submitted_by_id) AS created_by_id,
+                IF(f.submission_source = 'Public Portal' OR f.submitted_by_id IS NULL, f.applicant_name, COALESCE(u.full_name, f.applicant_name)) AS created_by,
                 f.applicant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM cm_fund_requests f

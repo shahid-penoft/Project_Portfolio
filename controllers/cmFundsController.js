@@ -500,9 +500,13 @@ export const createRequest = async (req, res) => {
     await connection.beginTransaction();
 
     const appId = await generateAppId(connection, applicationType);
-    const userId = req.admin ? req.admin.id : null;
+    const isPublicSubmitRoute = req.path === '/public-submit' || req.originalUrl?.includes('/public-submit');
+    const isExplicitAdminPortal = req.headers['x-app-portal'] === 'admin';
+    const isExplicitPublicPortal = req.headers['x-app-portal'] === 'public' || req.headers['x-app-portal'] === 'constituent';
+
+    const userId = (!isPublicSubmitRoute && !isExplicitPublicPortal && req.admin) ? req.admin.id : null;
     const constituentId = req.constituent?.id || null;
-    const isAdminCreation = req.headers['x-app-portal'] === 'admin' || (userId && !constituentId);
+    const isAdminCreation = !isPublicSubmitRoute && !isExplicitPublicPortal && (isExplicitAdminPortal || (userId && !constituentId));
 
     let assignedOfficerId = b.assigned_officer_id || b.officer || null;
     if (assignedOfficerId === "Unassigned") assignedOfficerId = null;
@@ -1029,10 +1033,6 @@ export const updateRequest = async (req, res) => {
     if (setParts.length > 0) {
       setParts.push('updated_by_admin_id = ?');
       values.push(req.admin?.id || null);
-      if (req.admin?.id) {
-        setParts.push('submitted_by_id = COALESCE(submitted_by_id, ?)');
-        values.push(req.admin.id);
-      }
       values.push(id);
       await connection.query(`UPDATE cm_fund_requests SET ${setParts.join(', ')} WHERE id = ?`, values);
     }
