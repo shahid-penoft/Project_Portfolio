@@ -41,32 +41,28 @@ const RESOLVED_STATUSES = new Set([
 /**
  * Build dynamic timeline driven by real SMS follow-ups and office updates.
  */
+/**
+ * Build dynamic timeline driven by real SMS follow-ups and office updates.
+ */
 const buildTimeline = (createdAt, updates = [], status = '', refId = '', applicantName = '') => {
     const timeline = [];
 
-    // Stage 1: Initial Submission & Confirmation SMS
-    timeline.push({
-        label: 'Petition Submitted & Confirmation SMS Sent',
-        time: formatDate(createdAt),
-        note: `Dear ${applicantName || 'Citizen'}, your petition (${refId}) has been registered in the MLA Connect Portal. Confirmation SMS dispatched.`,
-        status: 'completed',
-        sms_sent: true,
-        sms_body: `Dear ${applicantName || 'Citizen'}, your petition (${refId}) has been registered in the MLA Connect Portal on ${formatDate(createdAt)}. Status: Pending.`,
-    });
-
-    // Stage 2..N: Real updates & SMS follow-ups from DB
+    // Stage 1..N: Real updates & SMS follow-ups from DB (no fake initial step)
     updates.forEach((u) => {
         timeline.push({
+            id: u.id,
             label: u.title || 'Office Follow-up Update',
             time: formatDate(u.created_at),
             note: u.sms_body || u.note || 'Follow-up update recorded by MLA Office staff.',
             status: 'completed',
             sms_sent: Boolean(u.sms_sent || u.sms_body),
             sms_body: u.sms_body || null,
+            media: u.media || [],
+            attachments: u.attachments || [],
         });
     });
 
-    // Final / Current Stage
+    // Final Resolution Stage
     const isResolved = RESOLVED_STATUSES.has(status);
 
     if (isResolved) {
@@ -78,16 +74,8 @@ const buildTimeline = (createdAt, updates = [], status = '', refId = '', applica
             status: 'completed',
             sms_sent: true,
             sms_body: `Petition ${refId} status updated to ${status}. Thank you for reaching out to MLA Connect.`,
-        });
-    } else {
-        const currentStatusLabel = status && status.trim() ? status : 'Under Process';
-        timeline.push({
-            label: `Current Status: ${currentStatusLabel}`,
-            time: 'In Progress',
-            note: `Assigned to MLA Office Public Cell for further verification and action.`,
-            status: 'current',
-            sms_sent: false,
-            sms_body: null,
+            media: [],
+            attachments: [],
         });
     }
 
@@ -95,15 +83,15 @@ const buildTimeline = (createdAt, updates = [], status = '', refId = '', applica
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fetch updates for timeline derivation (including SMS fields)
+// Fetch updates for timeline derivation (including SMS fields, media, & attachments)
 // ─────────────────────────────────────────────────────────────────────────────
 const UPDATES_META = {
-    complaint:  { table: 'complaint_updates',  fk: 'complaint_id'  },
-    issue:      { table: 'issue_updates',       fk: 'issue_id'      },
-    idea:       { table: 'idea_updates',         fk: 'idea_id'       },
-    suggestion: { table: 'suggestion_updates',  fk: 'suggestion_id' },
-    cm_fund:    { table: 'cm_fund_updates',     fk: 'request_id'    },
-    letter:     { table: 'mla_letter_activity',     fk: 'letter_id' },
+    complaint:  { table: 'complaint_updates',  fk: 'complaint_id',  mediaTable: 'complaint_media',       attTable: 'complaint_attachments' },
+    issue:      { table: 'issue_updates',       fk: 'issue_id',      mediaTable: 'issue_media',           attTable: 'issue_attachments' },
+    idea:       { table: 'idea_updates',         fk: 'idea_id',       mediaTable: 'idea_media',            attTable: 'idea_attachments' },
+    suggestion: { table: 'suggestion_updates',  fk: 'suggestion_id', mediaTable: 'suggestion_media',      attTable: 'suggestion_attachments' },
+    cm_fund:    { table: 'cm_fund_updates',     fk: 'request_id',    mediaTable: 'cm_fund_update_media' },
+    letter:     { table: 'mla_letter_activity', fk: 'letter_id' },
 };
 
 const fetchUpdates = async (source, petitionId) => {
@@ -116,7 +104,7 @@ const fetchUpdates = async (source, petitionId) => {
                  ORDER BY created_at ASC LIMIT 15`,
                 [petitionId]
             );
-            return activities || [];
+            return (activities || []).map(a => ({ ...a, media: [], attachments: [] }));
         } catch {
             return [];
         }
@@ -129,9 +117,84 @@ const fetchUpdates = async (source, petitionId) => {
             `SELECT * FROM \`${meta.table}\` 
              WHERE \`${meta.fk}\` = ? 
                AND (hide_from_public = 0 OR hide_from_public IS NULL) 
-             ORDER BY created_at ASC LIMIT 15`,
+             ORDER BY created_at ASC LIMIT 25`,
             [petitionId]
         );
+
+        // Fetch media and attachments associated with these updates
+        const updateIds = rows.map(r => r.id).filter(Boolean);
+        const mediaByUpdate = {};
+        const attByUpdate = {};
+
+        if (updateIds.length > 0 && meta.mediaTable) {
+            try {
+                if (source === 'cm_fund') {
+                    const [cmMediaRows] = await pool.query(
+                        `SELECT * FROM cm_fund_update_media WHERE update_id IN (?) ORDER BY created_at ASC`,
+                        [updateIds]
+                    );
+                    cmMediaRows.forEach(m => {
+                        if (m.media_type === 'document') {
+                            if (!attByUpdate[m.update_id]) attByUpdate[m.update_id] = [];
+                            attByUpdate[m.update_id].push({
+                                id: m.id,
+                                name: m.file_name || 'Document',
+                                url: m.file_url,
+                                type: 'document',
+                            });
+                        } else {
+                            if (!mediaByUpdate[m.update_id]) mediaByUpdate[m.update_id] = [];
+                            mediaByUpdate[m.update_id].push({
+                                id: m.id,
+                                url: m.file_url,
+                                type: m.media_type || 'photo',
+                                name: m.file_name || m.file_url.split('/').pop(),
+                            });
+                        }
+                    });
+                } else {
+                    const [mediaRows] = await pool.query(
+                        `SELECT * FROM \`${meta.mediaTable}\` WHERE update_id IN (?) ORDER BY created_at ASC`,
+                        [updateIds]
+                    );
+                    mediaRows.forEach(m => {
+                        if (!mediaByUpdate[m.update_id]) mediaByUpdate[m.update_id] = [];
+                        mediaByUpdate[m.update_id].push({
+                            id: m.id,
+                            url: m.file_url,
+                            type: m.media_type || 'photo',
+                            name: m.caption || m.file_name || m.file_url.split('/').pop(),
+                            size_kb: m.file_size_kb != null ? Number(m.file_size_kb) : null,
+                        });
+                    });
+
+                    if (meta.attTable) {
+                        const [attRows] = await pool.query(
+                            `SELECT * FROM \`${meta.attTable}\` WHERE update_id IN (?) ORDER BY created_at ASC`,
+                            [updateIds]
+                        );
+                        attRows.forEach(a => {
+                            if (!attByUpdate[a.update_id]) attByUpdate[a.update_id] = [];
+                            attByUpdate[a.update_id].push({
+                                id: a.id,
+                                name: a.file_name,
+                                url: a.file_url,
+                                type: a.file_type,
+                                size_kb: a.file_size_kb != null ? Number(a.file_size_kb) : null,
+                            });
+                        });
+                    }
+                }
+            } catch (err) {
+                console.warn('[petitionsController] Error fetching update media/attachments:', err.message);
+            }
+        }
+
+        const enrichedRows = rows.map(r => ({
+            ...r,
+            media: mediaByUpdate[r.id] || [],
+            attachments: attByUpdate[r.id] || [],
+        }));
 
         // Fetch communications logs (excluding those from hidden updates)
         let entityType = 'Complaint';
@@ -159,8 +222,14 @@ const fetchUpdates = async (source, petitionId) => {
             [entityType, String(petitionId)]
         );
 
-        const combined = [...rows, ...commLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        return combined.slice(0, 15);
+        const enrichedCommLogs = commLogs.map(c => ({
+            ...c,
+            media: [],
+            attachments: [],
+        }));
+
+        const combined = [...enrichedRows, ...enrichedCommLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        return combined.slice(0, 25);
     } catch {
         return [];
     }

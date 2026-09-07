@@ -1,5 +1,5 @@
 import 'dotenv/config';
-// Backend API Server - Applications Dropdown Aliases Updated
+// Backend API Server - Track petition updates refined
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
