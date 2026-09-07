@@ -33,7 +33,7 @@ const CASCADE_MAP = {
     // Projects
     project_sub_type_portfolio: { table: 'projects', col: 'project_sub_type', module: 'Projects', deletedCol: null },
     // CM Funds
-    cm_fund_category: { table: 'cm_fund_requests', col: 'category', module: 'CM Funds', deletedCol: 'is_deleted' },
+    cm_fund_category: { table: 'cm_fund_categories', col: 'name', module: 'CM Funds', deletedCol: null },
     cmfund_status: { table: 'cm_fund_requests', col: 'status', module: 'CM Funds', deletedCol: 'is_deleted' },
     cm_fund_district: { table: 'cm_fund_requests', col: 'district', module: 'CM Funds', deletedCol: 'is_deleted' },
     cm_fund_recommender: { table: 'cm_fund_requests', col: 'recommended_by', module: 'CM Funds', deletedCol: 'is_deleted' },
@@ -299,6 +299,49 @@ const insertTreeItems = async (connection, items, key, module, subCategory, stat
         if (item.children?.length) {
             await insertTreeItems(connection, item.children, key, module, subCategory, status, newId);
         }
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Helper: sync CM Fund categories from dropdown tree to cm_fund_categories
+// ─────────────────────────────────────────────────────────────────────────────
+const syncCmFundCategoriesFromDropdown = async (connection, items) => {
+    try {
+        const traverse = (list, currentType = null) => {
+            const result = [];
+            for (const item of list) {
+                const val = (item.value || item.name || item.label || '').trim();
+                if (!val) continue;
+
+                let recognizedType = currentType;
+                const cleanVal = val.toLowerCase().replace(/[^a-z]/g, '');
+                if (cleanVal === 'cmdrf') recognizedType = 'CMDRF';
+                else if (cleanVal === 'general') recognizedType = 'General';
+                else if (cleanVal === 'mlafund') recognizedType = 'MLA Fund';
+                else if (cleanVal === 'tgrants' || cleanVal === 'tgrantz') recognizedType = 'T-Grants';
+
+                if (recognizedType && recognizedType !== val && item.children?.length) {
+                    result.push(...traverse(item.children, recognizedType));
+                } else if (recognizedType && recognizedType !== val && (!item.children || item.children.length === 0)) {
+                    result.push({ name: val, application_type: recognizedType });
+                } else if (item.children?.length) {
+                    result.push(...traverse(item.children, recognizedType));
+                }
+            }
+            return result;
+        };
+
+        const leafCats = traverse(items);
+        for (const cat of leafCats) {
+            await connection.query(
+                `INSERT INTO cm_fund_categories (name, application_type)
+                 VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+                [cat.name, cat.application_type]
+            );
+        }
+    } catch (err) {
+        console.warn('[syncCmFundCategoriesFromDropdown] Sync warning:', err.message);
     }
 };
 
@@ -685,13 +728,16 @@ export const updateDropdown = async (req, res) => {
                 // Records left with status='' from the ENUM era are never caught by
                 // cascade renames (which target specific old values). This sweep
                 // auto-heals them on every dropdown save by setting '' → default.
+                // NOTE: Category/tree keys must NOT sweep records to root labels (e.g. 'CM Fund Categories').
+                const isTreeOrCategoryKey = finalKey === 'cm_fund_category' || finalKey.endsWith('_category');
                 const mappings = getCascadeMappings(finalKey);
                 const [[defaultRow]] = await connection.query(
                     `SELECT value FROM mla_dropdown_lists WHERE \`key\` = ? AND is_default = 1 AND status = 'Active' LIMIT 1`,
                     [finalKey]
                 );
-                if (defaultRow?.value) {
+                if (defaultRow?.value && !isTreeOrCategoryKey) {
                     for (const mapping of mappings) {
+                        if (mapping.table === 'cm_fund_categories') continue;
                         const whereDeleted = mapping.deletedCol ? `AND \`${mapping.deletedCol}\` = 0` : '';
                         const [sweep] = await connection.query(
                             `UPDATE \`${mapping.table}\` SET \`${mapping.col}\` = ? WHERE \`${mapping.col}\` = '' ${whereDeleted}`,
@@ -702,6 +748,11 @@ export const updateDropdown = async (req, res) => {
                         }
                     }
                 }
+            }
+
+            // Sync CM Fund categories with cm_fund_categories table
+            if (finalKey === 'cm_fund_category') {
+                await syncCmFundCategoriesFromDropdown(connection, items);
             }
 
             await connection.commit();

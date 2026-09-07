@@ -47,7 +47,7 @@ const parseDateToYMD = (val) => {
  * an ID in mla_dropdown_lists, or a category name string) to a valid cm_fund_categories(id)
  * or NULL if invalid.
  */
-async function resolveCategoryId(connection, rawCategoryId) {
+async function resolveCategoryId(connection, rawCategoryId, applicationType = 'General') {
   if (!rawCategoryId || rawCategoryId === 'undefined' || rawCategoryId === 'null') return null;
 
   // 1. Check if rawCategoryId exists directly in cm_fund_categories
@@ -63,13 +63,23 @@ async function resolveCategoryId(connection, rawCategoryId) {
     }
   }
 
-  // 3. Search cm_fund_categories by name
+  // 3. Search cm_fund_categories by name (first preferring matching application_type)
+  const normType = applicationType ? applicationType.trim() : 'General';
+  const [byNameType] = await connection.query(
+    'SELECT id FROM cm_fund_categories WHERE name = ? AND application_type = ? LIMIT 1',
+    [categoryName, normType]
+  );
+  if (byNameType.length > 0) return byNameType[0].id;
+
   const [byName] = await connection.query('SELECT id FROM cm_fund_categories WHERE name = ? LIMIT 1', [categoryName]);
   if (byName.length > 0) return byName[0].id;
 
   // 4. If not found, attempt to insert into cm_fund_categories so foreign key constraint succeeds
   try {
-    const [ins] = await connection.query('INSERT INTO cm_fund_categories (name, application_type) VALUES (?, ?)', [categoryName, 'General']);
+    const [ins] = await connection.query(
+      'INSERT INTO cm_fund_categories (name, application_type) VALUES (?, ?)',
+      [categoryName, normType]
+    );
     return ins.insertId;
   } catch (e) {
     console.warn('[resolveCategoryId] Fallback lookup failed:', e.message);
@@ -623,7 +633,7 @@ export const createRequest = async (req, res) => {
     const state = b.state || 'Kerala';
     const pincode = b.pincode || '';
     const rawCategoryId = b.category_id || b.category;
-    const categoryId = await resolveCategoryId(pool, rawCategoryId);
+    const categoryId = await resolveCategoryId(pool, rawCategoryId, applicationType);
     const subCategory = b.sub_category || b.subCategory || null;
     const priority = b.priority || 'Normal';
     const amountRequested = b.amount_requested || b.amountRequested || null;
@@ -800,7 +810,7 @@ export const createDraftRequest = async (req, res) => {
     const email = b.email || b.applicant_email || b.applicantEmail || null;
     const applicationTitle = b.application_title || b.applicationTitle || null;
     const rawCategoryId = b.category_id || b.category;
-    const categoryId = await resolveCategoryId(pool, rawCategoryId);
+    const categoryId = await resolveCategoryId(pool, rawCategoryId, applicationType);
     const subCategory = b.sub_category || b.subCategory || null;
     const addressLine1 = b.address_line1 || b.addressLine1 || b.house_name || '';
     const localBody = b.local_body || b.localBody || null;
@@ -1138,7 +1148,8 @@ export const updateRequest = async (req, res) => {
         value = null;
       }
       if (dbKey === 'category_id' && value) {
-        value = await resolveCategoryId(pool, value);
+        const reqAppType = req.body.application_type || req.body.applicationType || 'General';
+        value = await resolveCategoryId(pool, value, reqAppType);
       }
       if (dbKey === 'date_filed' && value !== undefined) {
         value = parseDateToYMD(value);

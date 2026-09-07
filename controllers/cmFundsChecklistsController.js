@@ -111,6 +111,22 @@ export const addCategory = async (req, res) => {
       [name, applicationType]
     );
 
+    // Mirror to mla_dropdown_lists under cm_fund_category
+    try {
+      const [[parentRow]] = await pool.query(
+        'SELECT id FROM mla_dropdown_lists WHERE `key` = "cm_fund_category" AND value = ? LIMIT 1',
+        [applicationType]
+      );
+      const parentId = parentRow ? parentRow.id : 0;
+      await pool.query(
+        `INSERT INTO mla_dropdown_lists (parent_id, \`key\`, module, label, value, status, sort_order)
+         VALUES (?, 'cm_fund_category', 'CM Funds', ?, ?, 'Active', 0)`,
+        [parentId, name, name]
+      );
+    } catch (e) {
+      console.warn('[addCategory] Dropdown mirror warning:', e.message);
+    }
+
     res.status(201).json({ message: 'Category added successfully', id: result.insertId });
   } catch (err) {
     console.error('Error in addCategory:', err);
@@ -127,10 +143,30 @@ export const updateCategory = async (req, res) => {
     const { name, applicationType = 'General' } = req.body;
     if (!name) return res.status(400).json({ error: 'Category name is required' });
 
+    const [[oldCat]] = await pool.query('SELECT name, application_type FROM cm_fund_categories WHERE id = ?', [id]);
+
     await pool.query(
       `UPDATE cm_fund_categories SET name = ?, application_type = ? WHERE id = ?`,
       [name, applicationType, id]
     );
+
+    // Mirror rename to mla_dropdown_lists
+    if (oldCat) {
+      try {
+        const [[parentRow]] = await pool.query(
+          'SELECT id FROM mla_dropdown_lists WHERE `key` = "cm_fund_category" AND value = ? LIMIT 1',
+          [applicationType]
+        );
+        const parentId = parentRow ? parentRow.id : 0;
+        await pool.query(
+          `UPDATE mla_dropdown_lists SET label = ?, value = ?, parent_id = ?
+           WHERE \`key\` = 'cm_fund_category' AND value = ?`,
+          [name, name, parentId, oldCat.name]
+        );
+      } catch (e) {
+        console.warn('[updateCategory] Dropdown mirror warning:', e.message);
+      }
+    }
 
     res.json({ message: 'Category updated successfully' });
   } catch (err) {
@@ -145,8 +181,23 @@ export const updateCategory = async (req, res) => {
 export const removeCategory = async (req, res) => {
   try {
     const { id } = req.params;
+    const [[oldCat]] = await pool.query('SELECT name FROM cm_fund_categories WHERE id = ?', [id]);
+
     // Configs cascade delete
     await pool.query(`DELETE FROM cm_fund_categories WHERE id = ?`, [id]);
+
+    // Mirror removal from mla_dropdown_lists
+    if (oldCat) {
+      try {
+        await pool.query(
+          `DELETE FROM mla_dropdown_lists WHERE \`key\` = 'cm_fund_category' AND value = ?`,
+          [oldCat.name]
+        );
+      } catch (e) {
+        console.warn('[removeCategory] Dropdown mirror warning:', e.message);
+      }
+    }
+
     res.json({ message: 'Category deleted successfully' });
   } catch (err) {
     console.error('Error in removeCategory:', err);
