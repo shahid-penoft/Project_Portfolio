@@ -63,13 +63,14 @@ export const getUnifiedItems = async (req, res) => {
                 c.updated_at AS updated_at,
                 c.deleted_at AS deleted_at,
                 c.submission_source AS submission_source,
+                c.filed_by_admin_id AS created_by_id,
                 COALESCE(u.full_name, c.complainant_name) AS created_by,
                 c.complainant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM complaints c
             LEFT JOIN local_bodies lb ON c.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON c.ward_id = w.id
-            LEFT JOIN admin_users u ON COALESCE(c.filed_by_admin_id, c.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users u ON c.filed_by_admin_id = u.id
             LEFT JOIN admin_users del_u ON COALESCE(c.updated_by_admin_id, (SELECT admin_user_id FROM complaint_activity WHERE complaint_id = c.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id 
             WHERE c.${statusFilter}
             
@@ -92,13 +93,14 @@ export const getUnifiedItems = async (req, res) => {
                 i.updated_at AS updated_at,
                 i.deleted_at AS deleted_at,
                 i.submission_source AS submission_source,
+                i.filed_by_admin_id AS created_by_id,
                 COALESCE(u.full_name, i.submitter_name) AS created_by,
                 i.submitter_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM issues i
             LEFT JOIN local_bodies lb ON i.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON i.ward_id = w.id
-            LEFT JOIN admin_users u ON COALESCE(i.filed_by_admin_id, i.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users u ON i.filed_by_admin_id = u.id
             LEFT JOIN admin_users del_u ON COALESCE(i.updated_by_admin_id, (SELECT admin_user_id FROM issue_activity WHERE issue_id = i.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id
             WHERE i.${statusFilter}
             
@@ -121,13 +123,14 @@ export const getUnifiedItems = async (req, res) => {
                 f.updated_at AS updated_at,
                 f.deleted_at AS deleted_at,
                 f.submission_source AS submission_source,
+                f.submitted_by_id AS created_by_id,
                 COALESCE(u.full_name, f.applicant_name) AS created_by,
                 f.applicant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM cm_fund_requests f
             LEFT JOIN local_bodies lb ON f.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON f.ward_id = w.id
-            LEFT JOIN admin_users u ON COALESCE(f.submitted_by_id, f.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users u ON f.submitted_by_id = u.id
             LEFT JOIN admin_users del_u ON f.deleted_by_id = del_u.id
             WHERE f.${statusFilter}
             
@@ -150,6 +153,7 @@ export const getUnifiedItems = async (req, res) => {
                 l.updated_at AS updated_at,
                 l.trashed_at AS deleted_at,
                 'Admin Panel' AS submission_source,
+                l.prepared_by_user_id AS created_by_id,
                 u.full_name AS created_by,
                 NULL AS submitter_name,
                 del_u.full_name AS deleted_by
@@ -177,6 +181,7 @@ export const getUnifiedItems = async (req, res) => {
                 g.updated_at AS updated_at,
                 g.deleted_at AS deleted_at,
                 'Admin Panel' AS submission_source,
+                creator_log.admin_user_id AS created_by_id,
                 u.full_name AS created_by,
                 NULL AS submitter_name,
                 del_u.full_name AS deleted_by
@@ -218,13 +223,14 @@ export const getUnifiedItems = async (req, res) => {
                 id.updated_at AS updated_at,
                 id.deleted_at AS deleted_at,
                 id.submission_source AS submission_source,
+                id.filed_by_admin_id AS created_by_id,
                 COALESCE(u.full_name, id.complainant_name) AS created_by,
                 id.complainant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM ideas id
             LEFT JOIN local_bodies lb ON id.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON id.ward_id = w.id
-            LEFT JOIN admin_users u ON COALESCE(id.filed_by_admin_id, id.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users u ON id.filed_by_admin_id = u.id
             LEFT JOIN admin_users del_u ON COALESCE(id.updated_by_admin_id, (SELECT admin_user_id FROM idea_activity WHERE idea_id = id.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id
             WHERE id.${statusFilter}
             
@@ -247,13 +253,14 @@ export const getUnifiedItems = async (req, res) => {
                 s.updated_at AS updated_at,
                 s.deleted_at AS deleted_at,
                 s.submission_source AS submission_source,
+                s.filed_by_admin_id AS created_by_id,
                 COALESCE(u.full_name, s.complainant_name) AS created_by,
                 s.complainant_name AS submitter_name,
                 del_u.full_name AS deleted_by
             FROM suggestions s
             LEFT JOIN local_bodies lb ON s.local_body_id = lb.id
             LEFT JOIN local_body_wards w ON s.ward_id = w.id
-            LEFT JOIN admin_users u ON COALESCE(s.filed_by_admin_id, s.updated_by_admin_id) = u.id
+            LEFT JOIN admin_users u ON s.filed_by_admin_id = u.id
             LEFT JOIN admin_users del_u ON COALESCE(s.updated_by_admin_id, (SELECT admin_user_id FROM suggestion_activity WHERE suggestion_id = s.id AND text LIKE '%trash%' ORDER BY created_at DESC LIMIT 1)) = del_u.id
             WHERE s.${statusFilter}
         `;
