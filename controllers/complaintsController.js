@@ -241,12 +241,32 @@ const fetchFullComplaint = async (id) => {
 // GET /api/complaints
 // Query: status, category, priority, search, page, limit, trash
 // ─────────────────────────────────────────────────────────────
+
+// Helper: convert "3 days", "2 Month", "1 Year" etc. → integer days
+const parseDayLabel = (label) => {
+    if (!label) return null;
+    const s = String(label).replace(/^(last\s+|never.*)/i, '').trim();
+    const match = s.match(/^(\d+)\s*(day|month|year)/i);
+    if (!match) return null;
+    const n = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith('day'))   return n;
+    if (unit.startsWith('month')) return n * 30;
+    if (unit.startsWith('year'))  return n * 365;
+    return null;
+};
+
 export const getComplaints = async (req, res) => {
     try {
         const { 
             status, category, department, priority, search, search_field, searchField, page = 1, limit = 20, trash,
             local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id,
-            source, submission_source
+            source, submission_source,
+            created_by, updated_by,
+            has_documents, has_audio_notes,
+            phone_number, email_filter,
+            communication_send, followup_marked,
+            sort, order,
         } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -295,6 +315,73 @@ export const getComplaints = async (req, res) => {
             params.push(assignee_id, assignee_id);
         }
 
+        // Created By admin
+        if (created_by) {
+            conditions.push('c.filed_by_admin_id = ?');
+            params.push(created_by);
+        }
+
+        // Updated By admin
+        if (updated_by) {
+            conditions.push('c.updated_by_admin_id = ?');
+            params.push(updated_by);
+        }
+
+        // Has Documents/Attachments
+        if (has_documents === 'Yes') {
+            conditions.push('EXISTS (SELECT 1 FROM complaint_attachments ca WHERE ca.complaint_id = c.id LIMIT 1)');
+        } else if (has_documents === 'No') {
+            conditions.push('NOT EXISTS (SELECT 1 FROM complaint_attachments ca WHERE ca.complaint_id = c.id LIMIT 1)');
+        }
+
+        // Has Audio Notes (audio files stored in complaint_attachments with audio/* MIME type)
+        if (has_audio_notes === 'Yes') {
+            conditions.push("EXISTS (SELECT 1 FROM complaint_attachments ca WHERE ca.complaint_id = c.id AND ca.file_type LIKE 'audio/%' LIMIT 1)");
+        } else if (has_audio_notes === 'No') {
+            conditions.push("NOT EXISTS (SELECT 1 FROM complaint_attachments ca WHERE ca.complaint_id = c.id AND ca.file_type LIKE 'audio/%' LIMIT 1)");
+        }
+
+        // Has Phone
+        if (phone_number === 'Yes') {
+            conditions.push("(c.phone IS NOT NULL AND c.phone != '')");
+        } else if (phone_number === 'No') {
+            conditions.push("(c.phone IS NULL OR c.phone = '')");
+        }
+
+        // Has Email
+        if (email_filter === 'Yes') {
+            conditions.push("(c.email IS NOT NULL AND c.email != '')");
+        } else if (email_filter === 'No') {
+            conditions.push("(c.email IS NULL OR c.email = '')");
+        }
+
+        // Communication Sent (within N days)
+        if (communication_send) {
+            if (communication_send === 'Never Sent') {
+                conditions.push('NOT EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = ? AND cl.entity_id = c.id LIMIT 1)');
+                params.push('Complaint');
+            } else {
+                const days = parseDayLabel(communication_send);
+                if (days) {
+                    conditions.push('EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = ? AND cl.entity_id = c.id AND cl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1)');
+                    params.push('Complaint', days);
+                }
+            }
+        }
+
+        // Follow-up Marked (within N days)
+        if (followup_marked) {
+            if (followup_marked === 'Never Sent') {
+                conditions.push("NOT EXISTS (SELECT 1 FROM complaint_updates cu WHERE cu.complaint_id = c.id AND cu.type = 'Follow-up' LIMIT 1)");
+            } else {
+                const days = parseDayLabel(followup_marked);
+                if (days) {
+                    conditions.push("EXISTS (SELECT 1 FROM complaint_updates cu WHERE cu.complaint_id = c.id AND cu.type = 'Follow-up' AND cu.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1)");
+                    params.push(days);
+                }
+            }
+        }
+
         if (search) {
             const q = search.trim();
             const field = (search_field || searchField || 'all').toLowerCase();
@@ -334,6 +421,18 @@ export const getComplaints = async (req, res) => {
         }
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        // Dynamic sort (allowlisted columns to prevent SQL injection)
+        const SORT_COLS = {
+            created_at:       'c.created_at',
+            updated_at:       'c.updated_at',
+            priority:         'c.priority',
+            title:            'c.title',
+            complainant_name: 'c.complainant_name',
+            filed_by_admin_name: 'au.full_name',
+        };
+        const sortCol = SORT_COLS[sort] || 'c.created_at';
+        const sortDir = order === 'asc' ? 'ASC' : 'DESC';
 
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) as total FROM complaints c ${where}`, params
@@ -375,7 +474,7 @@ export const getComplaints = async (req, res) => {
             LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
             LEFT JOIN admin_users      au_updater ON c.updated_by_admin_id = au_updater.id
             ${where}
-            ORDER BY c.created_at DESC
+            ORDER BY ${sortCol} ${sortDir}
             LIMIT ? OFFSET ?
         `, [...params, parseInt(limit), offset]);
 

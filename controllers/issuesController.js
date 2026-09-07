@@ -240,10 +240,36 @@ const fetchFullIssue = async (id) => {
 // GET /api/issues
 // Query: status, category, priority, search, page, limit, trash
 // ─────────────────────────────────────────────────────────────
+
+// Helper: convert "3 days", "2 Month", "1 Year" etc. → integer days
+const parseDayLabel = (label) => {
+    if (!label) return null;
+    const s = String(label).replace(/^(last\s+|never.*)/i, '').trim();
+    const match = s.match(/^(\d+)\s*(day|month|year)/i);
+    if (!match) return null;
+    const n = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith('day'))   return n;
+    if (unit.startsWith('month')) return n * 30;
+    if (unit.startsWith('year'))  return n * 365;
+    return null;
+};
+
 export const getIssues = async (req, res) => {
     try {
         console.log("Updated getIssues executing...");
-        const { status, category, department, priority, search, search_field, searchField, local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id, page = 1, limit = 20, trash } = req.query;
+        const {
+            status, category, department, priority, search, search_field, searchField,
+            local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id,
+            page = 1, limit = 20, trash,
+            created_by, updated_by,
+            has_documents, has_audio_notes,
+            phone_number, email_filter,
+            communication_send, followup_marked,
+            sort, order,
+        } = req.query;
+        // read submission_source separately (already destructured via req.query below)
+        const srcFilter = req.query.submission_source || req.query.source;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         const conditions = [];
@@ -257,7 +283,6 @@ export const getIssues = async (req, res) => {
         }
 
         // Intake source filter
-        const srcFilter = req.query.submission_source || req.query.source;
         if (srcFilter) {
             conditions.push('c.submission_source = ?');
             params.push(srcFilter);
@@ -286,6 +311,73 @@ export const getIssues = async (req, res) => {
         if (assignee_id) {
             conditions.push('(c.filed_by_admin_id = ? OR c.updated_by_admin_id = ?)');
             params.push(assignee_id, assignee_id);
+        }
+
+        // Created By admin
+        if (created_by) {
+            conditions.push('c.filed_by_admin_id = ?');
+            params.push(created_by);
+        }
+
+        // Updated By admin
+        if (updated_by) {
+            conditions.push('c.updated_by_admin_id = ?');
+            params.push(updated_by);
+        }
+
+        // Has Documents/Attachments
+        if (has_documents === 'Yes') {
+            conditions.push('EXISTS (SELECT 1 FROM issue_attachments ia WHERE ia.issue_id = c.id LIMIT 1)');
+        } else if (has_documents === 'No') {
+            conditions.push('NOT EXISTS (SELECT 1 FROM issue_attachments ia WHERE ia.issue_id = c.id LIMIT 1)');
+        }
+
+        // Has Audio Notes (audio files stored in issue_attachments with audio/* MIME type)
+        if (has_audio_notes === 'Yes') {
+            conditions.push("EXISTS (SELECT 1 FROM issue_attachments ia WHERE ia.issue_id = c.id AND ia.file_type LIKE 'audio/%' LIMIT 1)");
+        } else if (has_audio_notes === 'No') {
+            conditions.push("NOT EXISTS (SELECT 1 FROM issue_attachments ia WHERE ia.issue_id = c.id AND ia.file_type LIKE 'audio/%' LIMIT 1)");
+        }
+
+        // Has Phone
+        if (phone_number === 'Yes') {
+            conditions.push("(c.phone IS NOT NULL AND c.phone != '')");
+        } else if (phone_number === 'No') {
+            conditions.push("(c.phone IS NULL OR c.phone = '')");
+        }
+
+        // Has Email
+        if (email_filter === 'Yes') {
+            conditions.push("(c.email IS NOT NULL AND c.email != '')");
+        } else if (email_filter === 'No') {
+            conditions.push("(c.email IS NULL OR c.email = '')");
+        }
+
+        // Communication Sent (within N days)
+        if (communication_send) {
+            if (communication_send === 'Never Sent') {
+                conditions.push('NOT EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = ? AND cl.entity_id = c.id LIMIT 1)');
+                params.push('Issue');
+            } else {
+                const days = parseDayLabel(communication_send);
+                if (days) {
+                    conditions.push('EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = ? AND cl.entity_id = c.id AND cl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1)');
+                    params.push('Issue', days);
+                }
+            }
+        }
+
+        // Follow-up Marked (within N days)
+        if (followup_marked) {
+            if (followup_marked === 'Never Sent') {
+                conditions.push("NOT EXISTS (SELECT 1 FROM issue_updates iu WHERE iu.issue_id = c.id AND iu.type = 'Follow-up' LIMIT 1)");
+            } else {
+                const days = parseDayLabel(followup_marked);
+                if (days) {
+                    conditions.push("EXISTS (SELECT 1 FROM issue_updates iu WHERE iu.issue_id = c.id AND iu.type = 'Follow-up' AND iu.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1)");
+                    params.push(days);
+                }
+            }
         }
 
         if (search) {
@@ -328,6 +420,18 @@ export const getIssues = async (req, res) => {
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+        // Dynamic sort (allowlisted columns to prevent SQL injection)
+        const SORT_COLS = {
+            created_at:      'c.created_at',
+            updated_at:      'c.updated_at',
+            priority:        'c.priority',
+            title:           'c.title',
+            submitter_name:  'c.submitter_name',
+            filed_by_admin_name: 'au.full_name',
+        };
+        const sortCol = SORT_COLS[sort] || 'c.created_at';
+        const sortDir = order === 'asc' ? 'ASC' : 'DESC';
+
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) as total FROM issues c ${where}`, params
         );
@@ -368,7 +472,7 @@ export const getIssues = async (req, res) => {
             LEFT JOIN admin_users      au  ON c.filed_by_admin_id = au.id
             LEFT JOIN admin_users      au_updater ON c.updated_by_admin_id = au_updater.id
             ${where}
-            ORDER BY c.created_at DESC
+            ORDER BY ${sortCol} ${sortDir}
             LIMIT ? OFFSET ?
         `, [...params, parseInt(limit), offset]);
 

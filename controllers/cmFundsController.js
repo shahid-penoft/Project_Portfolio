@@ -143,6 +143,39 @@ export const expandApplicationTypes = (rawAppType) => {
   return Array.from(expandedTypes);
 };
 
+// Helper: convert "3 days", "2 Month", "1 Year" etc. → integer days
+const parseDayLabel = (label) => {
+  if (!label) return null;
+  const s = String(label).replace(/^(last\s+|never.*)/i, '').trim();
+  const match = s.match(/^(\d+)\s*(day|month|year)/i);
+  if (!match) return null;
+  const n = parseInt(match[1]);
+  const unit = match[2].toLowerCase();
+  if (unit.startsWith('day'))   return n;
+  if (unit.startsWith('month')) return n * 30;
+  if (unit.startsWith('year'))  return n * 365;
+  return null;
+};
+
+// Helper: parse amount range string e.g. "Under ₹10,000", "₹10,000 – ₹25,000", "Above ₹1,00,000"
+const parseAmountRange = (rangeStr) => {
+  if (!rangeStr) return null;
+  const s = String(rangeStr).replace(/[₹,]/g, '').trim();
+  if (/under\s+(\d+)/i.test(s)) {
+    const m = s.match(/under\s+(\d+)/i);
+    return { min: 0, max: Number(m[1]) };
+  }
+  if (/above\s+(\d+)/i.test(s)) {
+    const m = s.match(/above\s+(\d+)/i);
+    return { min: Number(m[1]), max: null };
+  }
+  const match = s.match(/(\d+)\s*[-–—]\s*(\d+)/);
+  if (match) {
+    return { min: Number(match[1]), max: Number(match[2]) };
+  }
+  return null;
+};
+
 export const listRequests = async (req, res) => {
   try {
     const {
@@ -151,6 +184,16 @@ export const listRequests = async (req, res) => {
       category, category_id,
       local_body_id, localBody,
       ward_id, ward,
+      district,
+      assigned_officer_id, assignedOfficer,
+      created_by, createdBy,
+      has_documents, hasDocuments,
+      has_audio_notes, hasAudioNotes,
+      phone_number, hasPhone,
+      email_filter, hasEmail,
+      communication_send, communicationSend,
+      recommended_by, recommendedBy,
+      amount_range, requestedAmountRange,
       startDate, endDate,
       page = 1, limit = 8
     } = req.query;
@@ -257,6 +300,102 @@ export const listRequests = async (req, res) => {
       queryParams.push(sources);
     }
 
+    // District filter
+    if (district && district !== 'All') {
+      const districts = district.split(',');
+      baseQuery += ` AND r.district IN (?)`;
+      queryParams.push(districts);
+    }
+
+    // Assigned Officer filter
+    const rawOfficer = assigned_officer_id || assignedOfficer || req.query.assigned_officer;
+    if (rawOfficer && rawOfficer !== 'All') {
+      const officers = rawOfficer.split(',');
+      baseQuery += ` AND r.assigned_officer_id IN (?)`;
+      queryParams.push(officers);
+    }
+
+    // Created By admin filter
+    const rawCreatedBy = created_by || createdBy;
+    if (rawCreatedBy && rawCreatedBy !== 'All') {
+      const creators = rawCreatedBy.split(',');
+      baseQuery += ` AND r.submitted_by_id IN (?)`;
+      queryParams.push(creators);
+    }
+
+    // Has Documents
+    const hasDocs = has_documents || hasDocuments;
+    if (hasDocs === 'Yes') {
+      baseQuery += ` AND EXISTS (SELECT 1 FROM cm_fund_request_documents d WHERE d.request_id = r.id LIMIT 1)`;
+    } else if (hasDocs === 'No') {
+      baseQuery += ` AND NOT EXISTS (SELECT 1 FROM cm_fund_request_documents d WHERE d.request_id = r.id LIMIT 1)`;
+    }
+
+    // Has Audio Notes
+    const hasAudio = has_audio_notes || hasAudioNotes;
+    if (hasAudio === 'Yes') {
+      baseQuery += ` AND EXISTS (SELECT 1 FROM cm_fund_request_documents d WHERE d.request_id = r.id AND d.doc_type_id = 'doc_audio_note' LIMIT 1)`;
+    } else if (hasAudio === 'No') {
+      baseQuery += ` AND NOT EXISTS (SELECT 1 FROM cm_fund_request_documents d WHERE d.request_id = r.id AND d.doc_type_id = 'doc_audio_note' LIMIT 1)`;
+    }
+
+    // Has Phone
+    const hasPh = phone_number || hasPhone;
+    if (hasPh === 'Yes') {
+      baseQuery += ` AND (r.applicant_phone IS NOT NULL AND r.applicant_phone != '')`;
+    } else if (hasPh === 'No') {
+      baseQuery += ` AND (r.applicant_phone IS NULL OR r.applicant_phone = '')`;
+    }
+
+    // Has Email
+    const hasEm = email_filter || hasEmail;
+    if (hasEm === 'Yes') {
+      baseQuery += ` AND (r.email IS NOT NULL AND r.email != '')`;
+    } else if (hasEm === 'No') {
+      baseQuery += ` AND (r.email IS NULL OR r.email = '')`;
+    }
+
+    // Communication Sent
+    const commSend = communication_send || communicationSend;
+    if (commSend && commSend !== 'All') {
+      if (commSend === 'Never Sent') {
+        baseQuery += ` AND NOT EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = 'Application' AND cl.entity_id = r.id LIMIT 1)`;
+      } else {
+        const days = parseDayLabel(commSend);
+        if (days) {
+          baseQuery += ` AND EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = 'Application' AND cl.entity_id = r.id AND cl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1)`;
+          queryParams.push(days);
+        }
+      }
+    }
+
+    // Recommended By
+    const rawRec = recommended_by || recommendedBy;
+    if (rawRec && rawRec !== 'All') {
+      const recs = rawRec.split(',');
+      baseQuery += ` AND r.recommended_by IN (?)`;
+      queryParams.push(recs);
+    }
+
+    // Requested Amount Range
+    const rawAmountRange = amount_range || requestedAmountRange;
+    if (rawAmountRange && rawAmountRange !== 'All') {
+      const ranges = String(rawAmountRange).split(',').map(parseAmountRange).filter(Boolean);
+      if (ranges.length > 0) {
+        const rangeClauses = [];
+        ranges.forEach(r => {
+          if (r.max === null) {
+            rangeClauses.push('r.amount_requested >= ?');
+            queryParams.push(r.min);
+          } else {
+            rangeClauses.push('r.amount_requested BETWEEN ? AND ?');
+            queryParams.push(r.min, r.max);
+          }
+        });
+        baseQuery += ` AND (${rangeClauses.join(' OR ')})`;
+      }
+    }
+
     if (startDate) {
       baseQuery += ` AND COALESCE(r.date_filed, DATE(CONVERT_TZ(r.created_at, '+00:00', '+05:30'))) >= ?`;
       queryParams.push(startDate);
@@ -319,13 +458,21 @@ export const listRequests = async (req, res) => {
     }
 
     // Support both legacy aliases and new sort=<col>&order=<dir> style
+    const SORT_COLS = {
+      created_at: 'r.created_at',
+      updated_at: 'r.updated_at',
+      applicant_name: 'r.applicant_name',
+      amount_requested: 'r.amount_requested',
+      priority: 'r.priority',
+      submitted_by_name: 'u.full_name',
+    };
     let orderClause = 'ORDER BY r.created_at DESC';
-    if (sort === 'created_at' || sort === 'newest') {
-      orderClause = `ORDER BY r.created_at ${order === 'asc' ? 'ASC' : 'DESC'}`;
+    if (SORT_COLS[sort]) {
+      orderClause = `ORDER BY ${SORT_COLS[sort]} ${order === 'asc' ? 'ASC' : 'DESC'}`;
+    } else if (sort === 'newest') {
+      orderClause = 'ORDER BY r.created_at DESC';
     } else if (sort === 'oldest') {
       orderClause = 'ORDER BY r.created_at ASC';
-    } else if (sort === 'amount_requested') {
-      orderClause = `ORDER BY r.amount_requested ${order === 'asc' ? 'ASC' : 'DESC'}`;
     } else if (sort === 'amount_desc') {
       orderClause = 'ORDER BY r.amount_requested DESC';
     } else if (sort === 'amount_asc') {

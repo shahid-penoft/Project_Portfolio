@@ -156,9 +156,32 @@ const fetchFullSuggestion = async (id) => {
     return { ...suggestion, remarks: suggestion.internal_note || '', updates: mappedUpdates, media, attachments, team, activity };
 };
 
+// Helper: convert "3 days", "2 Month", "1 Year" etc. → integer days
+const parseDayLabel = (label) => {
+    if (!label) return null;
+    const s = String(label).replace(/^(last\s+|never.*)/i, '').trim();
+    const match = s.match(/^(\d+)\s*(day|month|year)/i);
+    if (!match) return null;
+    const n = parseInt(match[1]);
+    const unit = match[2].toLowerCase();
+    if (unit.startsWith('day'))   return n;
+    if (unit.startsWith('month')) return n * 30;
+    if (unit.startsWith('year'))  return n * 365;
+    return null;
+};
+
 export const getSuggestions = async (req, res) => {
     try {
-        const { status, category, department, priority, search, search_field, searchField, local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id, page = 1, limit = 20, trash } = req.query;
+        const {
+            status, category, department, priority, search, search_field, searchField,
+            local_body_id, local_body, ward_id, ward, startDate, endDate, assignee_id,
+            page = 1, limit = 20, trash,
+            created_by, updated_by,
+            has_documents, has_audio_notes,
+            phone_number, email_filter,
+            communication_send, followup_marked,
+            sort, order,
+        } = req.query;
         const offset = (parseInt(page) - 1) * parseInt(limit);
 
         const conditions = [];
@@ -201,6 +224,73 @@ export const getSuggestions = async (req, res) => {
             params.push(assignee_id, assignee_id);
         }
 
+        // Created By admin
+        if (created_by) {
+            conditions.push('i.filed_by_admin_id = ?');
+            params.push(created_by);
+        }
+
+        // Updated By admin
+        if (updated_by) {
+            conditions.push('i.updated_by_admin_id = ?');
+            params.push(updated_by);
+        }
+
+        // Has Documents/Attachments
+        if (has_documents === 'Yes') {
+            conditions.push('EXISTS (SELECT 1 FROM suggestion_attachments sa WHERE sa.suggestion_id = i.id LIMIT 1)');
+        } else if (has_documents === 'No') {
+            conditions.push('NOT EXISTS (SELECT 1 FROM suggestion_attachments sa WHERE sa.suggestion_id = i.id LIMIT 1)');
+        }
+
+        // Has Audio Notes (audio files stored in suggestion_attachments with audio/* MIME type)
+        if (has_audio_notes === 'Yes') {
+            conditions.push("EXISTS (SELECT 1 FROM suggestion_attachments sa WHERE sa.suggestion_id = i.id AND sa.file_type LIKE 'audio/%' LIMIT 1)");
+        } else if (has_audio_notes === 'No') {
+            conditions.push("NOT EXISTS (SELECT 1 FROM suggestion_attachments sa WHERE sa.suggestion_id = i.id AND sa.file_type LIKE 'audio/%' LIMIT 1)");
+        }
+
+        // Has Phone
+        if (phone_number === 'Yes') {
+            conditions.push("(i.phone IS NOT NULL AND i.phone != '')");
+        } else if (phone_number === 'No') {
+            conditions.push("(i.phone IS NULL OR i.phone = '')");
+        }
+
+        // Has Email
+        if (email_filter === 'Yes') {
+            conditions.push("(i.email IS NOT NULL AND i.email != '')");
+        } else if (email_filter === 'No') {
+            conditions.push("(i.email IS NULL OR i.email = '')");
+        }
+
+        // Communication Sent (within N days)
+        if (communication_send) {
+            if (communication_send === 'Never Sent') {
+                conditions.push('NOT EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = ? AND cl.entity_id = i.id LIMIT 1)');
+                params.push('Suggestion');
+            } else {
+                const days = parseDayLabel(communication_send);
+                if (days) {
+                    conditions.push('EXISTS (SELECT 1 FROM communications_logs cl WHERE cl.entity_type = ? AND cl.entity_id = i.id AND cl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1)');
+                    params.push('Suggestion', days);
+                }
+            }
+        }
+
+        // Follow-up Marked (within N days)
+        if (followup_marked) {
+            if (followup_marked === 'Never Sent') {
+                conditions.push("NOT EXISTS (SELECT 1 FROM suggestion_updates su WHERE su.suggestion_id = i.id AND su.type = 'Follow-up' LIMIT 1)");
+            } else {
+                const days = parseDayLabel(followup_marked);
+                if (days) {
+                    conditions.push("EXISTS (SELECT 1 FROM suggestion_updates su WHERE su.suggestion_id = i.id AND su.type = 'Follow-up' AND su.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 1)");
+                    params.push(days);
+                }
+            }
+        }
+
         if (search) {
             const q = search.trim();
             const field = (search_field || searchField || 'all').toLowerCase();
@@ -241,6 +331,18 @@ export const getSuggestions = async (req, res) => {
 
         const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+        // Dynamic sort (allowlisted columns to prevent SQL injection)
+        const SORT_COLS = {
+            created_at:          'i.created_at',
+            updated_at:          'i.updated_at',
+            priority:            'i.priority',
+            title:               'i.title',
+            complainant_name:    'i.complainant_name',
+            filed_by_admin_name: 'au.full_name',
+        };
+        const sortCol = SORT_COLS[sort] || 'i.created_at';
+        const sortDir = order === 'asc' ? 'ASC' : 'DESC';
+
         const [[{ total }]] = await pool.query(
             `SELECT COUNT(*) as total FROM suggestions i ${where}`, params
         );
@@ -258,11 +360,11 @@ export const getSuggestions = async (req, res) => {
                    (SELECT JSON_OBJECT(
                        'id', cl1.id,
                        'channels', (
-                           SELECT GROUP_CONCAT(DISTINCT cl2.channel)
-                           FROM communications_logs cl2
-                           WHERE cl2.entity_type = 'Suggestion' AND cl2.entity_id = i.id
-                           AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
-                           AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
+                            SELECT GROUP_CONCAT(DISTINCT cl2.channel)
+                            FROM communications_logs cl2
+                            WHERE cl2.entity_type = 'Suggestion' AND cl2.entity_id = i.id
+                            AND cl2.created_at >= cl1.created_at - INTERVAL 1 MINUTE
+                            AND cl2.created_at <= cl1.created_at + INTERVAL 1 MINUTE
                        ),
                        'created_at', cl1.created_at
                     ) FROM communications_logs cl1 WHERE cl1.entity_type = 'Suggestion' AND cl1.entity_id = i.id ORDER BY cl1.created_at DESC LIMIT 1) as last_communication,
@@ -280,7 +382,7 @@ export const getSuggestions = async (req, res) => {
             LEFT JOIN admin_users      au  ON i.filed_by_admin_id = au.id
             LEFT JOIN admin_users      au_updater ON i.updated_by_admin_id = au_updater.id
             ${where}
-            ORDER BY i.created_at DESC
+            ORDER BY ${sortCol} ${sortDir}
             LIMIT ? OFFSET ?
         `, [...params, parseInt(limit), offset]);
 
