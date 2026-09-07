@@ -307,36 +307,36 @@ const insertTreeItems = async (connection, items, key, module, subCategory, stat
 // ─────────────────────────────────────────────────────────────────────────────
 const syncCmFundCategoriesFromDropdown = async (connection, items) => {
     try {
-        const traverse = (list, currentType = null) => {
-            const result = [];
-            for (const item of list) {
-                const val = (item.value || item.name || item.label || '').trim();
-                if (!val) continue;
-
-                let recognizedType = currentType;
-                const cleanVal = val.toLowerCase().replace(/[^a-z]/g, '');
-                if (cleanVal === 'cmdrf') recognizedType = 'CMDRF';
-                else if (cleanVal === 'general') recognizedType = 'General';
-                else if (cleanVal === 'mlafund') recognizedType = 'MLA Fund';
-                else if (cleanVal === 'tgrants' || cleanVal === 'tgrantz') recognizedType = 'T-Grants';
-
-                if (recognizedType && recognizedType !== val && item.children?.length) {
-                    result.push(...traverse(item.children, recognizedType));
-                } else if (recognizedType && recognizedType !== val && (!item.children || item.children.length === 0)) {
-                    result.push({ name: val, application_type: recognizedType });
-                } else if (item.children?.length) {
-                    result.push(...traverse(item.children, recognizedType));
+        const result = [];
+        const processAppType = (typeNode, appTypeName) => {
+            if (!typeNode.children || !typeNode.children.length) return;
+            for (const catNode of typeNode.children) {
+                const catName = (catNode.value || catNode.name || catNode.label || '').trim();
+                if (catName) {
+                    result.push({ name: catName, application_type: appTypeName });
                 }
             }
-            return result;
         };
 
-        const leafCats = traverse(items);
-        for (const cat of leafCats) {
+        for (const root of items) {
+            const rootVal = (root.value || root.name || root.label || '').trim();
+            if (rootVal.toLowerCase().replace(/[^a-z]/g, '') === 'cmfundcategories' || rootVal.toLowerCase() === 'cm_fund_category') {
+                for (const appTypeNode of (root.children || [])) {
+                    const appTypeName = (appTypeNode.value || appTypeNode.name || appTypeNode.label || '').trim();
+                    if (appTypeName) {
+                        processAppType(appTypeNode, appTypeName);
+                    }
+                }
+            } else {
+                processAppType(root, rootVal);
+            }
+        }
+
+        for (const cat of result) {
             await connection.query(
                 `INSERT INTO cm_fund_categories (name, application_type)
                  VALUES (?, ?)
-                 ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+                 ON DUPLICATE KEY UPDATE application_type = VALUES(application_type)`,
                 [cat.name, cat.application_type]
             );
         }
